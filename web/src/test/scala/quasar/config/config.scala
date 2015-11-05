@@ -10,7 +10,7 @@ class WebConfigSpec extends ConfigSpec[WebConfig] {
   def configOps: ConfigOps[WebConfig] = WebConfig
 
   def sampleConfig(uri: ConnectionString): WebConfig = WebConfig(
-    server = ServerConfig(92),
+    server = ServerConfig(Some(92)),
     mountings = Map(
       EnginePath.Root -> MongoDbConfig(uri)))
 

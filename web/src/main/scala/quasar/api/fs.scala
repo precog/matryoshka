@@ -47,7 +47,7 @@ import scodec.bits.ByteVector
  * @param restartServer Expected to restart server when called using the provided Configuration. Called only when the port changes.
  * @param configChanged Expected to persist a Config when called. Called whenever the Config changes.
  */
-final case class FileSystemApi[WC, SC: Empty](
+final case class FileSystemApi[WC, SC](
   initialConfig: WC,
   createBackend: WC => EnvTask[Backend],
   validateConfig: BackendConfig => EnvTask[Unit],
@@ -84,12 +84,11 @@ final case class FileSystemApi[WC, SC: Empty](
         .as(mountings.get(cfg).keySet contains path)
     }
 
-  private def updateServerConfig(scfg: SC, current: Task[WC]): Task[Unit] =
+  private def updateWebServerConfig(config: Task[WC]): Task[Unit] =
     for {
-      cfg    <- current
-      updCfg =  server.set(scfg)(cfg)
-      _      <- configChanged(updCfg)
-      _      <- restartServer(updCfg)
+      cfg <- config
+      _   <- configChanged(cfg)
+      _   <- restartServer(cfg)
     } yield ()
 
   private def rawJsonLines[F[_]](codec: DataCodec, v: Process[F, Data]): Process[F, String] =
@@ -283,11 +282,11 @@ final case class FileSystemApi[WC, SC: Empty](
             e => NotFound(e.getMessage),
             // TODO: If the requested port is unavailable the server will restart
             //       on a random one, thus this response text may not be accurate.
-            i => updateServerConfig(scPort.set(i)(Empty[SC].empty), config) *>
+            i => updateWebServerConfig(config.map(wcPort.set(i))) *>
                  Ok("changed port to " + i)))
 
       case DELETE -> Root / "port" =>
-        updateServerConfig(scPort.set(ServerConfig.DefaultPort)(Empty[SC].empty), config) *>
+        updateWebServerConfig(config.map(wcPort.set(ServerConfig.DefaultPort))) *>
         Ok("reverted to default port " + ServerConfig.DefaultPort)
 
       case req @ GET -> Root / "info" =>

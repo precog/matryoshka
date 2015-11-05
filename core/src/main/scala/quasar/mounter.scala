@@ -25,7 +25,7 @@ import scalaz._, Scalaz._
 import scalaz.concurrent._
 
 object Mounter {
-  def defaultMount(mountings:  Map[Path, BackendConfig]): EnvTask[Backend] =
+  def defaultMount(mountings:  MountingsConfig): EnvTask[Backend] =
     mount(mountings, BackendDefinitions.All)
 
   def mount(mountings:  Map[Path, BackendConfig], backendDef: BackendDefinition): EnvTask[Backend] = {

@@ -6,31 +6,26 @@ import quasar.config.implicits._
 import argonaut._, Argonaut._
 import monocle._, macros.Lenses
 
-@Lenses final case class ServerConfig(port: Int)
+final case class ServerConfig(port0: Option[Int]) {
+  val port = port0.getOrElse(ServerConfig.DefaultPort)
+}
 
 object ServerConfig {
    val DefaultPort = 20223
 
-   implicit def Codec = CodecJson(
-    (s: ServerConfig) => ("port" := s.port) ->: jEmptyObject,
-    c => ((c --\ "port").as[Option[Int]]).map(p => ServerConfig(p.getOrElse(DefaultPort))))
+   val port = Lens[ServerConfig, Int](_.port)(p => c => c.copy(port0 = Some(p)))
 
-   implicit object empty extends Empty[ServerConfig] { def empty = ServerConfig(DefaultPort) }
+   implicit def Codec: CodecJson[ServerConfig] =
+     casecodec1(ServerConfig.apply, ServerConfig.unapply)("port")
 }
 
 @Lenses final case class WebConfig(server: ServerConfig, mountings: MountingsConfig)
 
 object WebConfig extends ConfigOps[WebConfig] {
-
   def mountingsLens = WebConfig.mountings
 
   implicit val codecJson: CodecJson[WebConfig] =
     casecodec2(WebConfig.apply, WebConfig.unapply)("server", "mountings")
-
-  implicit object empty extends Empty[WebConfig] {
-    def empty = WebConfig(Empty[ServerConfig].empty, Empty[MountingsConfig].empty)
-  }
-
 }
 
 case class WebConfigLens[WC, SC](

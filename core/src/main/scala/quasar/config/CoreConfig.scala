@@ -29,6 +29,4 @@ object CoreConfig extends ConfigOps[CoreConfig] {
 
   implicit val codecJson = casecodec1(CoreConfig.apply, CoreConfig.unapply)("mountings")
 
-  implicit object empty extends Empty[CoreConfig] { def empty = CoreConfig(Empty[MountingsConfig].empty) }
-
 }

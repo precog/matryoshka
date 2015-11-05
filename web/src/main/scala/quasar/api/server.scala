@@ -34,10 +34,22 @@ import scalaz.stream._
 import org.http4s.server.{Server => Http4sServer, HttpService}
 import org.http4s.server.blaze.BlazeBuilder
 
-class ServerOps[WC: Empty: CodecJson, SC: Empty](
+object ServerOps {
+  final case class Options(
+    config: Option[String],
+    contentLoc: Option[String],
+    contentPath: Option[String],
+    contentPathRelative: Boolean,
+    openClient: Boolean,
+    port: Option[Int])
+}
+
+class ServerOps[WC: CodecJson, SC](
   configOps: ConfigOps[WC],
+  defaultWC: WC,
   val webConfigLens: WebConfigLens[WC, SC]) {
   import webConfigLens._
+  import ServerOps._
 
   // NB: This is a terrible thing.
   //     Is there a better way to find the path to a jar?
@@ -158,14 +170,6 @@ class ServerOps[WC: Empty: CodecJson, SC: Empty](
         .or(stderr("Failed to open browser, please navigate to " + url))
   }
 
-  final case class Options(
-    config: Option[String],
-    contentLoc: Option[String],
-    contentPath: Option[String],
-    contentPathRelative: Boolean,
-    openClient: Boolean,
-    port: Option[Int])
-
   // scopt's recommended OptionParser construction involves side effects
   @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
   val optionParser = new scopt.OptionParser[Options]("quasar") {
@@ -215,7 +219,7 @@ class ServerOps[WC: Empty: CodecJson, SC: Empty](
       cfgPath        <- opts.config.fold[EnvTask[Option[FsPath[pathy.Path.File, pathy.Path.Sandboxed]]]](
           liftE(Task.now(None)))(
           cfg => FsPath.parseSystemFile(cfg).toRight(InvalidConfig("Invalid path to config file: " + cfg)).map(Some(_)))
-      config         <- configOps.fromFileOrEmpty(cfgPath)
+      config         <- configOps.fromFileOrDefaultPaths(cfgPath).orElse(EitherT.right(Task.now(defaultWC)))
       port           =  opts.port getOrElse wcPort.get(config)
       updCfg         =  wcPort.set(port)(config)
       (proc, useCfg) =  servers(content.toList, Some(redirect), idleTimeout, Backend.test,
@@ -238,6 +242,7 @@ class ServerOps[WC: Empty: CodecJson, SC: Empty](
 
 object Server extends ServerOps(
   WebConfig,
+  WebConfig(ServerConfig(None), Map()),
   WebConfigLens(
     WebConfig.server,
     WebConfig.mountings,

@@ -30,8 +30,6 @@ package object config {
         encoder = map => map.map(t => t._1.pathname -> t._2).asJson,
         decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]]
           .decode(cursor).map(_.map(t => Path(t._1) -> t._2)))
-
-    implicit object mountingsConfigEmpty extends Empty[MountingsConfig] { def empty = Map() }
   }
 
 }

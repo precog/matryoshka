@@ -2,6 +2,8 @@ package quasar.config
 
 import com.mongodb.ConnectionString
 import quasar.Predef._
+import quasar.config.FsPath.NonexistentFileError
+import quasar.Evaluator.EnvironmentError.EnvFsPathError
 import quasar.fp._
 import quasar.fs.{Path => EnginePath}
 
@@ -12,7 +14,7 @@ import scala.util.Properties
 import org.specs2.mutable._
 import org.specs2.scalaz._
 
-abstract class ConfigSpec[Config: CodecJson: Empty] extends Specification with DisjunctionMatchers {
+abstract class ConfigSpec[Config: CodecJson] extends Specification with DisjunctionMatchers {
   import FsPath._
 
   sequential
@@ -137,10 +139,12 @@ abstract class ConfigSpec[Config: CodecJson: Empty] extends Specification with D
   }
 
   "fromFileOrEmpty" should {
-    "result in empty config when file not found" in {
-      withTestConfigFile(fp =>
-        configOps.fromFileOrEmpty(Some(fp)).run
-      ).run must beRightDisjunction(Empty[Config].empty)
+    "result in error when file not found" in {
+      val (p, r) =
+        withTestConfigFile(fp =>
+          configOps.fromFileOrDefaultPaths(Some(fp)).run.map((fp, _))
+        ).run
+      r must beLeftDisjunction(EnvFsPathError(NonexistentFileError(p)))
     }
   }
 

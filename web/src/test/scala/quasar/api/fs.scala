@@ -261,7 +261,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       DirNode("badPath1") -> Mock.emptyBackend,
       DirNode("badPath2") -> Mock.emptyBackend))
   // We don't put the port here as the `withServer` function will supply the port based on it's optional input.
-  val config1 = WebConfig(Empty[ServerConfig].empty, ListMap(
+  val config1 = WebConfig(ServerConfig(None), ListMap(
     Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
     Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting"))))
 
@@ -1371,7 +1371,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== "moved /foo/ to /foo2/"
 
-          configs() must_== List(WebConfig(ServerConfig(client.toRequest.getOriginalURI.getPort), Map(
+          configs() must_== List(WebConfig(ServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/foo2/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
             Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
 
@@ -1455,7 +1455,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== "added /local/"
 
-          configs() must_== List(WebConfig(ServerConfig(client.toRequest.getOriginalURI.getPort), Map(
+          configs() must_== List(WebConfig(ServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
             Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")),
             Path("/local/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/test")))))
@@ -1578,7 +1578,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== "added /local/"
 
-          configs() must_== List(WebConfig(ServerConfig(client.toRequest.getOriginalURI.getPort), Map(
+          configs() must_== List(WebConfig(ServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
             Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")),
             Path("/local/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/test")))))
@@ -1596,7 +1596,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== "updated /foo/"
 
-          configs() must_== List(WebConfig(ServerConfig(client.toRequest.getOriginalURI.getPort), Map(
+          configs() must_== List(WebConfig(ServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo2")),
             Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
         }
@@ -1698,7 +1698,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val result = Http(req OK as.String)
           result() must_== "deleted /foo/"
 
-          configs() must_== List(WebConfig(ServerConfig(client.toRequest.getOriginalURI.getPort), Map(
+          configs() must_== List(WebConfig(ServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
 
           val fooMetadataNotExists = Http(fooMetadata)

@@ -60,6 +60,14 @@ object FsPath {
       InV[B, T, S](vol, path, ev)
   }
 
+  // TODO: use PathError from the Free Architecture work once merged
+  sealed trait FsPathError {
+    def message: String
+  }
+  final case class NonexistentFileError(path: FsPath[File, Sandboxed]) extends FsPathError {
+    val message = s"${systemCodec.map(printFsPath(_, path)).run} doesn't exist"
+  }
+
   def codecForOS(os: OS): PathCodec =
     if (os.isWin) windowsCodec else posixCodec
 

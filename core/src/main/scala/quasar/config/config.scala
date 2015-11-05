@@ -18,8 +18,10 @@ package quasar.config
 
 import com.mongodb.ConnectionString
 import quasar.Predef._
+import quasar.config.FsPath.NonexistentFileError
 import quasar.fp._
 import quasar._, Evaluator._, Errors._
+import quasar.Evaluator.EnvironmentError.EnvFsPathError
 import quasar.fs.{Path => EnginePath}
 
 import java.io.{File => JFile}
@@ -67,10 +69,6 @@ object BackendConfig {
       decoder = _.get[MongoDbConfig]("mongodb").map(v => v: BackendConfig))
 }
 
-@typeclass trait Empty[A] {
-  def empty: A
-}
-
 trait ConfigOps[C] {
   import FsPath._
 
@@ -110,7 +108,7 @@ trait ConfigOps[C] {
   private def alternatePath: Task[FsPath[File, Sandboxed]] =
     OS.currentOS >>= defaultPathForOS(dir("SlamData") </> file("slamengine-config.json"))
 
-  def fromFile(path: FsPath[File, Sandboxed])(implicit ev: DecodeJson[C]): EnvTask[C] = {
+  def fromFile(path: FsPath[File, Sandboxed])(implicit D: DecodeJson[C]): EnvTask[C] = {
     import java.nio.file._
     import java.nio.charset._
 
@@ -127,28 +125,19 @@ trait ConfigOps[C] {
 
   }
 
-  def fromFileOrEmpty(path: Option[FsPath[File, Sandboxed]])(implicit ev1: DecodeJson[C], ev2: Empty[C])
-    : EnvTask[C] = {
-    def loadOr(path: FsPath[File, Sandboxed], alt: EnvTask[C]): EnvTask[C] =
-      handleWith(fromFile(path)) {
-        case _: java.nio.file.NoSuchFileException => alt
+  def fromFileOrDefaultPaths(path: Option[FsPath[File, Sandboxed]])(implicit D: DecodeJson[C]): EnvTask[C] = {
+    def load(path: Task[FsPath[File, Sandboxed]]): EnvTask[C] =
+      EitherT.right(path).flatMap { p =>
+        handleWith(fromFile(p)) {
+          case ex: java.nio.file.NoSuchFileException =>
+            EitherT.left(Task.now(EnvFsPathError(NonexistentFileError(p))))
+        }
       }
 
-    val empty = liftE[EnvironmentError](Task.now(Empty[C].empty))
-
-    path match {
-      case Some(path) =>
-        loadOr(path, empty)
-      case None =>
-        liftE(defaultPath).flatMap { p =>
-          loadOr(p, liftE(alternatePath).flatMap { p =>
-            loadOr(p, empty)
-          })
-        }
-    }
+    path.cata(p => load(Task.now(p)), load(defaultPath).orElse(load(alternatePath)))
   }
 
-  def loadAndTest(path: FsPath[File, Sandboxed])(implicit ev: DecodeJson[C]): EnvTask[C] =
+  def loadAndTest(path: FsPath[File, Sandboxed])(implicit D: DecodeJson[C]): EnvTask[C] =
     for {
       config <- fromFile(path)
       _      <- mountingsLens.get(config).values.toList.map(Backend.test).sequenceU
@@ -175,7 +164,7 @@ trait ConfigOps[C] {
   def fromString(value: String)(implicit D: DecodeJson[C]): EnvironmentError \/ C =
     Parse.decodeEither[C](value).leftMap(InvalidConfig(_))
 
-  implicit def showInstance(implicit ev: EncodeJson[C]): Show[C] = new Show[C] {
+  implicit def showInstance(implicit E: EncodeJson[C]): Show[C] = new Show[C] {
     override def shows(f: C): String = EncodeJson.of[C].encode(f).pretty(quasar.fp.multiline)
   }
 
