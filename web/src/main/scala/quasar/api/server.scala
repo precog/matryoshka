@@ -157,6 +157,7 @@ object Server {
     openClient: Boolean,
     port: Option[Int])
 
+  // scopt's recommended OptionParser construction involves side effects
   @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
   val optionParser = new scopt.OptionParser[Options]("quasar") {
     head("quasar")
