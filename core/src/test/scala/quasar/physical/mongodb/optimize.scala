@@ -303,14 +303,14 @@ class OptimizeSpecs extends Specification with TreeMatchers {
 
     "not push $sort up" in {
       val op = chain(
-       $read(Collection("db", "zips")),
-       $project(
-         Reshape(ListMap(
-           BsonField.Name("city") -> \/-($var(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city")))))),
-         IgnoreId),
-       $sort(NonEmptyList(BsonField.Name("city") -> Ascending)))
+        $read(Collection("db", "zips")),
+        $project(
+          Reshape(ListMap(
+            BsonField.Name("city") -> \/-($var(DocField(BsonField.Name("__tmp0") \ BsonField.Name("city")))))),
+          IgnoreId),
+        $sort(NonEmptyList(BsonField.Name("city") -> Ascending)))
 
-       reorderOps(op) must beTree(op)
+      reorderOps(op) must beTree(op)
     }
   }
 

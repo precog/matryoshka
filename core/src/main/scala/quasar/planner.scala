@@ -48,7 +48,7 @@ trait Planner[PhysicalPlan] {
       tree       <- withTree("Variables Substituted")(Variables.substVars[Unit](tree(select), req.variables).leftMap(CSemanticError(_)))
       tree       <- withTree("Annotated Tree")(AllPhases(tree).disjunction.leftMap(ManyErrors(_)))
       logical    <- withTree("Logical Plan")(Compiler.compile(tree).leftMap(CSemanticError(_)))
-      simplified <- withTree("Simplified")(\/-(logical.cata(Optimizer.simplify)))
+      simplified <- withTree("Simplified")(\/-(logical.cata(repeatedly(Optimizer.simplifyƒ))))
       checked    <- withTree("Typechecked")(LogicalPlan.ensureCorrectTypes(simplified).disjunction.leftMap(ManyErrors(_)))
       physical   <- plan(checked).leftMap(CPlannerError(_))
       _          <- withTree("Physical Plan")(\/-(physical))

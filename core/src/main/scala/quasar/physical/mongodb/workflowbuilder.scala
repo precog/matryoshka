@@ -319,7 +319,7 @@ object WorkflowBuilder {
     * harder to pattern match. Should be applied before `objectConcat`,
     * `arrayConcat`, or `merge`.
     */
-  val normalizeƒ: WorkflowBuilderF[WorkflowBuilder] => WorkflowBuilder = {
+  val normalizeƒ: WorkflowBuilderF[WorkflowBuilder] => Option[WorkflowBuilder] = {
     def collapse(outer: Expr, inner: ListMap[BsonField.Name, Expr]): Option[Expr] = {
       def rewriteExpr(t: Expression)(applyExpr: PartialFunction[ExprOp[Expr], Option[Expr]]): Option[Expr] =
         t.cataM[Option, Expr] { x =>
@@ -395,7 +395,7 @@ object WorkflowBuilder {
           case _ => None
         }))
 
-    def loop(w: WorkflowBuilderF[WorkflowBuilder]): Option[WorkflowBuilder] = w match {
+    {
       case ExprBuilderF(src, \/-($$ROOT)) => src.some
       case ExprBuilderF(src, outerExpr) =>
         src.unFix match {
@@ -407,16 +407,16 @@ object WorkflowBuilder {
             collapse(outerExpr, innerShape).map(ExprBuilder(src, _))
           case ShapePreservingBuilderF(src0, inputs, op) =>
             ShapePreservingBuilder(
-              normalizeƒ(ExprBuilderF(src0, outerExpr)),
+              normalize(ExprBuilderF(src0, outerExpr)),
               inputs,
               op).some
           case GroupBuilderF(wb0, key, Expr(\/-($var(DocVar.ROOT(None))))) =>
             GroupBuilder(
-              normalizeƒ(ExprBuilderF(wb0, outerExpr)),
+              normalize(ExprBuilderF(wb0, outerExpr)),
               key,
               Expr(\/-($$ROOT))).some
           case GroupBuilderF(wb0, key, contents) =>
-            inln(outerExpr, contents).map(expr => GroupBuilder(normalizeƒ(ExprBuilderF(wb0, \/-(expr))), key, Expr(\/-($$ROOT))))
+            inln(outerExpr, contents).map(expr => GroupBuilder(normalize(ExprBuilderF(wb0, \/-(expr))), key, Expr(\/-($$ROOT))))
           case _ => None
         }
       case DocBuilderF(Fix(DocBuilderF(src, innerShape)), outerShape) =>
@@ -424,14 +424,12 @@ object WorkflowBuilder {
       case DocBuilderF(Fix(ExprBuilderF(src, innerExpr)), outerShape) =>
         outerShape.traverse(inln(_, Expr(innerExpr))).map(exes => DocBuilder(src, exes ∘ (_.right)))
       case DocBuilderF(Fix(ShapePreservingBuilderF(src, inputs, op)), shape) =>
-        ShapePreservingBuilder(normalizeƒ(DocBuilderF(src, shape)), inputs, op).some
+        ShapePreservingBuilder(normalize(DocBuilderF(src, shape)), inputs, op).some
       case _ => None
     }
-
-    w => loop(w).fold(Fix(w))(x => normalizeƒ(x.unFix))
   }
 
-  def normalize(wb: WorkflowBuilder) = normalizeƒ(wb.unFix)
+  val normalize = repeatedly(normalizeƒ)
 
   private def rewriteObjRefs(
     obj: ListMap[BsonField.Name, GroupValue[Expression]])(
@@ -811,7 +809,7 @@ object WorkflowBuilder {
       M[WorkflowBuilder] = {
     fold1Builders(wbs).fold[M[WorkflowBuilder]](
       fail(InternalError("impossible – no arguments")))(
-      _.map { case (wb, exprs) => normalize(ExprBuilder(wb, \/-(f(exprs)))) })
+      _.map { case (wb, exprs) => normalize(ExprBuilderF(wb, \/-(f(exprs)))) })
   }
 
   def jsExpr1(wb: WorkflowBuilder, js: JsFn): WorkflowBuilder =
@@ -822,7 +820,7 @@ object WorkflowBuilder {
     fold1Builders(wbs).fold[M[WorkflowBuilder]](
       fail(InternalError("impossible – no arguments")))(
       _.flatMap { case (wb, exprs) =>
-        lift(exprs.traverseU(toJs).map(jses => normalize(ExprBuilder(wb, -\/(JsFn(jsBase, f(jses.map(_(jscore.Ident(jsBase))))))))))
+        lift(exprs.traverseU(toJs).map(jses => normalize(ExprBuilderF(wb, -\/(JsFn(jsBase, f(jses.map(_(jscore.Ident(jsBase))))))))))
       })
 
   def makeObject(wb: WorkflowBuilder, name: String): WorkflowBuilder =
@@ -1403,10 +1401,10 @@ object WorkflowBuilder {
   //       mapReduce) in hand, we would know for sure.
   def requiresMapReduce(wb: WorkflowBuilder): Boolean = {
     // TODO: Get rid of this when we functorize WorkflowTask
-    def checkTask(wt: WorkflowTask): Boolean = wt match {
-      case WorkflowTask.FoldLeftTask(_, _)   => true
-      case WorkflowTask.MapReduceTask(_, _)  => true
-      case WorkflowTask.PipelineTask(src, _) => checkTask(src)
+    def checkTask(wt: workflowtask.WorkflowTask): Boolean = wt match {
+      case workflowtask.FoldLeftTask(_, _)   => true
+      case workflowtask.MapReduceTask(_, _)  => true
+      case workflowtask.PipelineTask(src, _) => checkTask(src)
       case _                                 => false
     }
 
@@ -1561,10 +1559,10 @@ object WorkflowBuilder {
       ks => distinctBy(src, ks match {
         case Root() => List(src)
         case Field(k) =>
-          List(normalize(ExprBuilder(src, \/-($var(DocField(k))))))
+          List(normalize(ExprBuilderF(src, \/-($var(DocField(k))))))
         case Subset(ks) =>
           ks.toList.map(k =>
-            normalize(ExprBuilder(src, \/-($var(DocField(k))))))
+            normalize(ExprBuilderF(src, \/-($var(DocField(k))))))
       }))
 
   def distinctBy(src: WorkflowBuilder, keys: List[WorkflowBuilder]):
@@ -1578,10 +1576,10 @@ object WorkflowBuilder {
           case $Sort(_, _) =>
             foldBuilders(src, sortKeys).map { case (newSrc, dv, ks) =>
 
-              val dist = distincting(normalize(ExprBuilder(newSrc, \/-($var(dv.toDocVar)))))
+              val dist = distincting(normalize(ExprBuilderF(newSrc, \/-($var(dv.toDocVar)))))
               ShapePreservingBuilder(
-                normalize(ExprBuilder(dist, \/-($var(dv.toDocVar)))),
-                ks.map(k => normalize(ExprBuilder(dist, \/-($var(k.toDocVar))))), f)
+                normalize(ExprBuilderF(dist, \/-($var(dv.toDocVar)))),
+                ks.map(k => normalize(ExprBuilderF(dist, \/-($var(k.toDocVar))))), f)
             }
           case _ => findSort(spbSrc)
         }

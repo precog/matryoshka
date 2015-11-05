@@ -1096,15 +1096,15 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
     def liftError[A](ea: PlannerError \/ A): M[A] =
       swizzle(stateT[PlannerError \/ ?, NameGen, A](ea))
 
-    val wfƒ = workflowƒ andThen (_.map(_.map(normalize)))
+    val wfƒ = workflowƒ andThen (_.map(_.map(normalize <<< (_.unFix))))
 
     (for {
       cleaned <- log("Logical Plan (reduced typechecks)")(liftError(logical.cataM[PlannerError \/ ?, Fix[LogicalPlan]](Optimizer.assumeReadObjƒ)))
-      align <- log("Logical Plan (aligned joins)")       (liftError(Corecursive[Fix].apo[LogicalPlan, Fix[LogicalPlan]](cleaned)(elideJoinCheckƒ).cataM(alignJoinsƒ <<< Recursive[Fix].project <<< Optimizer.simplify)))
+      align <- log("Logical Plan (aligned joins)")       (liftError(Corecursive[Fix].apo[LogicalPlan, Fix[LogicalPlan]](cleaned)(elideJoinCheckƒ).cataM(alignJoinsƒ <<< Recursive[Fix].project <<< repeatedly(Optimizer.simplifyƒ))))
       prep <- log("Logical Plan (projections preferred)")(Optimizer.preferProjections(align).point[M])
       wb   <- log("Workflow Builder")                    (swizzle(swapM(lpParaZygoHistoS(prep)(annotateƒ, wfƒ))))
       wf1  <- log("Workflow (raw)")                      (swizzle(build(wb)))
-      wf2  <- log("Workflow (finished)")                 (finish(wf1).point[M])
-    } yield crystallize(wf2)).evalZero
+      wf2  <- log("Workflow (crystallized)")             (crystallize(wf1).point[M])
+    } yield wf2).evalZero
   }
 }
