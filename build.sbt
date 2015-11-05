@@ -79,8 +79,8 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "net.databinder.dispatch" %% "dispatch-core"       % "0.11.1"       % "test"),
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")))
 
-// Using a Seq of desired warts instead of Warts.allBut appears to address
-// the incremental compilation issue. Unfortunately, the reason eludes.
+// Using a Seq of desired warts instead of Warts.allBut due to an incremental compilation issue.
+// https://github.com/puffnfresh/wartremover/issues/202
 // omissions:
 //   Wart.Any
 //   Wart.AsInstanceOf
