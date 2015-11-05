@@ -18,6 +18,7 @@ package quasar.std
 
 import quasar.Predef._
 import quasar._, LogicalPlan._, SemanticError._
+import quasar.recursionschemes._, Recursive.ops._
 import quasar.fp._
 
 import scalaz._, Scalaz._, NonEmptyList.nel, Validation.{success, failure}
@@ -157,9 +158,12 @@ trait StructuralLib extends Library {
     "({})",
     "Extracts a specified field of an object",
     Top, AnyObject :: Str :: Nil,
-    {
-      case List(MakeObjectN(obj), field) => obj.toListMap.get(field)
-      case _ => None
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) = orig match {
+        case InvokeF(_, List(MakeObjectN(obj), field)) =>
+          obj.toListMap.get(field).map(_.project)
+        case _ => None
+      }
     },
     partialTyperV { case List(v1, v2) => v1.objectField(v2) },
     basicUntyper)
@@ -224,20 +228,19 @@ trait StructuralLib extends Library {
 
   // val MakeObjectN = new VirtualFunc {
   object MakeObjectN {
-    import quasar.recursionschemes._
-
     // Note: signature does not match VirtualFunc
-    def apply(args: (Fix[LogicalPlan], Fix[LogicalPlan])*): Fix[LogicalPlan] =
+    def apply[T[_[_]]: Corecursive](args: (T[LogicalPlan], T[LogicalPlan])*): T[LogicalPlan] =
       args.toList match {
-        case Nil     => LogicalPlan.Constant(Data.Obj(Map()))
+        case Nil     => Corecursive[T].embed(ConstantF(Data.Obj(Map())))
         case x :: xs =>
           xs.foldLeft(MakeObject(x._1, x._2))((acc, x) =>
             ObjectConcat(acc, MakeObject(x._1, x._2)))
       }
 
     // Note: signature does not match VirtualFunc
-    def unapply(t: Fix[LogicalPlan]): Option[List[(Fix[LogicalPlan], Fix[LogicalPlan])]] =
-      t.unFix match {
+    def unapply[T[_[_]]: Recursive](t: T[LogicalPlan]):
+        Option[List[(T[LogicalPlan], T[LogicalPlan])]] =
+      t.project match {
         case MakeObject(List(name, expr)) => Some(List((name, expr)))
         case ObjectConcat(List(a, b))     => (unapply(a) |@| unapply(b))(_ ::: _)
         case _                            => None
@@ -245,28 +248,24 @@ trait StructuralLib extends Library {
   }
 
   object MakeArrayN {
-    import quasar.recursionschemes._
-
-    def apply(args: Fix[LogicalPlan]*): Fix[LogicalPlan] =
+    def apply[T[_[_]]: Corecursive](args: T[LogicalPlan]*): T[LogicalPlan] =
       args.map(MakeArray(_)) match {
-        case Nil      => LogicalPlan.Constant(Data.Arr(Nil))
+        case Nil      => Corecursive[T].embed(ConstantF(Data.Arr(Nil)))
         case t :: Nil => t
         case mas      => mas.reduce((t, ma) => ArrayConcat(t, ma))
       }
 
-    def unapply(t: Fix[LogicalPlan]): Option[List[Fix[LogicalPlan]]] =
-      Attr.unapply(attrK(t, ())).map(l => l.map(Recursive[Cofree [?[_], Unit]].forget[LogicalPlan]))
+    def unapply[T[_[_]]: Recursive](t: T[LogicalPlan]): Option[List[T[LogicalPlan]]] =
+      t.project match {
+        case MakeArray(x :: Nil)        => Some(x :: Nil)
+        case ArrayConcat(a :: b :: Nil) => (unapply(a) ⊛ unapply(b))(_ ::: _)
+        case _                          => None
+      }
 
     object Attr {
-      def unapply[A](t: Cofree[LogicalPlan, A]): Option[List[Cofree[LogicalPlan, A]]] = t.tail match {
-        case MakeArray(x :: Nil) =>
-          Some(x :: Nil)
-
-        case ArrayConcat(a :: b :: Nil) =>
-          (unapply(a) |@| unapply(b))(_ ::: _)
-
-        case _ => None
-      }
+      def unapply[A](t: Cofree[LogicalPlan, A]):
+          Option[List[Cofree[LogicalPlan, A]]] =
+        MakeArrayN.unapply[Cofree[?[_], A]](t)
     }
   }
 }

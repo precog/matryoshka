@@ -2,7 +2,7 @@ package quasar
 
 import quasar.Predef._
 
-import quasar.recursionschemes._
+import quasar.recursionschemes._, FunctorT.ops._
 import quasar.sql.{SQLParser, Query}
 import quasar.std._
 import quasar.fs._
@@ -27,7 +27,9 @@ trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
   }
 
   def compileExp(query: String): Fix[LogicalPlan] =
-    compile(query).fold(e => throw new RuntimeException("could not compile query for expected value: " + query + "; " + e), v => v)
+    compile(query).fold(
+      e => throw new RuntimeException("could not compile query for expected value: " + query + "; " + e),
+      _.transCata(repeatedly(Optimizer.simplifyƒ)))
 
   def testLogicalPlanCompile(query: String, expected: Fix[LogicalPlan]) = {
     compile(query).toEither must beRight(equalToPlan(expected))

@@ -18,7 +18,7 @@ package quasar.physical.mongodb
 
 import quasar.Predef._
 import quasar.jscore._
-import quasar.recursionschemes._, Recursive.ops._
+import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
 import quasar.fp._
 
 import scalaz._, Scalaz._
@@ -78,7 +78,7 @@ package object optimize {
 
     def deleteUnusedFields(op: Workflow) = deleteUnusedFields0(op, None)
 
-    private val reorderOpsƒ: WorkflowF[Workflow] => Option[Workflow] = {
+    private val reorderOpsƒ: WorkflowF[Workflow] => Option[WorkflowF[Workflow]] = {
       def rewriteSelector(sel: Selector, defs: Map[DocVar, DocVar]): Option[Selector] =
         sel.mapUpFieldsM { f =>
           defs.toList.map {
@@ -91,32 +91,21 @@ package object optimize {
 
       {
         case $Skip(Fix($Project(src0, shape, id)), count) =>
-          Some(chain(src0,
-            $skip(count),
-            $project(shape, id)))
+          $Project(Fix($Skip(src0, count)), shape, id).some
         case $Skip(Fix($SimpleMap(src0, fn @ NonEmptyList(MapExpr(_)), scope)), count) =>
-          Some(chain(src0,
-            $skip(count),
-            $simpleMap(fn, scope)))
+          $SimpleMap(Fix($Skip(src0, count)), fn, scope).some
 
         case $Limit(Fix($Project(src0, shape, id)), count) =>
-          Some(chain(src0,
-            $limit(count),
-            $project(shape, id)))
+          $Project(Fix($Limit(src0, count)), shape, id).some
         case $Limit(Fix($SimpleMap(src0, fn @ NonEmptyList(MapExpr(_)), scope)), count) =>
-          Some(chain(src0,
-            $limit(count),
-            $simpleMap(fn, scope)))
+          $SimpleMap(Fix($Limit(src0, count)), fn, scope).some
 
         case $Match(Fix(p @ $Project(src0, shape, id)), sel) =>
           val defs = p.getAll.collect {
             case (n, $var(x)) => DocField(n) -> x
           }.toMap
-          rewriteSelector(sel, defs).map { sel =>
-            chain(src0,
-              $match(sel),
-              $project(shape, id))
-          }
+          rewriteSelector(sel, defs).map(sel =>
+            $Project(Fix($Match(src0, sel)), shape, id))
 
         case $Match(Fix($SimpleMap(src0, fn @ NonEmptyList(MapExpr(jsFn)), scope)), sel) => {
           import quasar.javascript._
@@ -131,9 +120,7 @@ package object optimize {
               case _ => Map.empty
             }
           rewriteSelector(sel, defs(jsFn.expr)).map(sel =>
-            chain(src0,
-              $match(sel),
-              $simpleMap(fn, scope)))
+            $SimpleMap(Fix($Match (src0, sel)), fn, scope))
         }
 
         case op => None
@@ -141,7 +128,7 @@ package object optimize {
     }
 
     def reorderOps(wf: Workflow): Workflow = {
-      val reordered = wf.cata(simply(reorderOpsƒ))
+      val reordered = wf.transCata(simply(reorderOpsƒ))
       if (reordered == wf) wf else reorderOps(reordered)
     }
 
@@ -241,7 +228,6 @@ package object optimize {
         val by = g.by.fold(
           inlineProject0(_, rs).left.some,
           fixExpr(rs, _).map(\/-(_)))
-
         (grouped |@| by)((grouped, by) => (src, Grouped(grouped), by))
       }
     }

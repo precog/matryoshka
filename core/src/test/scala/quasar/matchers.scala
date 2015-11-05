@@ -2,6 +2,8 @@ package quasar
 
 import quasar.Predef._
 import RenderTree.ops._
+import quasar.fp._
+import quasar.recursionschemes._
 
 import scala.reflect.ClassTag
 
@@ -9,31 +11,27 @@ import org.specs2.matcher._
 import scalaz._, Scalaz._
 
 trait TreeMatchers {
-  def beTree[A](expected: A)(implicit RA: RenderTree[A]): Matcher[A] = new Matcher[A] {
+  def beTree[A: RenderTree](expected: A): Matcher[A] = new Matcher[A] {
     def apply[S <: A](s: Expectable[S]) = {
       val v = s.value
-      def diff = (RA.render(v) diff RA.render(expected)).draw.mkString("\n")
+      val diff = (RenderTree[A].render(v) diff expected.render).shows
       result(v == expected, s"trees match:\n$diff", s"trees do not match:\n$diff", s)
     }
   }
 }
 
 trait TermLogicalPlanMatchers {
-  import quasar.fp._
-  import quasar.recursionschemes._
-
-  case class equalToPlan(expected: Fix[LogicalPlan]) extends Matcher[Fix[LogicalPlan]] {
-    val equal = Equal[Fix[LogicalPlan]].equal _
-
+  case class equalToPlan(expected: Fix[LogicalPlan])
+      extends Matcher[Fix[LogicalPlan]] {
     def apply[S <: Fix[LogicalPlan]](s: Expectable[S]) = {
-      def diff(l: S, r: Fix[LogicalPlan]): String = {
-        val lt = RenderTree[Fix[LogicalPlan]].render(l)
-        (lt diff r.render).shows
-      }
-      result(equal(expected, s.value),
-             "\ntrees are equal:\n" + diff(s.value, expected),
-             "\ntrees are not equal:\n" + diff(s.value, expected),
-             s)
+      val normed = FunctorT[Cofree[?[_], Fix[LogicalPlan]]].transCata(attrSelf(s.value))(repeatedly[Cofree[?[_], Fix[LogicalPlan]], LogicalPlan](Optimizer.simplifyƒ[Cofree[?[_], Fix[LogicalPlan]]]))
+      val diff = (Recursive[Cofree[?[_], Fix[LogicalPlan]]].forget(normed).render diff expected.render).shows
+      result(
+        expected ≟ Recursive[Cofree[?[_], Fix[LogicalPlan]]].forget(normed),
+        "\ntrees are equal:\n" + diff,
+        "\ntrees are not equal:\n" + diff +
+          "\noriginal was:\n" + normed.head.render.shows,
+        s)
     }
   }
 }

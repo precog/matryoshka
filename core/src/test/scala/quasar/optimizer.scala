@@ -2,7 +2,7 @@ package quasar
 
 import quasar.Predef._
 import quasar.fs._
-import quasar.recursionschemes._, Recursive.ops._
+import quasar.recursionschemes._, FunctorT.ops._
 import quasar.std._
 
 import org.specs2.mutable._
@@ -17,12 +17,12 @@ class OptimizerSpec extends Specification with CompilerHelpers with TreeMatchers
   "simplify" should {
 
     "inline trivial binding" in {
-      Optimizer.simplifyƒ(LetF('tmp0, read("foo"), Free('tmp0))) must
-        beSome(read("foo"))
+      Optimizer.simplifyƒ[Fix].apply(LetF('tmp0, read("foo"), Free('tmp0))) must
+        beSome(ReadF[Fix[LogicalPlan]](fs.Path("foo")))
     }
 
     "not inline binding that's used twice" in {
-      Optimizer.simplifyƒ(
+      Optimizer.simplifyƒ[Fix].apply(
         LetF('tmp0, read("foo"),
           makeObj(
             "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
@@ -31,39 +31,40 @@ class OptimizerSpec extends Specification with CompilerHelpers with TreeMatchers
     }
 
     "completely inline stupid lets" in {
-      Optimizer.simplifyƒ(
+      Optimizer.simplifyƒ[Fix].apply(
         LetF('tmp0, read("foo"), Let('tmp1, Free('tmp0), Free('tmp1)))) must
-        beSome(Let('tmp1, read("foo"), Free('tmp1)))
+        beSome(LetF('tmp1, read("foo"), Free('tmp1)))
     }
 
     "inline correct value for shadowed binding" in {
-      Optimizer.simplifyƒ(
+      Optimizer.simplifyƒ[Fix].apply(
         LetF('tmp0, read("foo"),
           Let('tmp0, read("bar"),
             makeObj(
               "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))))))) must
         beSome(
-          Let('tmp0, read("bar"),
+          LetF('tmp0, read("bar"),
             makeObj(
               "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))))))
     }
 
     "inline a binding used once, then shadowed once" in {
-      Optimizer.simplifyƒ(
+      Optimizer.simplifyƒ[Fix].apply(
         LetF('tmp0, read("foo"),
           ObjectProject(Free('tmp0),
             Let('tmp0, read("bar"),
               makeObj(
                 "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))))))) must
         beSome(
-          ObjectProject(read("foo"),
+          InvokeF(ObjectProject, List(
+            read("foo"),
             Let('tmp0, read("bar"),
               makeObj(
-                "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))))))
+                "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))))))))
     }
 
     "inline a binding used once, then shadowed twice" in {
-      Optimizer.simplifyƒ(
+      Optimizer.simplifyƒ[Fix].apply(
         LetF('tmp0, read("foo"),
           ObjectProject(Free('tmp0),
             Let('tmp0, read("bar"),
@@ -71,11 +72,12 @@ class OptimizerSpec extends Specification with CompilerHelpers with TreeMatchers
                 "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
                 "baz" -> ObjectProject(Free('tmp0), Constant(Data.Str("baz")))))))) must
         beSome(
-          ObjectProject(read("foo"),
+          InvokeF(ObjectProject, List(
+            read("foo"),
             Let('tmp0, read("bar"),
               makeObj(
                 "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-                "baz" -> ObjectProject(Free('tmp0), Constant(Data.Str("baz")))))))
+                "baz" -> ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))))))
     }
 
     "partially inline a more interesting case" in {
@@ -88,7 +90,7 @@ class OptimizerSpec extends Specification with CompilerHelpers with TreeMatchers
               Free('tmp1),
               MakeArray(
                 ObjectProject(Free('tmp1), Constant(Data.Str("name"))))),
-            Free('tmp2)))).cata(repeatedly(Optimizer.simplifyƒ)) must_==
+            Free('tmp2)))).transCata(repeatedly(Optimizer.simplifyƒ)) must_==
         Let('tmp1,
           makeObj(
             "name" ->

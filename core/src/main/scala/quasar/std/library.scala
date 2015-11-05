@@ -26,12 +26,10 @@ import quasar.recursionschemes._
 import Validation.{success, failure}
 
 trait Library {
-  protected val noSimplification: Func.Simplifier = κ(None)
-
-  protected def partialSimplifier(
-    f: PartialFunction[List[Fix[LogicalPlan]], Fix[LogicalPlan]]):
-      Func.Simplifier =
-    f.lift
+  protected val noSimplification: Func.Simplifier = new Func.Simplifier {
+    def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
+      None
+  }
 
   protected def constTyper(codomain: Type): Func.Typer = { args =>
     Validation.success(codomain)

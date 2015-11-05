@@ -17,10 +17,10 @@
 package quasar.std
 
 import quasar.Predef._
-import quasar.recursionschemes._
+import quasar.recursionschemes._, Recursive.ops._
 import quasar.{Data, Func, LogicalPlan, Type, Mapping, SemanticError}, LogicalPlan._
 
-import scalaz._, NonEmptyList.nel, Validation.{success, failure}
+import scalaz._, Scalaz._, NonEmptyList.nel, Validation.{success, failure}
 
 // TODO: Cleanup!
 trait RelationsLib extends Library {
@@ -118,9 +118,18 @@ trait RelationsLib extends Library {
 
   val And = Mapping("(AND)", "Performs a logical AND of two boolean values",
     Type.Bool, Type.Bool :: Type.Bool :: Nil,
-    partialSimplifier {
-      case List(Fix(ConstantF(Data.True)), other) => other
-      case List(other, Fix(ConstantF(Data.True))) => other
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
+        orig match {
+          case InvokeF(_, List(l, r)) => l.project match {
+            case ConstantF(Data.True) => r.project.some
+            case _                    => r.project match {
+              case ConstantF(Data.True) => l.project.some
+              case _                    => None
+            }
+          }
+          case _ => None
+        }
     },
     partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 && v2))
@@ -134,9 +143,18 @@ trait RelationsLib extends Library {
 
   val Or = Mapping("(OR)", "Performs a logical OR of two boolean values",
     Type.Bool, Type.Bool :: Type.Bool :: Nil,
-    partialSimplifier {
-      case List(Fix(ConstantF(Data.False)), other) => other
-      case List(other, Fix(ConstantF(Data.False))) => other
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
+        orig match {
+          case InvokeF(_, List(l, r)) => l.project match {
+            case ConstantF(Data.False) => r.project.some
+            case _                    => r.project match {
+              case ConstantF(Data.False) => l.project.some
+              case _                     => None
+            }
+          }
+          case _ => None
+        }
     },
     partialTyper {
       case Type.Const(Data.Bool(v1)) :: Type.Const(Data.Bool(v2)) :: Nil => Type.Const(Data.Bool(v1 || v2))
@@ -159,9 +177,16 @@ trait RelationsLib extends Library {
 
   val Cond = Mapping("(IF_THEN_ELSE)", "Chooses between one of two cases based on the value of a boolean expression",
     Type.Bottom, Type.Bool :: Type.Top :: Type.Top :: Nil,
-    partialSimplifier {
-      case List(Fix(ConstantF(Data.True)),  c, _) => c
-      case List(Fix(ConstantF(Data.False)), _, a) => a
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
+        orig match {
+          case InvokeF(_, List(t, c, a)) => t.project match {
+            case ConstantF(Data.True)  => c.project.some
+            case ConstantF(Data.False) => a.project.some
+            case _                     => None
+          }
+          case _ => None
+        }
     },
     partialTyper {
       case Type.Const(Data.Bool(true)) :: ifTrue :: ifFalse :: Nil => ifTrue
@@ -174,9 +199,18 @@ trait RelationsLib extends Library {
     "coalesce",
     "Returns the first of its arguments that isn't null.",
     Type.Bottom, Type.Top :: Type.Top :: Nil,
-    partialSimplifier {
-      case List(Fix(ConstantF(Data.Null)), second) => second
-      case List(first, Fix(ConstantF(Data.Null))) => first
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
+        orig match {
+          case InvokeF(_, List(first, second)) => first.project match {
+            case ConstantF(Data.Null) => second.project.some
+            case _                    => second.project match {
+              case ConstantF(Data.Null) => first.project.some
+              case _                    => None
+            }
+          }
+          case _ => None
+        }
     },
     partialTyper {
       case Type.Null             :: v2 :: Nil => v2

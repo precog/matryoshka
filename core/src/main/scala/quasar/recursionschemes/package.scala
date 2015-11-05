@@ -28,6 +28,12 @@ import simulacrum.typeclass
 
 /** Generalized folds, unfolds, and refolds. */
 package object recursionschemes {
+  implicit def RecCorecTraverseT[T[_[_]]: Recursive: Corecursive]: TraverseT[T] =
+    new TraverseT[T] {
+      def traverse[M[_]: Applicative, F[_], G[_]](t: T[F])(f: F[T[F]] => M[G[T[G]]]) =
+        f(t.project).map(Corecursive[T].embed)
+    }
+
   final case class Fix[F[_]](unFix: F[Fix[F]]) {
     override def toString = unFix.toString
   }
@@ -42,12 +48,24 @@ package object recursionschemes {
     new Recursive[Cofree[?[_], A]] {
       def project[F[_]](t: Cofree[F, A]) = t.tail
     }
+  implicit def CofreeTraverseT[A]: TraverseT[Cofree[?[_], A]] =
+    new TraverseT[Cofree[?[_], A]] {
+      def traverse[M[_]: Applicative, F[_], G[_]](t: Cofree[F, A])(f: F[Cofree[F, A]] => M[G[Cofree[G, A]]]) =
+        f(t.tail).map(Cofree(t.head, _))
+    }
 
   // NB: Not currently possible because this requires `Functor[F]` and that
   //     cascades to break other things (for the time being).
   // implicit def FreeCorecursive[A]: Corecursive[Free [?[_], A]] =
   //   new Corecursive[Free [?[_], A]] {
   //     def embed[F[_]: Functor](t: F[Free[F, A]]) = Free.liftF(t).join
+  //   }
+  // implicit def FreeTraverseT[A]: TraverseT[Free[?[_], A]] =
+  //   new TraverseT[Free[?[_], A]] {
+  //     def traverse[M[_]: Applicative, F[_], G[_]](t: Free[F, A])(f: F[Free[F, A]] => M[G[Free[G, A]]]) =
+  //       t.fold(
+  //         _.point[Free[F, ?]].point[M],
+  //         f(_).map(Free.liftF(_).join))
   //   }
 
   def cofCataM[S[_]: Traverse, M[_]: Monad, A, B](t: Cofree[S, A])(f: (A, S[B]) => M[B]): M[B] =
@@ -167,46 +185,46 @@ package object recursionschemes {
   sealed trait Hole
   val Hole = new Hole{}
 
-  def holes[F[_], A](fa: F[A])(implicit F: Traverse[F]): F[(A, A => F[A])] = {
-    (F.mapAccumL(fa, 0) {
+  def holes[F[_]: Traverse, A](fa: F[A]): F[(A, A => F[A])] =
+    (fa.mapAccumL(0) {
       case (i, x) =>
         val h: A => F[A] = { y =>
           val g: (Int, A) => (Int, A) = (j, z) => (j + 1, if (i == j) y else z)
 
-          F.mapAccumL(fa, 0)(g)._2
+          fa.mapAccumL(0)(g)._2
         }
 
         (i + 1, (x, h))
     })._2
-  }
 
-  def holesList[F[_]: Traverse, A](fa: F[A]): List[(A, A => F[A])] = Traverse[F].toList(holes(fa))
+  def holesList[F[_]: Traverse, A](fa: F[A]): List[(A, A => F[A])] =
+    holes(fa).toList
 
   def builder[F[_]: Traverse, A, B](fa: F[A], children: List[B]): F[B] = {
-    (Traverse[F].mapAccumL(fa, children) {
+    (fa.mapAccumL(children) {
       case (x :: xs, _) => (xs, x)
       case _ => scala.sys.error("Not enough children")
     })._2
   }
 
-  def project[F[_], A](index: Int, fa: F[A])(implicit F: Foldable[F]): Option[A] =
+  def project[F[_]: Foldable, A](index: Int, fa: F[A]): Option[A] =
    if (index < 0) None
-   else F.foldMap(fa)(_ :: Nil).drop(index).headOption
+   else fa.toList.drop(index).headOption
 
-  def sizeF[F[_]: Foldable, A](fa: F[A]): Int = Foldable[F].foldLeft(fa, 0)((a, _) => a + 1)
+  def sizeF[F[_]: Foldable, A](fa: F[A]): Int = fa.foldLeft(0)((a, _) => a + 1)
 
-  def attrUnit[F[_]: Functor](term: Fix[F]): Cofree[F, Unit] = attrK(term, ())
+  def attrUnit[T[_[_]]: Recursive, F[_]: Functor](term: T[F]): Cofree[F, Unit] =
+    attrK(term, ())
 
-  def cataAttribute[F[_]: Functor, A](term: Fix[F])(f: F[A] => A): Cofree[F, A] =
+  def cataAttribute[T[_[_]]: Recursive, F[_]: Functor, A](term: T[F])(f: F[A] => A): Cofree[F, A] =
     term.cata[Cofree[F, A]](fa => Cofree(f(fa.map(_.head)), fa))
 
-  def attrK[F[_]: Functor, A](term: Fix[F], k: A): Cofree[F, A] = {
-    Cofree(k, Functor[F].map(term.unFix)(attrK(_, k)(Functor[F])))
-  }
+  def attrK[T[_[_]]: Recursive, F[_]: Functor, A](term: T[F], k: A):
+      Cofree[F, A] =
+    Cofree(k, term.project.map(attrK(_, k)))
 
-  def attrSelf[F[_]: Functor](term: Fix[F]): Cofree[F, Fix[F]] = {
-    Cofree(term, Functor[F].map(term.unFix)(attrSelf(_)(Functor[F])))
-  }
+  def attrSelf[T[_[_]]: Recursive, F[_]: Functor](term: T[F]): Cofree[F, T[F]] =
+    Cofree(term, term.project.map(attrSelf(_)))
 
   implicit def CofreeRenderTree[F[_]: Foldable, A: RenderTree](implicit RF: RenderTree[F[_]]) = new RenderTree[Cofree[F, A]] {
     def render(attr: Cofree[F, A]) = {
@@ -223,14 +241,18 @@ package object recursionschemes {
   // These lifts are largely useful when you want to zip a cata (or ana) with
   // some more complicated algebra.
 
-  def liftPara[F[_]: Functor, A](f: F[A] => A): F[(Fix[F], A)] => A =
+  def liftPara[T[_[_]], F[_]: Functor, A](f: F[A] => A): F[(T[F], A)] => A =
     node => f(node.map(_._2))
 
   def liftHisto[F[_]: Functor, A](f: F[A] => A): F[Cofree[F, A]] => A =
     node => f(node.map(_.head))
 
-  def liftApo[F[_]: Functor, A](f: A => F[A]): A => F[Fix[F] \/ A] =
-    f(_).map(\/-(_))
+  final class LiftApoPAT[T[_[_]]] {
+    def apply[F[_]: Functor, A](f: A => F[A]): A => F[T[F] \/ A] =
+      f(_).map(\/-(_))
+  }
+
+  def liftApo[T[_[_]]] = new LiftApoPAT[T]
 
   def liftFutu[F[_]: Functor, A](f: A => F[A]): A => F[Free[F, A]] =
     f(_).map(Free.pure(_))
@@ -238,97 +260,67 @@ package object recursionschemes {
   // roughly DownStar(f) *** DownStar(g)
   def zipCata[F[_]: Unzip, A, B](f: F[A] => A, g: F[B] => B):
       F[(A, B)] => (A, B) =
-    node => node.unfzip.bimap(f, g)
+    _.unfzip.bimap(f, g)
 
-  def zipPara[F[_]: Functor, A, B](f: F[(Fix[F], A)] => A, g: F[(Fix[F], B)] => B):
-      F[(Fix[F], (A, B))] => (A, B) =
-    node => (f(node.map(({ (x: (A, B)) => x._1 }).second)), g(node.map(({ (x: (A, B)) => x._2 }).second)))
+  final class ZipParaPAT[T[_[_]], F[_]] {
+    def apply[A, B](f: F[(T[F], A)] => A, g: F[(T[F], B)] => B)(implicit ev: Functor[F]):
+        F[(T[F], (A, B))] => (A, B) =
+      node => (f(node.map(({ (x: (A, B)) => x._1 }).second)), g(node.map(({ (x: (A, B)) => x._2 }).second)))
+  }
+
+  def zipPara[T[_[_]], F[_]] = new ZipParaPAT[T, F]
 
   /** Repeatedly applies the function to the result as long as it returns Some.
     * Finally returns the last non-None value (which may be the initial input).
     */
-  def repeatedly[T[_[_]]: Recursive: Corecursive, F[_]: Functor](
-    f: F[T[F]] => Option[T[F]]):
-      F[T[F]] => T[F] =
-    expr => f(expr).fold(Corecursive[T].embed(expr))(repeatedly(f) <<< (_.project))
+  def repeatedly[T[_[_]], F[_]](f: F[T[F]] => Option[F[T[F]]]):
+      F[T[F]] => F[T[F]] =
+    expr => f(expr).fold(expr)(repeatedly(f))
 
   /** Converts a failable fold into a non-failable, by simply returning the
     * argument upon failure.
     */
-  def simply[T[_[_]]: Corecursive, F[_]](f: F[T[F]] => Option[T[F]]):
-      F[T[F]] => T[F] =
-    expr => f(expr).getOrElse(Corecursive[T].embed(expr))
+  def simply[T[_[_]], F[_]](f: F[T[F]] => Option[F[T[F]]]):
+      F[T[F]] => F[T[F]] =
+    expr => f(expr).getOrElse(expr)
 
   def count[T[_[_]]: Recursive, F[_]: Functor: Foldable](form: T[F]): F[(T[F], Int)] => Int =
     e => e.foldRight(if (e.map(_._1) == form.project) 1 else 0)(_._2 + _)
 
   // Inherited: inherit, inherit2, inherit3, inheritM, inheritM_
-  def inherit[F[_], A, B](tree: Cofree[F, A], b: B)(f: (B, Cofree[F, A]) => B)(implicit F: Functor[F]): Cofree[F, B] = {
+  def inherit[F[_]: Functor, A, B](tree: Cofree[F, A], b: B)(f: (B, Cofree[F, A]) => B): Cofree[F, B] = {
     val b2 = f(b, tree)
-    Cofree[F, B](b2, F.map(tree.tail)(inherit(_, b2)(f)(F)))
+    Cofree[F, B](b2, tree.tail.map(inherit(_, b2)(f)))
   }
 
   // TODO: Top down folds
 
-  def transform[F[_], A](attrfa: Cofree[F, A])(f: A => Option[Cofree[F, A]])(implicit F: Functor[F]): Cofree[F, A] = {
+  def transform[F[_]: Functor, A](attrfa: Cofree[F, A])(f: A => Option[Cofree[F, A]]): Cofree[F, A] = {
     val a = attrfa.head
-    f(a).map(transform(_)(f)(F))
-      .getOrElse(Cofree(a, F.map(attrfa.tail)(transform(_)(f)(F))))
+    f(a).map(transform(_)(f))
+      .getOrElse(Cofree(a, attrfa.tail.map(transform(_)(f))))
   }
 
-  def swapTransform[F[_], A, B](attrfa: Cofree[F, A])(f: A => B \/ Cofree[F, B])(implicit F: Functor[F]): Cofree[F, B] = {
-    lazy val fattrfb = F.map(attrfa.tail)(swapTransform(_)(f)(F))
-
-    f(attrfa.head).fold(Cofree(_, fattrfb), ι)
-  }
-
-  def topDownTransform[F[_]: Functor, A](t: Cofree[F, A])(f: Cofree[F, A] => Cofree[F, A]): Cofree[F, A] = {
-    def loop(t: Cofree[F, A]): Cofree[F, A] = {
-      val x = f(t)
-      Cofree(x.head, x.tail.map(loop _))
-    }
-    loop(t)
-  }
-
-  def sequenceUp[F[_], G[_], A](attr: Cofree[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Cofree[F, A]] = {
-    val ga : G[A] = attr.head
-    val fgattr : F[G[Cofree[F, A]]] = F.map(attr.tail)(t => sequenceUp(t)(F, G))
-
-    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(ι)
-
-    G.apply2(gfattr, ga)((node, attr) => Cofree(attr, node))
-  }
-
-  def sequenceDown[F[_], G[_], A](attr: Cofree[F, G[A]])(implicit F: Traverse[F], G: Applicative[G]): G[Cofree[F, A]] = {
-    val ga : G[A] = attr.head
-    val fgattr : F[G[Cofree[F, A]]] = F.map(attr.tail)(t => sequenceDown(t)(F, G))
-
-    val gfattr : G[F[Cofree[F, A]]] = F.traverseImpl(fgattr)(ι)
-
-    G.apply2(ga, gfattr)(Cofree(_, _))
-  }
+  def swapTransform[F[_]: Functor, A, B](attrfa: Cofree[F, A])(f: A => B \/ Cofree[F, B]): Cofree[F, B] =
+    f(attrfa.head).fold(Cofree(_, attrfa.tail.map(swapTransform(_)(f))), ι)
 
   /**
    * Zips two attributed nodes together. This is unsafe in the sense that the
    * user is responsible for ensuring both left and right parameters have the
    * same shape (i.e. represent the same tree).
    */
-  def unsafeZip2[F[_]: Traverse, A, B](left: Cofree[F, A], right: Cofree[F, B]): Cofree[F, (A, B)] = {
-    val lattr: A = left.head
+  def unsafeZip2[F[_]: Traverse, A, B](left: Cofree[F, A], right: Cofree[F, B]):
+      Cofree[F, (A, B)] = {
     val lunAnn: F[Cofree[F, A]] = left.tail
+    val lunAnnL: List[Cofree[F, A]] = lunAnn.toList
 
-    val lunAnnL: List[Cofree[F, A]] = Foldable[F].toList(lunAnn)
-
-    val rattr: B = right.head
-    val runAnn: F[Cofree[F, B]] = right.tail
-
-    val runAnnL: List[Cofree[F, B]] = Foldable[F].toList(runAnn)
+    val runAnnL: List[Cofree[F, B]] = right.tail.toList
 
     val abs: List[Cofree[F, (A, B)]] = lunAnnL.zip(runAnnL).map { case ((a, b)) => unsafeZip2(a, b) }
 
     val fabs : F[Cofree[F, (A, B)]] = builder(lunAnn, abs)
 
-    Cofree((lattr, rattr), fabs)
+    Cofree((left.head, right.head), fabs)
   }
 
   @typeclass trait Binder[F[_]] {

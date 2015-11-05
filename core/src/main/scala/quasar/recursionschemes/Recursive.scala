@@ -98,59 +98,6 @@ import simulacrum.typeclass
   def universe[F[_]: Foldable](t: T[F]): List[T[F]] =
     t :: children(t).flatMap(universe[F])
 
-  def transform[F[_]: Traverse](
-    t: T[F])(
-    f: T[F] => T[F])(
-    implicit T: Corecursive[T]):
-      T[F] =
-    transformM[F, Free.Trampoline](
-      t)(
-      (v: T[F]) => f(v).pure[Free.Trampoline]).run
-
-  def transformM[F[_]: Traverse, M[_]: Monad](
-    t: T[F])(
-    f: T[F] => M[T[F]])(
-    implicit T: Corecursive[T]):
-      M[T[F]] = {
-    def loop(term: T[F]): M[T[F]] = for {
-      y <- project(term).traverse(loop _)
-      z <- f(T.embed(y))
-    } yield z
-
-    loop(t)
-  }
-
-  def topDownTransform[F[_]: Traverse](
-    t: T[F])(
-    f: T[F] => T[F])(
-    implicit T: Corecursive[T]):
-      T[F] =
-    topDownTransformM[F, Free.Trampoline](
-      t)(
-      (term: T[F]) => f(term).pure[Free.Trampoline]).run
-
-  def topDownTransformM[F[_]: Traverse, M[_]: Monad](
-    t: T[F])(
-    f: T[F] => M[T[F]])(
-    implicit T: Corecursive[T]):
-      M[T[F]] = {
-    def loop(term: T[F]): M[T[F]] = for {
-      x <- f(term)
-      y <- project(x).traverse(loop _)
-    } yield T.embed(y)
-
-    loop(t)
-  }
-
-  def topDownCata[F[_]: Traverse, A](
-    t: T[F], a: A)(
-    f: (A, T[F]) => (A, T[F]))(
-    implicit T: Corecursive[T]):
-      T[F] =
-    topDownCataM[F, Free.Trampoline, A](
-      t, a)(
-      (a: A, term: T[F]) => f(a, term).pure[Free.Trampoline]).run
-
   def topDownCataM[F[_]: Traverse, M[_]: Monad, A](
     t: T[F], a: A)(
     f: (A, T[F]) => M[(A, T[F])])(
@@ -164,13 +111,6 @@ import simulacrum.typeclass
 
     loop(a, t)
   }
-
-  def trans[F[_], G[_]: Functor](
-    t: T[F])(
-    f: F ~> G)(
-    implicit T: Corecursive[T]):
-      T[G] =
-    T.embed(f(project(t)).map(trans(_)(f)))
 
   // Foldable
   def all[F[_]: Foldable](t: T[F])(p: T[F] ⇒ Boolean): Boolean =
@@ -190,18 +130,18 @@ import simulacrum.typeclass
   def foldMap[F[_]: Foldable, Z: Monoid](t: T[F])(f: T[F] => Z): Z =
     foldMapM[F, Free.Trampoline, Z](t)(f(_).pure[Free.Trampoline]).run
 
-  def foldMapM[F[_]: Foldable, M[_]: Monad, Z](t: T[F])(f: T[F] => M[Z])(implicit Z: Monoid[Z]):
+  def foldMapM[F[_]: Foldable, M[_]: Monad, Z: Monoid](t: T[F])(f: T[F] => M[Z]):
       M[Z] = {
     def loop(z0: Z, term: T[F]): M[Z] = {
       for {
         z1 <- f(term)
-        z2 <- project(term).foldLeftM(z0 |+| z1)(loop(_, _))
+        z2 <- project(term).foldLeftM(z0 ⊹ z1)(loop(_, _))
       } yield z2
     }
 
-    loop(Z.zero, t)
+    loop(Monoid[Z].zero, t)
   }
 
-  def forget[F[_]: Functor](t: T[F]): Fix[F] =
-    Fix(project(t).map(forget[F]))
+  def forget[R[_[_]]: Corecursive, F[_]: Functor](t: T[F]): R[F] =
+    Corecursive[R].embed(project(t).map(forget[R, F]))
 }

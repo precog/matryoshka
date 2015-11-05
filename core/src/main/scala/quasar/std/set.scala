@@ -18,11 +18,10 @@ package quasar.std
 
 import quasar.Predef._
 import quasar.fp._
-import quasar.recursionschemes._
+import quasar.recursionschemes._, Recursive.ops._
 import quasar._, LogicalPlan._
 
-import scalaz._, NonEmptyList.nel, Validation.{success, failure}
-import scalaz.syntax.applicative._
+import scalaz._, Scalaz._, NonEmptyList.nel, Validation.{success, failure}
 
 trait SetLib extends Library {
   // NB: MRA should make this go away, as we insert dimensiality adjustements
@@ -53,8 +52,14 @@ trait SetLib extends Library {
 
   val Drop = Sifting("(OFFSET)", "Drops the first N elements from a set",
     Type.Top, Type.Top :: Type.Int :: Nil,
-    partialSimplifier {
-      case List(set, Fix(ConstantF(Data.Int(n)))) if n == 0 => set
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) = orig match {
+        case InvokeF(_, List(set, count)) => count.project match {
+          case ConstantF(Data.Int(n)) if n == 0 => set.project.some
+          case _ => None
+        }
+        case _ => None
+      }
     },
     setTyper(partialTyper {
       case Type.Set(t) :: _ :: Nil => t
@@ -70,8 +75,15 @@ trait SetLib extends Library {
 
   val Filter = Sifting("WHERE", "Filters a set to include only elements where a projection is true",
     Type.Top, Type.Top :: Type.Bool :: Nil,
-    partialSimplifier {
-      case List(set, Fix(ConstantF(Data.True))) => set
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
+        orig match {
+          case InvokeF(_, List(set, cond)) => cond.project match {
+            case ConstantF(Data.True) => set.project.some
+            case _ => None
+          }
+          case _ => None
+        }
     },
     setTyper(partialTyper {
       case _   :: Type.Const(Data.False) :: Nil => Type.Const(Data.Set(Nil))

@@ -17,7 +17,7 @@
 package quasar
 
 import quasar.Predef._
-import quasar.recursionschemes._, Recursive.ops._
+import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
 import quasar.fp._
 import quasar.analysis._, SemanticAnalysis._, SemanticError._
 import quasar.fs.Path
@@ -318,8 +318,7 @@ trait Compiler[F[_]] {
 
     node match {
       case s @ Select(isDistinct, projections, relations, filter, groupBy, orderBy) =>
-        /*
-         * 1. Joins, crosses, subselects (FROM)
+        /* 1. Joins, crosses, subselects (FROM)
          * 2. Filter (WHERE)
          * 3. Group by (GROUP BY)
          * 4. Filter (HAVING)
@@ -347,12 +346,9 @@ trait Compiler[F[_]] {
               case (_,          _)       => Nil
             })
 
-        relations match {
-          case None => for {
-            names <- names
-            projs <- projs.traverseU(compile0)
-          } yield buildRecord(names, projs)
-          case Some(relations) => {
+        relations.fold(
+          (names ⊛ projs.traverseU(compile0))(buildRecord))(
+          relations => {
             val stepBuilder = step(relations)
             stepBuilder(compileRelation(relations).some) {
               val filtered = filter.map(filter =>
@@ -419,8 +415,7 @@ trait Compiler[F[_]] {
                 }
               }
             }
-          }
-        }
+          })
 
       case SetLiteral(values0) =>
         val values = values0.traverseU {

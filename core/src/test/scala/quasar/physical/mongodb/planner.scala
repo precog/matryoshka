@@ -3,7 +3,7 @@ package quasar.physical.mongodb
 import quasar.Predef._
 import quasar.RenderTree, RenderTree.ops._
 import quasar.fp._
-import quasar.recursionschemes._, Recursive.ops._
+import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
 import quasar._
 import quasar.fs.Path
 import quasar.javascript._
@@ -58,7 +58,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   def plan(logical: Fix[LogicalPlan]): Either[PlannerError, Crystallized] =
     (for {
-      simplified <- emit(Vector.empty, \/-(logical.cata(repeatedly(Optimizer.simplifyƒ))))
+      simplified <- emit(Vector.empty, \/-(logical.transCata(repeatedly(Optimizer.simplifyƒ))))
       phys       <- MongoDbPlanner.plan(simplified)
     } yield phys).run._2.toEither
 
