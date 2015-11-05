@@ -3,7 +3,7 @@ package quasar.recursionschemes
 import quasar.Predef._
 import quasar.{RenderTree, Terminal, NonTerminal}
 import quasar.fp._
-import quasar.recursionschemes.Recursive.ops._
+import Recursive.ops._, FunctorT.ops._
 
 import org.scalacheck._
 import org.specs2.ScalaCheck
@@ -150,25 +150,25 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     case Let(_, _, i)     => i
   }
 
-  val addOneOptƒ: Exp[Fix[Exp]] => Option[Fix[Exp]] = {
-    case Num(n) => num(n+1).some
+  val addOneOptƒ: Exp[Fix[Exp]] => Option[Exp[Fix[Exp]]] = {
+    case Num(n) => Num(n+1).some
     case _      => None
   }
 
-  val addOneƒ: Exp[Fix[Exp]] => Fix[Exp] = simply(addOneOptƒ)
+  val addOneƒ: Exp[Fix[Exp]] => Exp[Fix[Exp]] = simply(addOneOptƒ)
 
-  val simplifyƒ: Exp[Fix[Exp]] => Option[Fix[Exp]] = {
-    case Mul(Fix(Num(0)), Fix(Num(_))) => num(0).some
-    case Mul(Fix(Num(1)), Fix(Num(n))) => num(n).some
-    case Mul(Fix(Num(_)), Fix(Num(0))) => num(0).some
-    case Mul(Fix(Num(n)), Fix(Num(1))) => num(n).some
+  val simplifyƒ: Exp[Fix[Exp]] => Option[Exp[Fix[Exp]]] = {
+    case Mul(Fix(Num(0)), Fix(Num(_))) => Num(0).some
+    case Mul(Fix(Num(1)), Fix(Num(n))) => Num(n).some
+    case Mul(Fix(Num(_)), Fix(Num(0))) => Num(0).some
+    case Mul(Fix(Num(n)), Fix(Num(1))) => Num(n).some
     case _                             => None
   }
 
-  val addOneOrSimplifyƒ: Exp[Fix[Exp]] => Fix[Exp] = {
+  val addOneOrSimplifyƒ: Exp[Fix[Exp]] => Exp[Fix[Exp]] = {
     case t @ Num(_)    => addOneƒ(t)
     case t @ Mul(_, _) => repeatedly(simplifyƒ).apply(t)
-    case t             => Fix(t)
+    case t             => t
   }
 
   "Fix" should {
@@ -202,33 +202,33 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    "transform" should {
+    "transCata" should {
       "change simple literal" in {
-        num(1).transform(addOneƒ <<< (_.unFix)) must_== num(2)
+        num(1).transCata(addOneƒ) must_== num(2)
       }
 
       "change sub-expressions" in {
-        mul(num(1), num(2)).transform(addOneƒ <<< (_.unFix)) must_== mul(num(2), num(3))
+        mul(num(1), num(2)).transCata(addOneƒ) must_== mul(num(2), num(3))
       }
 
       "be bottom-up" in {
-        mul(num(0), num(1)).transform(addOneOrSimplifyƒ <<< (_.unFix)) must_== num(2)
-        mul(num(1), num(2)).transform(addOneOrSimplifyƒ <<< (_.unFix)) must_== mul(num(2), num(3))
+        mul(num(0), num(1)).transCata(addOneOrSimplifyƒ) must_== num(2)
+        mul(num(1), num(2)).transCata(addOneOrSimplifyƒ) must_== mul(num(2), num(3))
       }
     }
 
-    "topDownTransform" should {
+    "transAna" should {
       "change simple literal" in {
-        num(1).topDownTransform(addOneƒ <<< (_.unFix)) must_== num(2)
+        num(1).transAna(addOneƒ) must_== num(2)
       }
 
       "change sub-expressions" in {
-        mul(num(1), num(2)).topDownTransform(addOneƒ <<< (_.unFix)) must_== mul(num(2), num(3))
+        mul(num(1), num(2)).transAna(addOneƒ) must_== mul(num(2), num(3))
       }
 
       "be top-down" in {
-        mul(num(0), num(1)).topDownTransform(addOneOrSimplifyƒ <<< (_.unFix)) must_== num(0)
-        mul(num(1), num(2)).topDownTransform(addOneOrSimplifyƒ <<< (_.unFix)) must_== num(2)
+        mul(num(0), num(1)).transAna(addOneOrSimplifyƒ) must_== num(0)
+        mul(num(1), num(2)).transAna(addOneOrSimplifyƒ) must_== num(2)
       }
     }
 
@@ -291,7 +291,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "liftApo" should {
       "behave like ana" ! prop { (i: Int) =>
-        Corecursive[Fix].apo(i)(liftApo(extractFactors)) must_==
+        Corecursive[Fix].apo(i)(liftApo[Fix](extractFactors)) must_==
           Corecursive[Fix].ana(i)(extractFactors)
       }
     }
