@@ -244,6 +244,24 @@ package object recursionschemes {
       F[(Fix[F], (A, B))] => (A, B) =
     node => (f(node.map(({ (x: (A, B)) => x._1 }).second)), g(node.map(({ (x: (A, B)) => x._2 }).second)))
 
+  /** Repeatedly applies the function to the result as long as it returns Some.
+    * Finally returns the last non-None value (which may be the initial input).
+    */
+  def repeatedly[T[_[_]]: Recursive: Corecursive, F[_]: Functor](
+    f: F[T[F]] => Option[T[F]]):
+      F[T[F]] => T[F] =
+    expr => f(expr).fold(Corecursive[T].embed(expr))(repeatedly(f) <<< (_.project))
+
+  /** Converts a failable fold into a non-failable, by simply returning the
+    * argument upon failure.
+    */
+  def simply[T[_[_]]: Corecursive, F[_]](f: F[T[F]] => Option[T[F]]):
+      F[T[F]] => T[F] =
+    expr => f(expr).getOrElse(Corecursive[T].embed(expr))
+
+  def count[T[_[_]]: Recursive, F[_]: Functor: Foldable](form: T[F]): F[(T[F], Int)] => Int =
+    e => e.foldRight(if (e.map(_._1) == form.project) 1 else 0)(_._2 + _)
+
   // Inherited: inherit, inherit2, inherit3, inheritM, inheritM_
   def inherit[F[_], A, B](tree: Cofree[F, A], b: B)(f: (B, Cofree[F, A]) => B)(implicit F: Functor[F]): Cofree[F, B] = {
     val b2 = f(b, tree)
