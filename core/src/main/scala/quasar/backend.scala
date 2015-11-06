@@ -31,9 +31,6 @@ import scalaz.stream.{Writer => _, _}
 
 sealed trait Backend { self =>
   import Backend._
-  import Evaluator._
-  import Path._
-  import Planner._
 
   /**
    * Executes a query, producing a compilation log and the path where the result
