@@ -121,12 +121,20 @@ object inmemory {
     }
   }
 
-  val runStatefully: Task[InMemoryFs ~> Task] =
-    TaskRef(InMemState.empty) map { ref =>
-      new (InMemoryFs ~> Task) {
+  val fileSystem: FileSystem ~> InMemoryFs =
+    interpretFileSystem(readFile, writeFile, manageFile)
+
+  def runStatefully(initial: InMemState): Task[InMemoryFs ~> Task] =
+    runInspect(initial).map(_._1)
+
+  def runInspect(initial: InMemState): Task[(InMemoryFs ~> Task, Task[InMemState])] =
+    TaskRef(initial) map { ref =>
+      val trans = new (InMemoryFs ~> Task) {
         def apply[A](mfs: InMemoryFs[A]) =
           ref.modifyS(mfs.run)
       }
+
+      (trans, ref.read)
     }
 
   ////

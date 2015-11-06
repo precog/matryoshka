@@ -13,14 +13,14 @@ import scalaz.stream._
 
 class WriteFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
   import FileSystemTest._, FileSystemError._
-  import WriteFile._, ManageFile._
+  import WriteFile._
 
   val writesPrefix: AbsDir[Sandboxed] = rootDir </> dir("forwriting")
 
   def deleteForWriting(run: Run): FsTask[Unit] =
     runT(run)(manage.deleteDir(writesPrefix))
 
-  fileSystemShould { implicit run =>
+  fileSystemShould { _ => implicit run =>
     "Writing Files" should {
       step(deleteForWriting(run).runVoid)
 

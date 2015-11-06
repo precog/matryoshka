@@ -1,4 +1,5 @@
 import quasar.Predef.{Long, String, Vector}
+import quasar.fs.FileSystem
 import scalaz._
 
 package object quasar {
@@ -14,4 +15,6 @@ package object quasar {
 
   type SeqNameGeneratorT[F[_], A] = StateT[F, Long, A]
   type SaltedSeqNameGeneratorT[F[_], A] = ReaderT[SeqNameGeneratorT[F, ?], String, A]
+
+  type QueryableFileSystem[A] = Coproduct[ExecutePlan, FileSystem, A]
 }

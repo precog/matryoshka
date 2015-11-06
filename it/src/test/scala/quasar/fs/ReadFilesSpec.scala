@@ -39,7 +39,7 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
   def deleteForReading(run: Run): FsTask[Unit] =
     runT(run)(manage.deleteDir(readsPrefix))
 
-  fileSystemShould { implicit run =>
+  fileSystemShould { _ => implicit run =>
     "Reading Files" should {
       // Load read-only data
       step((deleteForReading(run).run.void *> loadForReading(run).run.void).run)

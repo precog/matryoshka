@@ -4,10 +4,10 @@ package fs
 import quasar.Predef._
 import quasar.fp._
 import quasar.config.{BackendConfig, MongoDbConfig}
-import quasar.physical.mongodb.{fs => mongofs}, mongofs.DefaultDb
+import quasar.physical.mongodb.fs._
 
 import com.mongodb.ConnectionString
-import com.mongodb.async.client.MongoClients
+import com.mongodb.async.client.{MongoClient, MongoClients}
 
 import monocle.Optional
 import monocle.function.Index
@@ -25,13 +25,21 @@ import scalaz.{EphemeralStream => EStream, Optional => _, _}, Scalaz._
 import scalaz.concurrent.Task
 import scalaz.stream._
 
-import FileSystemTest._
-
+/** Executes all the examples defined within the `fileSystemShould` block
+  * for each file system in `fileSystems`.
+  *
+  * TODO: Currently, examples for a single filesystem are executed concurrently,
+  *       but the suites themselves are executed sequentially due to the `step`s
+  *       inserted for setup/teardown. It'd be nice if the tests for all
+  *       filesystems would run concurrently.
+  */
 abstract class FileSystemTest[S[_]: Functor](
-  fss: Task[NonEmptyList[FileSystemUT[S]]])(
+  val fileSystems: Task[NonEmptyList[FileSystemUT[S]]])(
   implicit S0: ReadFileF :<: S, S1: WriteFileF :<: S, S2: ManageFileF :<: S)
 
   extends Specification {
+
+  args.report(showtimes = true)
 
   type F[A]      = Free[S, A]
   type FsTask[A] = FileSystemErrT[Task, A]
@@ -41,10 +49,9 @@ abstract class FileSystemTest[S[_]: Functor](
   val write  = WriteFile.Ops[S]
   val manage = ManageFile.Ops[S]
 
-  def fileSystemShould(examples: Run => Unit): Unit =
-    fss.map(_ foreach { case FileSystemUT(name, f, prefix) =>
-      s"$name FileSystem" should examples(hoistFree(f compose chroot.fileSystem[S](prefix)))
-      ()
+  def fileSystemShould(examples: String => Run => Unit): Unit =
+    fileSystems.map(_ foreach { case FileSystemUT(name, f, prefix) =>
+      s"$name FileSystem" should examples(name)(hoistFree(f)); ()
     }).run
 
   def runT(run: Run): FileSystemErrT[F, ?] ~> FsTask =
@@ -95,70 +102,37 @@ object FileSystemTest {
 
   //--- FileSystems to Test ---
 
-  /** FileSystem Under Test */
-  final case class FileSystemUT[S[_]](name: String, f: S ~> Task, testPrefix: AbsDir[Sandboxed])
-
   def allFsUT: Task[NonEmptyList[FileSystemUT[FileSystem]]] =
-    (inMemUT |@| externalFileSystems)(_ <:: _)
-
-  def externalFileSystems: Task[NonEmptyList[FileSystemUT[FileSystem]]] = {
-    def fileSystemNamed(n: String, p: AbsDir[Sandboxed])
-                       : OptionT[Task, FileSystemUT[FileSystem]] = {
-      TestConfig.loadConfig(n) flatMapF {
-        case MongoDbConfig(cs) => mongoDbUT(n, cs, p)
-        case other             => Task.fail(new RuntimeException(s"Unsupported filesystem config: $other"))
-      }
+    (inMemUT |@| externalFsUT) { (mem, ext) =>
+      (mem <:: ext) map (ut => ut.contramap(chroot.fileSystem(ut.testDir)))
     }
 
-    def noBackendsFound: Throwable = new RuntimeException(
-      "No external backends to test. Consider setting one of these environment variables: " +
-      TestConfig.backendNames.map(TestConfig.backendEnvName).mkString(", ")
-    )
-
-
-    TestConfig.testDataPrefix flatMap { prefix =>
-      TestConfig.backendNames
-        .traverse(n => fileSystemNamed(n, prefix).run)
-        .flatMap(_.flatten.toNel.cata(Task.now, Task.fail(noBackendsFound)))
-    }
+  def externalFsUT = TestConfig.externalFileSystems {
+    case (MongoDbConfig(cs), dir) =>
+      lazy val f = mongoDbUT(cs, dir).run
+      Task.delay(f)
   }
 
-  private val inMemUT = {
-    lazy val f = InMem.run
+  ////
+
+  private val inMemUT: Task[FileSystemUT[FileSystem]] = {
+    lazy val f = inmemory.runStatefully(inmemory.InMemState.empty)
+                   .map(_ compose inmemory.fileSystem)
+                   .run
+
     Task.delay(FileSystemUT("in-memory", f, rootDir))
   }
 
-  private def InMem: Task[FileSystem ~> Task] =
-    inmemory.runStatefully map { f =>
-      f compose interpretFileSystem(
-                  inmemory.readFile,
-                  inmemory.writeFile,
-                  inmemory.manageFile)
-    }
+  private def mongoDbUT(
+    cs: ConnectionString,
+    prefix: AbsDir[Sandboxed]
+  ): Task[FileSystem ~> Task] = {
+    def noDefaultDbError = Task.fail(new RuntimeException(
+      s"Unable to determine a default database for `${cs.toString}`"
+    ))
 
-  private def mongoDbUT(name: String, cs: ConnectionString, prefix: AbsDir[Sandboxed])
-                       : Task[FileSystemUT[FileSystem]] = {
-    val defaultDb = flatten(none, none, none, _.some, κ(none), prefix)
-                      .unite.headOption getOrElse "quasar-test"
-
-    lazy val f = mongoFs(cs, DefaultDb(defaultDb)).run
-
-    pathSalt map (s => FileSystemUT(name, f, prefix </> dir(s)))
+    DefaultDb.fromPath(prefix).cata(
+      ddb => mongoDbFileSystem(MongoClients.create(cs), ddb),
+      noDefaultDbError)
   }
-
-  private def mongoFs(cs: ConnectionString, defDb: DefaultDb): Task[FileSystem ~> Task] =
-    for {
-      client <- Task.delay(MongoClients create cs)
-      rfile  <- mongofs.readfile.run(client)
-      wfile  <- mongofs.writefile.run(client)
-      mfile  <- mongofs.managefile.run(client, defDb)
-    } yield {
-      interpretFileSystem(
-        rfile compose mongofs.readfile.interpret,
-        wfile compose mongofs.writefile.interpret,
-        mfile compose mongofs.managefile.interpret)
-    }
-
-  private def pathSalt: Task[String] =
-    Task.delay(scala.util.Random.nextInt().toHexString)
 }

@@ -1,11 +1,12 @@
 package quasar
-package fs
 
 import quasar.fp._
+import quasar.fs.{Path => QPath, _}
+import quasar.recursionschemes._
 
 import monocle.Optional
 
-import pathy.{Path => PPath}, PPath._
+import pathy._, Path._
 
 import scalaz._
 
@@ -107,6 +108,45 @@ object chroot {
     readFileIn[S](prefix) compose writeFileIn[S](prefix) compose manageFileIn[S](prefix)
   }
 
+  /** Rebases paths in [[ExecutePlan]] onto the given prefix. */
+  def executePlan(prefix: AbsDir[Sandboxed]): ExecutePlan ~> ExecutePlan = {
+    import LogicalPlan.ReadF
+    import ResultFile.resultFile
+    import Recursive.ops._
+
+    val base = QPath(posixCodec.printPath(prefix))
+
+    val rebasePlan: LogicalPlan ~> LogicalPlan =
+      new (LogicalPlan ~> LogicalPlan) {
+        def apply[A](lp: LogicalPlan[A]) = lp match {
+          case ReadF(p) => ReadF(base ++ p)
+          case _        => lp
+        }
+      }
+
+    new (ExecutePlan ~> ExecutePlan) {
+      def apply[A](ep: ExecutePlan[A]) =
+        ExecutePlan(ep.lp.trans(rebasePlan), rebase(ep.out, prefix), {
+          case (xs, r) =>
+            ep.f((xs, r.map(resultFile.modify(stripPrefix(prefix)))))
+        })
+    }
+  }
+
+  def executePlanIn[S[_]](prefix: AbsDir[Sandboxed])(implicit S: ExecutePlan :<: S): S ~> S =
+    interpret.injectedNT[ExecutePlan, S](executePlan(prefix))
+
+  /** Rebases all paths in `QueryableFileSystem` operations onto the given prefix. */
+  def queryableFileSystem[S[_]](prefix: AbsDir[Sandboxed])
+                               (implicit S0: ReadFileF :<: S,
+                                         S1: WriteFileF :<: S,
+                                         S2: ManageFileF :<: S,
+                                         S3: ExecutePlan :<: S)
+                               : S ~> S = {
+
+    executePlanIn[S](prefix) compose fileSystem[S](prefix)
+  }
+
   ////
 
   import ManageFile.Node._
@@ -115,7 +155,7 @@ object chroot {
     FileSystemError.pathError composeLens PathError2.errorPath
 
   // TODO: AbsDir relativeTo rootDir doesn't need to be partial, add the appropriate method to pathy
-  private def rebase[T](p: PPath[Abs,T,Sandboxed], onto: AbsDir[Sandboxed]): PPath[Abs,T,Sandboxed] =
+  private def rebase[T](p: Path[Abs,T,Sandboxed], onto: AbsDir[Sandboxed]): Path[Abs,T,Sandboxed] =
     p.relativeTo(rootDir[Sandboxed]).fold(p)(onto </> _)
 
   private def stripPathError(prefix: AbsDir[Sandboxed]): FileSystemError => FileSystemError =
@@ -129,9 +169,9 @@ object chroot {
       Mount compose stripRelPrefix(prefix),
       p => Plain(p.bimap(stripRelPrefix(prefix), stripRelPrefix(prefix))))
 
-  private def stripRelPrefix[T](prefix: AbsDir[Sandboxed]): PPath[Rel, T, Sandboxed] => PPath[Rel, T, Sandboxed] =
+  private def stripRelPrefix[T](prefix: AbsDir[Sandboxed]): Path[Rel, T, Sandboxed] => Path[Rel, T, Sandboxed] =
     p => prefix.relativeTo(rootDir).flatMap(p relativeTo _) getOrElse p
 
-  private def stripPrefix[T](prefix: AbsDir[Sandboxed]): PPath[Abs, T, Sandboxed] => PPath[Abs, T, Sandboxed] =
+  private def stripPrefix[T](prefix: AbsDir[Sandboxed]): Path[Abs, T, Sandboxed] => Path[Abs, T, Sandboxed] =
     p => p.relativeTo(prefix).fold(p)(rootDir </> _)
 }

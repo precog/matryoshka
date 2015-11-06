@@ -6,7 +6,7 @@ import quasar.fs.{Path => QPath, _}
 import quasar.recursionschemes._
 import Recursive.ops._
 
-import pathy.Path._
+import pathy._, Path._
 
 import scalaz._
 import scalaz.syntax.nel._
@@ -50,11 +50,9 @@ object ExecutePlan {
     import ResultFile._
 
     type F[A] = Free[S, A]
-    type G[A] = PhaseResultT[F, A]
-    type H[A] = SemanticErrsT[G, A]
 
-    type ExecM[A] = ExecErrT[G, A]
-    type CompExecM[A] = ExecErrT[H, A]
+    val transforms = Transforms[F]
+    import transforms._
 
     /** Returns the path to the result of executing the given [[LogicalPlan]],
       * using the provided path if possible.
@@ -76,7 +74,7 @@ object ExecutePlan {
       }.headOption flatMap pathToAbsFile cata (M.tempFileNear, M.anyTempFile)
 
       for {
-        out <- hoistF(outFile)
+        out <- toExec(outFile)
         rf0 <- execute(plan, out)
         rf1 =  rf0.fold(Temp, usr => if (usr == out) Temp(usr) else User(usr))
       } yield rf1
@@ -92,7 +90,7 @@ object ExecutePlan {
       type N[A] = FileSystemErrT[ExecM, A]
 
       val hoistFS: FileSystemErrT[F, ?] ~> N =
-        Hoist[FileSystemErrT].hoist(hoistF)
+        Hoist[FileSystemErrT].hoist(toExec)
 
       def values(f: AbsFile[Sandboxed]) =
         R.scanAll(f).translate[N](hoistFS)
@@ -143,18 +141,6 @@ object ExecutePlan {
 
     ////
 
-    private val execToCompExec: ExecM ~> CompExecM =
-      Hoist[ExecErrT].hoist[G, H](liftMT[G, SemanticErrsT])
-
-    private val compToCompExec: CompileM ~> CompExecM = {
-      val hoistW: PhaseResultW ~> G = Hoist[PhaseResultT].hoist(pointNT[F])
-      val hoistC: CompileM ~> H     = Hoist[SemanticErrsT].hoist(hoistW)
-      liftMT[H, ExecErrT] compose hoistC
-    }
-
-    private val hoistF: F ~> ExecM =
-      liftMT[G, ExecErrT] compose liftMT[F, PhaseResultT]
-
     private def compileAnd[A](query: sql.Expr, vars: Variables)
                              (f: Fix[LogicalPlan] => ExecM[A])
                              : CompExecM[A] = {
@@ -175,6 +161,34 @@ object ExecutePlan {
   object Ops {
     implicit def apply[S[_]](implicit S0: Functor[S], S1: ExecutePlan :<: S): Ops[S] =
       new Ops[S]
+  }
+
+  class Transforms[F[_]: Monad] {
+    type G[A] = PhaseResultT[F, A]
+    type H[A] = SemanticErrsT[G, A]
+
+    type ExecM[A]     = ExecErrT[G, A]
+    type CompExecM[A] = ExecErrT[H, A]
+
+    val execToCompExec: ExecM ~> CompExecM =
+      Hoist[ExecErrT].hoist[G, H](liftMT[G, SemanticErrsT])
+
+    val compToCompExec: CompileM ~> CompExecM = {
+      val hoistW: PhaseResultW ~> G = Hoist[PhaseResultT].hoist(pointNT[F])
+      val hoistC: CompileM ~> H     = Hoist[SemanticErrsT].hoist(hoistW)
+      liftMT[H, ExecErrT] compose hoistC
+    }
+
+    val toExec: F ~> ExecM =
+      liftMT[G, ExecErrT] compose liftMT[F, PhaseResultT]
+
+    val toCompExec: F ~> CompExecM =
+      execToCompExec compose toExec
+  }
+
+  object Transforms {
+    def apply[F[_]: Monad]: Transforms[F] =
+      new Transforms[F]
   }
 
   implicit def executePlanFunctor: Functor[ExecutePlan] =

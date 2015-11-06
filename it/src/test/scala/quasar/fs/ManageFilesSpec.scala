@@ -18,7 +18,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
   def deleteForManage(run: Run): FsTask[Unit] =
     runT(run)(manage.deleteDir(managePrefix))
 
-  fileSystemShould { implicit run =>
+  fileSystemShould { _ => implicit run =>
     "Managing Files" should {
       step(deleteForManage(run).runVoid)
 

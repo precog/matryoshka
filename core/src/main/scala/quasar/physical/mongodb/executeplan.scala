@@ -7,7 +7,10 @@ import quasar.fp._
 import quasar.javascript._
 import quasar.recursionschemes.Fix
 
+import com.mongodb.async.client.MongoClient
+
 import scalaz._, Scalaz._
+import scalaz.concurrent.Task
 
 object executeplan {
   import Planner.{PlannerError => PPlannerError}
@@ -15,6 +18,7 @@ object executeplan {
   import ExecutionError._
 
   type MongoExecute[A] = WorkflowExecErrT[MongoDb, A]
+  type TaskExecute[A]  = WorkflowExecErrT[Task, A]
 
   def interpret(
     execMongo: WorkflowExecutor[MongoDb],
@@ -37,6 +41,16 @@ object executeplan {
         resultFile.run.run map ep.f
       }
     }
+
+  def run(client: MongoClient): EnvErr2T[Task, ExecutePlan ~> TaskExecute] = {
+    val f = Hoist[EnvErr2T].hoist(MongoDb.runNT(client))
+
+    f(WorkflowExecutor.mongoDb map { mongoExec =>
+      val g = interpret(mongoExec, WorkflowExecutor.javaScript)
+      val h = Hoist[WorkflowExecErrT].hoist(MongoDb.runNT(client))
+      h compose g
+    })
+  }
 
   ////
 

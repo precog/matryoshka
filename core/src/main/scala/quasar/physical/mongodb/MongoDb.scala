@@ -265,6 +265,11 @@ object MongoDb {
   def fail[A](t: Throwable): MongoDb[A] =
     liftTask(Task.fail(t))
 
+  def runNT(client: MongoClient): MongoDb ~> Task =
+    new (MongoDb ~> Task) {
+      def apply[A](m: MongoDb[A]) = m.run(client)
+    }
+
   val liftTask: Task ~> MongoDb =
     new (Task ~> MongoDb) {
       def apply[A](t: Task[A]) = lift(_ => t)
