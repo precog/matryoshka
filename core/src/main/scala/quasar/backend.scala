@@ -143,9 +143,9 @@ sealed trait Backend { self =>
 
   final def scanFrom(path: Path, offset: Long) = scan(path, offset, None)
 
-  def count(path: Path): PathTask[Long] = count0(path.asRelative)
+  def count(path: Path): ProcessingTask[Long] = count0(path.asRelative)
 
-  def count0(path: Path): PathTask[Long]
+  def count0(path: Path): ProcessingTask[Long]
 
   /** Save a collection of documents at the given path, replacing any previous
     * contents, atomically. If any error occurs while consuming input values,
@@ -281,6 +281,98 @@ object ThreadPoolAdapterBackend {
       maxThreads, threadFactory(prefix))
 }
 
+/** Intercepts requests that refer to any view path (whether directly or in a
+  * query), and rewrites them in terms of the views' queries.
+  */
+final case class ViewBackend(backend: Backend, views0: Map[Path, ViewConfig]) extends Backend {
+  import Backend._
+
+  val views: Map[Path, sql.Expr] =
+    views0.map { case (p, ViewConfig(tp, q)) =>
+      p.asRelative -> sql.relativizePaths(q, p.parent.asRelative).valueOr(κ(q))
+    }
+
+  def tableName(path: Path) = "__sd__" + path.filename
+
+  def expand(query: sql.Expr): sql.Expr = sql.rewriteRelations(query) {
+    case sql.TableRelationAST(name, alias) =>
+      val p = Path(name)
+      views.get(p).fold[Option[sql.ExprRelationAST[sql.Expr]]](None) { query =>
+        Some(sql.ExprRelationAST(query, alias.getOrElse(tableName(p))))
+      }
+    case _ => None
+  }
+
+  def ls0(dir: Path) = {
+    val vs = (views.keys.map { p =>
+      p.rebase(dir).toOption.map { rp =>
+        if (rp.pureFile) FilesystemNode(rp, Backend.Mount)
+        else FilesystemNode(rp.head, Backend.Plain)
+      }
+    }).toList.foldMap(_.toList).toSet
+    def orEmpty(v: PathTask[Set[FilesystemNode]]): PathTask[Set[FilesystemNode]] =
+      EitherT(v.run.map {
+        case -\/(NonexistentPathError(_, _)) => \/-(Set.empty)
+        case v => v
+      })
+    orEmpty(backend.ls0(dir)).map(_ ++ vs)
+  }
+
+  def count0(path: Path) =
+    views.get(path).fold(backend.count(path)) { query =>
+      val countQuery = sql.Select(
+          sql.SelectAll,
+          List(sql.Proj(sql.InvokeFunction(quasar.std.StdLib.agg.Count.name, List(sql.Splice(None))), Some("0"))),
+          Some(sql.ExprRelationAST(expand(query), tableName(path))),
+          None, None, None)
+
+      backend.eval(QueryRequest(countQuery, None, Variables(Map.empty))).run._2.fold[ProcessingTask[Long]](
+        e => EitherT.left(Task.now(ProcessingError.ViewCompilationError(e))),
+        p => EitherT(p.runLog.run).flatMap {
+          case Vector(obj @ Data.Obj(fields)) =>
+            fields.toList match {
+              case ("0", Data.Int(count)) :: Nil => EitherT.right(Task.now(count.toLong))
+              case _ => EitherT.left(Task.now(ViewUnexpectedError(Some("unexpected result for count: " + obj.toString))))
+            }
+          case Vector() => EitherT.right(Task.now(0))  // See SD-1095
+          case ds => EitherT.left(Task.now(ViewUnexpectedError(Some("unexpected result for count: " + ds))))
+        })
+    }
+
+  def scan0(path: Path, offset: Long, limit: Option[Long]) =
+    views.get(path).fold(backend.scan0(path, offset, limit)) { query =>
+      val q1 = expand(query)
+      val q2 = if (offset == 0) q1 else sql.Offset(q1, sql.IntLiteral(offset))
+      val scanQuery = limit.fold(q2)(l => sql.Limit(q2, sql.IntLiteral(l)))
+
+      backend.eval(QueryRequest(scanQuery, None, Variables(Map.empty))).run._2.fold[Process[ResTask, Data]](
+        e => Process.eval[ResTask, Data](EitherT.left(Task.now(ResultCompilationError(e)))),
+        p => p.translate[Backend.ResTask](Errors.convertError(ResultProcessingError(_))))
+    }
+
+  def run0(req: QueryRequest) =
+    backend.run(req.copy(query = expand(req.query)))
+
+
+  // NB: the remainder are data-mutating, and don't apply to views:
+
+  def save0(path: Path, values: Process[Task, Data]) =
+    views.get(path).fold(backend.save0(path, values)) { _ =>
+      EitherT.left(Task.now(ProcessingError.ViewWriteError(path)))
+    }
+  def move0(src: Path, dst: Path, semantics: MoveSemantics) =
+    if (views contains src) EitherT.left(Task.now(PathTypeError(src, Some("cannot move view"))))
+    else if (views contains dst) EitherT.left(Task.now(PathTypeError(dst, Some("cannot move file to view location"))))
+    else backend.move0(src, dst, semantics)
+  def append0(path: Path, values: Process[Task, Data]) =
+    views.get(path).fold(backend.append0(path, values)) { _ =>
+      Process.eval[PathTask, WriteError](EitherT.left(Task.now(PathTypeError(path, Some("cannot write to view")))))
+    }
+  def delete0(path: Path) =
+    views.get(path).fold(backend.delete0(path)) { _ =>
+      EitherT.left(Task.now(PathTypeError(path, Some("cannot delete view"))))
+    }
+}
 
 object Backend {
   sealed trait ProcessingError {
@@ -301,6 +393,15 @@ object Backend {
     final case class PPathError(error: PathError)
         extends ProcessingError {
       def message = error.message
+    }
+    final case class ViewWriteError(path: Path) extends ProcessingError {
+      def message = "attempted to write to view: " + path.simplePathname
+    }
+    final case class ViewCompilationError(error: CompilationError) extends ProcessingError {
+      def message = "view compilation failed: " + error.message
+    }
+    final case class ViewUnexpectedError(hint: Option[String]) extends ProcessingError {
+      def message = "unexpected error in interpreting view" + hint.fold("")(": " + _)
     }
   }
 
@@ -337,6 +438,27 @@ object Backend {
       case _                       => None
     }
   }
+  object ViewWriteError {
+    def apply(path: Path): ProcessingError = ProcessingError.ViewWriteError(path)
+    def unapply(obj: ProcessingError): Option[Path] = obj match {
+      case ProcessingError.ViewWriteError(path) => Some(path)
+      case _                       => None
+    }
+  }
+  object ViewCompilationError {
+    def apply(error: CompilationError): ProcessingError = ProcessingError.ViewCompilationError(error)
+    def unapply(obj: ProcessingError): Option[CompilationError] = obj match {
+      case ProcessingError.ViewCompilationError(error) => Some(error)
+      case _                       => None
+    }
+  }
+  object ViewUnexpectedError {
+    def apply(hint: Option[String]): ProcessingError = ProcessingError.ViewUnexpectedError(hint)
+    def unapply(obj: ProcessingError): Option[Option[String]] = obj match {
+      case ProcessingError.ViewUnexpectedError(hint) => Some(hint)
+      case _                       => None
+    }
+  }
 
   sealed trait ResultError {
     def message: String
@@ -344,6 +466,14 @@ object Backend {
   type ResErrT[F[_], A] = EitherT[F, ResultError, A]
   type ResTask[A] = ETask[ResultError, A]
   final case class ResultPathError(error: PathError)
+      extends ResultError {
+    def message = error.message
+  }
+  final case class ResultCompilationError(error: CompilationError)
+      extends ResultError {
+    def message = error.message
+  }
+  final case class ResultProcessingError(error: ProcessingError)
       extends ResultError {
     def message = error.message
   }
@@ -382,8 +512,9 @@ object Backend {
     scala.Ordering[Path].on(_.path)
 
   def test(config: MountConfig): ETask[EnvironmentError, Unit] = config match {
-    // TODO: actually execute the view's query (see SD-978)
-    case ViewConfig(_, _) => liftE(Task.now(()))
+    // NB: for now, this prevents users from creating views through the API,
+    // but allows tests to run. See SD-1101.
+    case ViewConfig(_, _) => EitherT.left(Task.now(InvalidConfig("view creation not supported")))
 
     case _ =>
       for {
@@ -440,7 +571,7 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
       case Nil =>
         // TODO: Restore this error message when SD-773 is fixed.
         // val err = InternalPathError("no single backend can handle all paths for request: " + req)
-        val err = InvalidPathError("the request either contained a nonexistent path or could not be handled by a single backend: " + req.query)
+        val err = InvalidPathError("the request either contained a nonexistent path or could not be handled by a single backend: " + sql.pprint(req.query))
         Planner.emit(Vector.empty, -\/(CompilePathError(err)))
       case _   =>
         val err = InternalPathError("multiple backends can handle all paths for request: " + req)
@@ -452,7 +583,7 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
       Process[ETask[ResultError, ?], Data] =
     delegateP(path)(_.scan0(_, offset, limit), ResultPathError)
 
-  def count0(path: Path): PathTask[Long] = delegate(path)(_.count0(_), ι)
+  def count0(path: Path): ProcessingTask[Long] = delegate(path)(_.count0(_), PPathError(_))
 
   def save0(path: Path, values: Process[Task, Data]):
       ProcessingTask[Unit] =

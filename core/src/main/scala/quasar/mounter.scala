@@ -30,24 +30,24 @@ object Mounter {
 
   def mount(config: Config, backendDef: BackendDefinition): EnvTask[Backend] = {
     def rec0(backend: Backend, path: List[DirNode], conf: MountConfig): EnvTask[Backend] =
-      backend match {
-        case NestedBackend(base) => path match {
-          case Nil =>
-            conf match {
-              case ViewConfig(_, _) => EitherT.right(Task.now(backend))  // TODO: just ignoring views for the moment (see SD-978)
-              case _ =>
+      conf match {
+        case ViewConfig(_, _) => EitherT.right(Task.now(backend))
+        case _ =>
+          backend match {
+            case NestedBackend(base) => path match {
+              case Nil =>
                 backendDef(conf).leftMap {
                   case MissingBackend(_) => MissingFileSystem(Path(path, None), conf)
                   case otherwise         => otherwise
                 }
+
+              case dir :: dirs =>
+                rec0(base.get(dir).getOrElse(NestedBackend(Map())), dirs, conf)
+                  .map(rez => NestedBackend(base + (dir -> rez)))
             }
 
-          case dir :: dirs =>
-            rec0(base.get(dir).getOrElse(NestedBackend(Map())), dirs, conf)
-              .map(rez => NestedBackend(base + (dir -> rez)))
-        }
-
-        case _ => EitherT.left(Task.now(InvalidConfig("attempting to mount a backend within an existing backend.")))
+            case _ => EitherT.left(Task.now(InvalidConfig("attempting to mount a backend within an existing backend.")))
+          }
       }
 
     def rec(backend: Backend, mount: (Path, MountConfig)): EnvTask[Backend] = mount match {

@@ -57,8 +57,10 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
           }).translate[ETask[ResultError, ?]](liftE[ResultError])
       })
 
-  def count0(path: Path): PathTask[Long] =
-    swapT(Collection.fromPath(path).map(server.get(_).map(_.count)))
+  def count0(path: Path): ProcessingTask[Long] = {
+    val p = swapT(Collection.fromPath(path).map(server.get(_).map(_.count)))
+    convertError(PPathError.apply)(p)
+  }
 
   def save0(path: Path, values: Process[Task, Data]): ProcessingTask[Unit] =
     Collection.fromPath(path).fold(

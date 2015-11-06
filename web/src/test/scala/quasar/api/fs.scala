@@ -130,7 +130,7 @@ object Mock {
         limited.translate(liftP).translate[Backend.ResTask](Errors.convertError(Backend.ResultPathError(_)))
       }
     def count0(path: Path) =
-      EitherT[Task, PathError, Long](files.get(path).fold[Task[PathError \/ Long]](Task.now(-\/(NonexistentPathError(path, Some("no backend"))))) { p =>
+      EitherT[Task, ProcessingError, Long](files.get(path).fold[Task[ProcessingError \/ Long]](Task.now(-\/(PPathError(NonexistentPathError(path, Some("no backend")))))) { p =>
           p.map(κ(1)).sum.runLast.map(n => \/-(n.get))
         })
 

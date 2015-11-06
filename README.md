@@ -94,12 +94,14 @@ The JSON configuration file must have the following format:
 
 One or more mountings may be included, and each must have a unique path (above, `/`), which determines where in the filesystem the database(s) contained by the mounting will appear.
 
-The `connectionUri` is a standard [MongoDB connection string](http://docs.mongodb.org/manual/reference/connection-string/). Only the primary host is required to be present, however in most cases a database name should be specified as well. Additional hosts and options may be included as specified in the linked documentation.
+#### Database mounts
+
+If the mount's key is "mongodb", then the `connectionUri` is a standard [MongoDB connection string](http://docs.mongodb.org/manual/reference/connection-string/). Only the primary host is required to be present, however in most cases a database name should be specified as well. Additional hosts and options may be included as specified in the linked documentation.
 
 For example, say a MongoDB instance is running on the default port on the same machine as Quasar, and contains databases `test` and `students`, the `students` database contains a collection `cs101`, and the configuration looks like this:
 ```json
   "mountings": {
-    "/local": {
+    "/local/": {
       "mongodb": {
         "connectionUri": "mongodb://localhost/test"
       }
@@ -107,6 +109,8 @@ For example, say a MongoDB instance is running on the default port on the same m
   }
 ```
 Then the filesystem will contain the paths `/local/test/` and `/local/students/cs101`, among others.
+
+A database can be mounted at any directory path, but database mount paths must not be nested inside each other.
 
 
 ## REPL Usage
@@ -345,7 +349,6 @@ If an error occurs when reading data from the request body, the response contain
 
 Removes all data at the specified path. Single files are deleted atomically.
 
-
 ### MOVE /data/fs/[path]
 
 Moves data from one path to another within the same backend. The new path must
@@ -363,11 +366,11 @@ The outer key is the backend in use, and the value is a backend-specific configu
 
 ### POST /mount/fs/[path]
 
-Adds a new mount point using the JSON contained in the body. The path is the containing directory, and an `X-File-Name` header should contain the name of the mount. This will return a 409 Conflict if the mount point already exists or if a mount already exists above or below the new one.
+Adds a new mount point using the JSON contained in the body. The path is the containing directory, and an `X-File-Name` header should contain the name of the mount. This will return a 409 Conflict if the mount point already exists or if a database mount already exists above or below a new database mount.
 
 ### PUT /mount/fs/[path]
 
-Creates a new mount point or replaces an existing mount point using the JSON contained in the body. This will return a 409 Conflict if a mount already exists above or below the new one.
+Creates a new mount point or replaces an existing mount point using the JSON contained in the body. This will return a 409 Conflict if a database mount already exists above or below a new database mount.
 
 ### DELETE /mount/fs/[path]
 
@@ -384,7 +387,7 @@ Removes any configured port, reverting to the default (20223) and restarting, as
 
 ## Request Headers
 
-Request headers my be supplied via a query parameter in case the client is unable to send arbitrary headers (e.g. browsers, in certain circumstances). The parameter name is `request-headers` and the value should be a JSON-formatted string containing an object whose field are named for the corresponding header and whose values are strings or arrays of strings. If any header appears both in the `request-headers` query parameter and also as an ordinary header, the query parameter takes precedence.
+Request headers may be supplied via a query parameter in case the client is unable to send arbitrary headers (e.g. browsers, in certain circumstances). The parameter name is `request-headers` and the value should be a JSON-formatted string containing an object whose fields are named for the corresponding header and whose values are strings or arrays of strings. If any header appears both in the `request-headers` query parameter and also as an ordinary header, the query parameter takes precedence.
 
 For example:
 ```
