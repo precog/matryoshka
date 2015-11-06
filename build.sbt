@@ -53,6 +53,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "-Yno-imports",
     "-Ywarn-unused-import"
   ),
+  wartremoverErrors in (Compile, compile) ++= warts,
   console <<= console in Test, // console alias test:console
   initialCommands in (Test, console) := """ammonite.repl.Repl.run("prompt.update(\"λ \")")""",
   libraryDependencies ++= Seq(
@@ -77,6 +78,36 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "org.typelevel"     %% "shapeless-scalacheck"      % slcVersion     % "test",
     "net.databinder.dispatch" %% "dispatch-core"       % "0.11.1"       % "test"),
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")))
+
+// Using a Seq of desired warts instead of Warts.allBut due to an incremental compilation issue.
+// https://github.com/puffnfresh/wartremover/issues/202
+// omissions:
+//   Wart.Any
+//   Wart.AsInstanceOf
+//   Wart.ExplicitImplicitTypes - see mpilquist/simulacrum#35
+//   Wart.IsInstanceOf
+//   Wart.NoNeedForMonad        - see puffnfresh/wartremover#159
+//   Wart.Nothing
+//   Wart.Product               _ these two are highly correlated
+//   Wart.Serializable          /
+//   Wart.Throw
+//   Wart.ToString
+val warts = Seq(
+  Wart.Any2StringAdd,
+  Wart.DefaultArguments,
+  Wart.EitherProjectionPartial,
+  Wart.Enumeration,
+  Wart.FinalCaseClass,
+  Wart.JavaConversions,
+  Wart.ListOps,
+  Wart.MutableDataStructures,
+  Wart.NonUnitStatements,
+  Wart.Null,
+  Wart.Option2Iterable,
+  Wart.OptionPartial,
+  Wart.Return,
+  Wart.TryPartial,
+  Wart.Var)
 
 import github.GithubPlugin._
 
