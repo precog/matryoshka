@@ -43,14 +43,14 @@ import scodec.bits.ByteVector
  * The REST API to the Quasar Engine
  * @param initialConfig The config with which the server will be started initially
  * @param createBackend create a backend from the give config
- * @param validateConfig Is called to validate a `BackendConfig` when the client changes a mount
+ * @param validateConfig Is called to validate a `MountConfig` when the client changes a mount
  * @param restartServer Expected to restart server when called using the provided Configuration. Called only when the port changes.
  * @param configChanged Expected to persist a Config when called. Called whenever the Config changes.
  */
 final case class FileSystemApi(
   initialConfig: Config,
   createBackend: Config => EnvTask[Backend],
-  validateConfig: BackendConfig => EnvTask[Unit],
+  validateConfig: MountConfig => EnvTask[Unit],
   restartServer: Config => Task[Unit],
   configChanged: Config => Task[Unit]) {
 
@@ -62,7 +62,7 @@ final case class FileSystemApi(
   val LineSep = "\r\n"
 
   /** Sets the configured mounts to the given mountings. */
-  private def setMounts(mounts: Map[Path, BackendConfig], sref: TaskRef[S]): EnvTask[Unit] =
+  private def setMounts(mounts: Map[Path, MountConfig], sref: TaskRef[S]): EnvTask[Unit] =
     for {
       s           <- sref.read.liftM[EnvErrT]
       (cfg, bknd) =  s
@@ -76,7 +76,7 @@ final case class FileSystemApi(
    * Mounts the backend represented by the given config at the given path,
    * returning true if the path already existed.
    */
-  private def upsertMount(path: Path, backendCfg: BackendConfig, sref: TaskRef[S]): EnvTask[Boolean] =
+  private def upsertMount(path: Path, backendCfg: MountConfig, sref: TaskRef[S]): EnvTask[Boolean] =
     sref.read.liftM[EnvErrT].flatMap { case (cfg, _) =>
       setMounts(cfg.mountings.updated(path, backendCfg), sref)
         .as(cfg.mountings.keySet contains path)
@@ -300,9 +300,9 @@ final case class FileSystemApi(
   def mountService(ref: TaskRef[S]) = {
     def addPath(path: Path, req: Request): EnvTask[Boolean] = for {
       body  <- EntityDecoder.decodeString(req).liftM[EnvErrT]
-      bConf <- liftE(Parse.decodeWith[String \/ BackendConfig, BackendConfig](body,_.right[String],
-                 parseErrorMsg => s"input error: $parseErrorMsg".left[BackendConfig],
-                 {case (msg, _) => msg.left[BackendConfig]}).leftMap(msg => InvalidConfig(msg)))
+      bConf <- liftE(Parse.decodeWith[String \/ MountConfig, MountConfig](body,_.right[String],
+                 parseErrorMsg => s"input error: $parseErrorMsg".left[MountConfig],
+                 {case (msg, _) => msg.left[MountConfig]}).leftMap(msg => InvalidConfig(msg)))
       _     <- liftE(bConf.validate(path))
       _     <- validateConfig(bConf)
       isUpd <- upsertMount(path, bConf, ref)
@@ -329,7 +329,7 @@ final case class FileSystemApi(
       case GET -> AsPath(path) =>
         ref.read.flatMap { case (cfg, _) =>
           cfg.mountings.find { case (k, _) => k == path }.cata(
-            v => Ok(BackendConfig.BackendConfig.encode(v._2)),
+            v => Ok(MountConfig.Codec.encode(v._2)),
             NotFound("There is no mount point at " + path))
         }
 

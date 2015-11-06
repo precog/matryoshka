@@ -37,7 +37,7 @@ object TestConfig {
 
   def backendEnvName(backend: String): String = "QUASAR_" + backend.toUpperCase
 
-  /** Read the value of an envrionment variable. */
+  /** Read the value of an environment variable. */
   def readEnv(name: String): OptionT[Task, String] =
     Task.delay(System.getenv).liftM[OptionT]
       .flatMap(env => OptionT(Task.delay(Option(env.get(name)))))
@@ -46,9 +46,9 @@ object TestConfig {
     *
     * Fails if it cannot parse the config and returns None if there is no config.
     */
-  def loadConfig(name: String): OptionT[Task, BackendConfig] =
+  def loadConfig(name: String): OptionT[Task, MountConfig] =
     readEnv(backendEnvName(name)).flatMapF(value =>
-      Parse.decodeEither[BackendConfig](value).fold(
+      Parse.decodeEither[MountConfig](value).fold(
         e => fail("Failed to parse $" + backendEnvName(name) + ": " + e),
         _.point[Task]))
 

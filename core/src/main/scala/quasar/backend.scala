@@ -381,12 +381,17 @@ object Backend {
   implicit val FilesystemNodeOrder: scala.Ordering[FilesystemNode] =
     scala.Ordering[Path].on(_.path)
 
-  def test(config: BackendConfig): ETask[EnvironmentError, Unit] =
-    for {
-      backend <- BackendDefinitions.All(config)
-      _       <- trap(backend.ls.leftMap(EnvPathError(_)), err => InsufficientPermissions(err.toString))
-      _       <- testWrite(backend)
-    } yield ()
+  def test(config: MountConfig): ETask[EnvironmentError, Unit] = config match {
+    // TODO: actually execute the view's query (see SD-978)
+    case ViewConfig(_, _) => liftE(Task.now(()))
+
+    case _ =>
+      for {
+        backend <- BackendDefinitions.All(config)
+        _       <- trap(backend.ls.leftMap(EnvPathError(_)), err => InsufficientPermissions(err.toString))
+        _       <- testWrite(backend)
+      } yield ()
+  }
 
   private def testWrite(backend: Backend): ETask[EnvironmentError, Unit] =
     for {
@@ -506,14 +511,14 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
         b => Process.eval[ETask[E, ?], Path](EitherT(Task.now(path.rebase(nodePath(node)).leftMap(ef)))).flatMap[ETask[E, ?], A](f(b, _))))
 }
 
-final case class BackendDefinition(run: BackendConfig => EnvTask[Backend]) {
-  def apply(config: BackendConfig): EnvTask[Backend] = run(config)
+final case class BackendDefinition(run: MountConfig => EnvTask[Backend]) {
+  def apply(config: MountConfig): EnvTask[Backend] = run(config)
 }
 
 object BackendDefinition {
   import EnvironmentError._
 
-  def fromPF(pf: PartialFunction[BackendConfig, EnvTask[Backend]]): BackendDefinition =
+  def fromPF(pf: PartialFunction[MountConfig, EnvTask[Backend]]): BackendDefinition =
     BackendDefinition(cfg => pf.lift(cfg).getOrElse(mzero[BackendDefinition].run(cfg)))
 
   implicit val BackendDefinitionMonoid: Monoid[BackendDefinition] =

@@ -25,7 +25,7 @@ import Utils._
 
 object Utils {
 
-  def tester(cfg: BackendConfig) = Errors.liftE[quasar.Evaluator.EnvironmentError](Task.now(()))
+  def tester(cfg: MountConfig) = Errors.liftE[quasar.Evaluator.EnvironmentError](Task.now(()))
 
   /**
    * Start a server, with the given backend, execute something, and then tear
@@ -254,7 +254,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       DirNode("large") -> large,
       DirNode("badPath1") -> Mock.emptyBackend,
       DirNode("badPath2") -> Mock.emptyBackend))
-  // We don't put the port here as the `withServer` function will supply the port based on it's optional input.
+  // We don't put the port here as the `withServer` function will supply the port based on its optional input.
   val config1 = Config(SDServerConfig(None), ListMap(
     Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
     Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting"))))
@@ -1365,9 +1365,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== "moved /foo/ to /foo2/"
 
-          configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/foo2/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
-            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
+          val mounts = configs()(0).mountings
+          mounts.get(Path("/foo/")) must beNone
+          mounts.get(Path("/foo2/")) must beSome(
+            MongoDbConfig(new ConnectionString("mongodb://localhost/foo")))
 
           val fooNotExists = Http(fooMetadata)
           val foo2Exists = Http(foo2Metadata)
@@ -1449,13 +1450,37 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== "added /local/"
 
-          configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
-            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")),
-            Path("/local/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/test")))))
+          configs()(0).mountings.get(Path("/local/")) must beSome(
+            MongoDbConfig(new ConnectionString("mongodb://localhost/test")))
 
           val metadataExists = Http(localMetadata)
           metadataExists().getStatusCode must_== 200
+        }
+      }
+
+      "succeed with valid View config" in {
+        val query = "select * from zips where pop < 1000"
+        val expr = new sql.SQLParser().parse(sql.Query(query)).toOption.get
+
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
+          val req = mount(client).POST
+                    .setHeader("X-File-Name", "local/view1")
+                    .setBody("""{ "view": { "uri": "sql2:///?q=""" + query.replace(" ", "+") + """" } }""")
+
+          val viewMetadata = metadata(client) / "local" / "view1"
+
+          val metadataNotExists = Http(viewMetadata)
+          metadataNotExists().getStatusCode must_== 404
+
+          val result = Http(req OK as.String)
+          result() must_== "added /local/view1"
+
+          configs()(0).mountings.get(Path("/local/view1")) must beSome(
+            ViewConfig(None, expr))
+
+          // TODO: metadata not available for views yet (see SD-978)
+          // val metadataExists = Http(viewMetadata)
+          // metadataExists().getStatusCode must_== 200
         }
       }
 
@@ -1528,6 +1553,20 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
+      "be 400 with invalid View path (trailing slash)" in {
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
+          val req = mount(client).POST
+                    .setHeader("X-File-Name", "local/view1/")
+                    .setBody("""{ "view": { "uri": "sql2:///?q=select+*+from+zips" } }""")
+          val meta = Http(req)
+
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("Not a file path: /local/view1/")
+          configs() must_== Nil
+        }
+      }
+
       "be 400 with invalid JSON" in {
         withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = mount(client).POST
@@ -1555,6 +1594,20 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           configs() must_== Nil
         }
       }
+
+      "be 400 with invalid View URI" in {
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
+          val req = mount(client).POST
+                    .setHeader("X-File-Name", "local/")
+                    .setBody("""{ "view": { "uri": "foo://bar" } }""")
+          val meta = Http(req)
+
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("could not parse URI: foo://bar")
+          configs() must_== Nil
+        }
+      }
     }
 
     "PUT" should {
@@ -1572,13 +1625,33 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== "added /local/"
 
-          configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
-            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")),
-            Path("/local/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/test")))))
+          configs()(0).mountings.get(Path("/local/")) must beSome(
+            MongoDbConfig(new ConnectionString("mongodb://localhost/test")))
 
           val metadataExists = Http(localMetadata)
           metadataExists().getStatusCode must_== 200
+        }
+      }
+
+      "succeed with valid View config" in {
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
+          val req = (mount(client) / "local" / "view1").PUT
+                    .setBody("""{ "view": { "uri": "sql2:///?q=select+*+from+zips" } }""")
+
+          val localMetadata = metadata(client) / "local" / "view1"
+
+          val metadataNotExists = Http(localMetadata)
+          metadataNotExists().getStatusCode must_== 404
+
+          val result = Http(req OK as.String)
+
+          result() must_== "added /local/view1"
+
+          configs()(0).mountings.get(Path("/local/view1")) must beSome
+
+          // TODO: metadata not available for views yet (see SD-978)
+          // val metadataExists = Http(localMetadata)
+          // metadataExists().getStatusCode must_== 200
         }
       }
 
@@ -1590,9 +1663,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== "updated /foo/"
 
-          configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo2")),
-            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
+          configs()(0).mountings.get(Path("/foo/")) must beSome(
+            MongoDbConfig(new ConnectionString("mongodb://localhost/foo2")))
         }
       }
 
@@ -1652,6 +1724,19 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
+      "be 400 with invalid View path (trailing slash)" in {
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
+          val req = (mount(client) / "local" / "view1" / "").PUT
+                    .setBody("""{ "view": { "uri": "sql2:///?q=select+*+from+zips" } }""")
+          val meta = Http(req)
+
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("Not a file path: /local/view1/")
+          configs() must_== Nil
+        }
+      }
+
       "be 400 with invalid JSON" in {
         withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "local" / "").PUT
@@ -1677,6 +1762,19 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           configs() must_== Nil
         }
       }
+
+      "be 400 with invalid View URI" in {
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
+          val req = (mount(client) / "local" / "view1").PUT
+                    .setBody("""{ "view": { "uri": "foo://bar" } }""")
+          val meta = Http(req)
+
+          val resp = meta()
+          resp.getStatusCode must_== 400
+          errorFromBody(resp) must_== \/-("could not parse URI: foo://bar")
+          configs() must_== Nil
+        }
+      }
     }
 
     "DELETE" should {
@@ -1692,8 +1790,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val result = Http(req OK as.String)
           result() must_== "deleted /foo/"
 
-          configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
-            Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
+          configs()(0).mountings.get(Path("/foo/")) must beNone
 
           val fooMetadataNotExists = Http(fooMetadata)
           fooMetadataNotExists().getStatusCode must_== 404
