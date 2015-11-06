@@ -95,7 +95,7 @@ object CsvDetect {
       result.rows.map(n => (result.header - n) max 0).sum*1.0
 
   def rank[P <: CsvParser](parsers: List[P])(text: String): List[(Double, P)] = {
-    parsers.map(p => testParse(p, text).map(score(_) -> p)).flatten.sorted(Ordering.by[(Double, P), Double](_._1))
+    parsers.map(p => testParse(p, text).map(score(_) -> p)).foldMap(_.toList).sorted(Ordering.by[(Double, P), Double](_._1))
   }
 
   def bestParse(parsers: List[CsvParser])(text: String): String \/ Stream[String \/ Record] =

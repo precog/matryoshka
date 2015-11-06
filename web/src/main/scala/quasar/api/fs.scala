@@ -194,9 +194,17 @@ final case class FileSystemApi(
     def decode(value: QueryParameterValue): ValidationNel[ParseFailure, Query] =
       Query(value.value).successNel[ParseFailure]
   }
+
+  // https://github.com/puffnfresh/wartremover/issues/149
+  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
   object Q extends QueryParamDecoderMatcher[Query]("q")
 
+  // https://github.com/puffnfresh/wartremover/issues/149
+  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
   object Offset extends OptionalQueryParamDecoderMatcher[Long]("offset")
+
+  // https://github.com/puffnfresh/wartremover/issues/149
+  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
   object Limit extends OptionalQueryParamDecoderMatcher[Long]("limit")
 
   def queryService(backend: Task[Backend]) =
@@ -445,7 +453,7 @@ final case class FileSystemApi(
                 err => WriteError(Data.Str("parse error: " + err), None),
                 rec => {
                   val pairs = (paths zip rec.fields.map(Prettify.parse))
-                  val good = pairs.map { case (p, s) => (p |@| s).tupled }.flatten
+                  val good = pairs.map { case (p, s) => (p |@| s).tupled }.foldMap(_.toList)
                   Prettify.unflatten(good.toListMap)
                 }
               )).toList

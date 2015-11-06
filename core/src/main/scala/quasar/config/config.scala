@@ -148,18 +148,19 @@ object Config {
                   case e => e
                 }))
     } yield config
+
   }
 
   def fromFileOrEmpty(path: Option[FsPath[File, Sandboxed]]): EnvTask[Config] = {
-    def loadOr(path: FsPath[File, Sandboxed], alt: EnvTask[Config]): EnvTask[Config] = 
-      handleWith(fromFile(path)) { 
+    def loadOr(path: FsPath[File, Sandboxed], alt: EnvTask[Config]): EnvTask[Config] =
+      handleWith(fromFile(path)) {
         case _: java.nio.file.NoSuchFileException => alt
       }
-    
+
     val empty = liftE[EnvironmentError](Task.now(Config.empty))
-    
+
     path match {
-      case Some(path) => 
+      case Some(path) =>
         loadOr(path, empty)
       case None =>
         liftE(defaultPath).flatMap { p =>
