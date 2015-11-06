@@ -96,7 +96,7 @@ object managefile {
                      : M[Unit] = {
     for {
       colls    <- collectionsInDir(src)
-      srcFiles =  colls flatMap (_.asFile)
+      srcFiles =  colls map (_.asFile)
       dstFiles =  srcFiles flatMap (_ relativeTo (src) map (dst </> _))
       _        <- srcFiles zip dstFiles traverseU {
                     case (s, d) => moveFile(s, d, sem)
@@ -195,7 +195,7 @@ object managefile {
     } yield cs
 
   private def collectionToNode(dir: AbsDir[Sandboxed]): Collection => Option[Node] =
-    _.asFile flatMap (_ relativeTo dir) flatMap Node.fromFirstSegmentOf
+    _.asFile relativeTo dir flatMap Node.fromFirstSegmentOf
 
   private def collFromDirM(dir: AbsDir[Sandboxed]): M[Collection] =
     EitherT(Collection.fromDir(dir).leftMap(PathError).point[MongoDb])

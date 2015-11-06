@@ -307,7 +307,7 @@ class CollectionSpec extends Specification with ScalaCheck with DisjunctionMatch
       (r.isRight) ==> {
         r.fold(
           err  => scala.sys.error(err.toString),
-          coll => coll.asFile.map(identicalPath(f, _)) must beSome(true))
+          coll => identicalPath(f, coll.asFile) must beTrue)
       }
     }
   }
@@ -316,53 +316,53 @@ class CollectionSpec extends Specification with ScalaCheck with DisjunctionMatch
     import pathy.Path._
 
     "handle simple name" in {
-      Collection("db", "foo").asFile must
-        beSome(rootDir </> dir("db") </> file("foo"))
+      Collection("db", "foo").asFile must_==
+        rootDir </> dir("db") </> file("foo")
     }
 
     "handle simple path" in {
-      Collection("db", "foo.bar").asFile must
-        beSome(rootDir </> dir("db") </> dir("foo") </> file("bar"))
+      Collection("db", "foo.bar").asFile must_==
+        rootDir </> dir("db") </> dir("foo") </> file("bar")
     }
 
     "preserve space" in {
-      Collection("db", "foo.bar baz").asFile must
-        beSome(rootDir </> dir("db") </> dir("foo") </> file("bar baz"))
+      Collection("db", "foo.bar baz").asFile must_==
+        rootDir </> dir("db") </> dir("foo") </> file("bar baz")
     }
 
     "unescape leading '.'" in {
-      Collection("db", "\\.hidden").asFile must
-        beSome(rootDir </> dir("db") </> file(".hidden"))
+      Collection("db", "\\.hidden").asFile must_==
+        rootDir </> dir("db") </> file(".hidden")
     }
 
     "unescape '$'" in {
-      Collection("db", "foo\\d").asFile must
-        beSome(rootDir </> dir("db") </> file("foo$"))
+      Collection("db", "foo\\d").asFile must_==
+        rootDir </> dir("db") </> file("foo$")
     }
 
     "unescape '\\'" in {
-      Collection("db", "foo\\\\bar").asFile must
-        beSome(rootDir </> dir("db") </> file("foo\\bar"))
+      Collection("db", "foo\\\\bar").asFile must_==
+        rootDir </> dir("db") </> file("foo\\bar")
     }
 
     "unescape '.' with path separators" in {
-      Collection("db", "foo.bar\\.baz").asFile must
-        beSome(rootDir </> dir("db") </> dir("foo") </> file("bar.baz"))
+      Collection("db", "foo.bar\\.baz").asFile must_==
+        rootDir </> dir("db") </> dir("foo") </> file("bar.baz")
     }
 
     "ignore slash" in {
-      Collection("db", "foo/bar").asFile must
-        beSome(rootDir </> dir("db") </> file("foo/bar"))
+      Collection("db", "foo/bar").asFile must_==
+        rootDir </> dir("db") </> file("foo/bar")
     }
 
     "ignore unrecognized escape in database name" in {
-      Collection("$foo", "bar").asFile must
-        beSome(rootDir </> dir("$foo") </> file("bar"))
+      Collection("$foo", "bar").asFile must_==
+        rootDir </> dir("$foo") </> file("bar")
     }
 
     "not explode on empty collection name" in {
-      Collection("foo", "").asFile must
-        beSome(rootDir </> dir("foo") </> file(""))
+      Collection("foo", "").asFile must_==
+        rootDir </> dir("foo") </> file("")
     }
   }
 }

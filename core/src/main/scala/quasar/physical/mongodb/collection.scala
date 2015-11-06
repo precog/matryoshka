@@ -36,18 +36,13 @@ final case class Collection(databaseName: String, collectionName: String) {
     Path(DirNode.Current :: segs.list.dropRight(1).map(DirNode(_)), Some(FileNode(segs.last)))
   }
 
-  /** Attempt to convert this collection to a file.
-    *
-    * TODO: If we used a smart constructor that validated inputs for this class
-    *       (rather than it being separate), this function wouldn't need to
-    *       return an [[Option]].
-    */
-  def asFile: Option[AbsFile[Sandboxed]] = {
+  /** Convert this collection to a file. */
+  def asFile: AbsFile[Sandboxed] = {
     val db   = DatabaseNameUnparser(databaseName)
     val segs = CollectionNameUnparser(collectionName).reverse
+    val f    = segs.headOption getOrElse db
 
-    segs.headOption map (f =>
-      rootDir </> segs.drop(1).foldRight(pDir(db))((d, p) => p </> pDir(d)) </> pFile(f))
+    (segs ::: List(db)).drop(1).foldRight(rootDir)((d, p) => p </> pDir(d)) </> pFile(f)
   }
 }
 
