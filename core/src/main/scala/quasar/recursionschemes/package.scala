@@ -273,16 +273,13 @@ package object recursionschemes {
   /** Repeatedly applies the function to the result as long as it returns Some.
     * Finally returns the last non-None value (which may be the initial input).
     */
-  def repeatedly[T[_[_]], F[_]](f: F[T[F]] => Option[F[T[F]]]):
-      F[T[F]] => F[T[F]] =
+  def repeatedly[A](f: A => Option[A]): A => A =
     expr => f(expr).fold(expr)(repeatedly(f))
 
   /** Converts a failable fold into a non-failable, by simply returning the
     * argument upon failure.
     */
-  def simply[T[_[_]], F[_]](f: F[T[F]] => Option[F[T[F]]]):
-      F[T[F]] => F[T[F]] =
-    expr => f(expr).getOrElse(expr)
+  def once[A](f: A => Option[A]): A => A = expr => f(expr).getOrElse(expr)
 
   def count[T[_[_]]: Recursive, F[_]: Functor: Foldable](form: T[F]): F[(T[F], Int)] => Int =
     e => e.foldRight(if (e.map(_._1) == form.project) 1 else 0)(_._2 + _)
