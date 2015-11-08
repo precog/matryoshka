@@ -155,7 +155,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     case _      => None
   }
 
-  val addOneƒ: Exp[Fix[Exp]] => Exp[Fix[Exp]] = simply(addOneOptƒ)
+  val addOneƒ: Exp[Fix[Exp]] => Exp[Fix[Exp]] = once(addOneOptƒ)
 
   val simplifyƒ: Exp[Fix[Exp]] => Option[Exp[Fix[Exp]]] = {
     case Mul(Fix(Num(0)), Fix(Num(_))) => Num(0).some
