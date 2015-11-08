@@ -18,7 +18,7 @@ package quasar.std
 
 import quasar.Predef._
 import quasar.fp._
-import quasar.recursionschemes._, Recursive.ops._
+import quasar.recursionschemes._
 import quasar._, LogicalPlan._
 
 import scalaz._, Scalaz._, NonEmptyList.nel, Validation.{success, failure}
@@ -54,10 +54,8 @@ trait SetLib extends Library {
     Type.Top, Type.Top :: Type.Int :: Nil,
     new Func.Simplifier {
       def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) = orig match {
-        case InvokeF(_, List(set, count)) => count.project match {
-          case ConstantF(Data.Int(n)) if n == 0 => set.project.some
-          case _ => None
-        }
+        case IsInvoke(_, List(set, ConstantF(Data.Int(n)))) if n == 0 =>
+          set.some
         case _ => None
       }
     },
@@ -78,11 +76,8 @@ trait SetLib extends Library {
     new Func.Simplifier {
       def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
         orig match {
-          case InvokeF(_, List(set, cond)) => cond.project match {
-            case ConstantF(Data.True) => set.project.some
-            case _ => None
-          }
-          case _ => None
+          case IsInvoke(_, List(set, ConstantF(Data.True))) => set.some
+          case _                                            => None
         }
     },
     setTyper(partialTyper {

@@ -39,14 +39,9 @@ trait StringLib extends Library {
     new Func.Simplifier {
       def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
         orig match {
-          case InvokeF(f, List(first, second)) => first.project match {
-            case ConstantF(Data.Str("")) => second.project.some
-            case _ => second.project match {
-              case ConstantF(Data.Str("")) => first.project.some
-              case _ => None
-            }
-          }
-          case _ => None
+          case IsInvoke(_, List(ConstantF(Data.Str("")), second)) => second.some
+          case IsInvoke(_, List(first, ConstantF(Data.Str(""))))  => first.some
+          case _                                                  => None
         }
     },
     stringApply(_ + _),

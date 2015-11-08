@@ -527,7 +527,7 @@ object Compiler {
       def groupedKeys(t: LogicalPlan[Fix[LogicalPlan]], newSrc: Fix[LogicalPlan]): Option[List[Fix[LogicalPlan]]] = {
         t match {
           case InvokeF(set.GroupBy, List(src, structural.MakeArrayN(keys))) =>
-            Some(keys.map(_.transform(t => if (t ≟ src) newSrc else t)))
+            Some(keys.map(_.transCataT(t => if (t ≟ src) newSrc else t)))
           case InvokeF(Sifting(_, _, _, _, _, _, _), src :: _) =>
             groupedKeys(src.unFix, newSrc)
           case _ => None

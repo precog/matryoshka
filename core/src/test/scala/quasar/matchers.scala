@@ -24,7 +24,7 @@ trait TermLogicalPlanMatchers {
   case class equalToPlan(expected: Fix[LogicalPlan])
       extends Matcher[Fix[LogicalPlan]] {
     def apply[S <: Fix[LogicalPlan]](s: Expectable[S]) = {
-      val normed = FunctorT[Cofree[?[_], Fix[LogicalPlan]]].transCata(attrSelf(s.value))(repeatedly[Cofree[?[_], Fix[LogicalPlan]], LogicalPlan](Optimizer.simplifyƒ[Cofree[?[_], Fix[LogicalPlan]]]))
+      val normed = FunctorT[Cofree[?[_], Fix[LogicalPlan]]].transCata(attrSelf(s.value))(repeatedly(Optimizer.simplifyƒ[Cofree[?[_], Fix[LogicalPlan]]]))
       val diff = (Recursive[Cofree[?[_], Fix[LogicalPlan]]].forget(normed).render diff expected.render).shows
       result(
         expected ≟ Recursive[Cofree[?[_], Fix[LogicalPlan]]].forget(normed),

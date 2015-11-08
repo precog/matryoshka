@@ -17,18 +17,24 @@
 package quasar.std
 
 import quasar.Predef._
-
-import scalaz._
 import quasar.fp._
 import quasar.{Func, LogicalPlan, Type, SemanticError}
-import quasar.recursionschemes._
+import quasar.recursionschemes._, Recursive.ops._
 
-import Validation.{success, failure}
+import scalaz._, Scalaz._, Validation.{success, failure}
 
 trait Library {
   protected val noSimplification: Func.Simplifier = new Func.Simplifier {
     def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
       None
+  }
+
+  object IsInvoke {
+    def unapply[T[_[_]]: Recursive](lp: LogicalPlan[T[LogicalPlan]]):
+        Option[(Func, List[LogicalPlan[T[LogicalPlan]]])] = lp match {
+      case LogicalPlan.InvokeF(func, args) => (func, args.map(_.project)).some
+      case _                               => None
+    }
   }
 
   protected def constTyper(codomain: Type): Func.Typer = { args =>
