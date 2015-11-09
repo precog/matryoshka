@@ -22,25 +22,30 @@ import quasar.fp._
 import scalaz._, Scalaz._
 import simulacrum.{typeclass, op}
 
-/** This provides more restricted forms of folds and unfolds than Recursive and
-  * Corecursive, but in exchange, they are available to  more types. It helps
-  * reduce constraints when creating [co]algebras parameterized on `T`.
+/** The operations here are very similar to those in Recursive and Corecursive.
+  * The usual names (`cata`, `ana`, etc.) are prefixed with `trans` and behave
+  * generally the same, except
+  * 1. the `A` of the [un]fold is restricted to `T[G]`, but
+  * 2. the [co]algebra shape is like `F[A] => G[A]` rather than `F[A] => A`.
+  *
+  * In exchange, the [un]folds are available to more types (EG, folds available
+  * to `Free` and unfolds available to `Cofree`).
+  *
+  * There are two additional operations – `transCataT` and `transAnaT`. The
+  * distinction between these and `transCata`/`transAna` is that this allows
+  * the algebra to return the context (the outer `T`) to be used, whereas
+  * `transCata` always uses the original context of the argument to `f`.
+  *
+  * This is noticable when `T` is `Cofree`. In this function, the result may
+  * have any `head` the algebra desires, whereas in `transCata`, it can only
+  * have the `head` of the argument to `f`.
   */
 @typeclass trait FunctorT[T[_[_]]] {
   @op("∘") def map[F[_], G[_]](t: T[F])(f: F[T[F]] => G[T[G]]): T[G]
 
-  /** The distinction between this and `transCata` is that this allows the
-    * algebra to return the context (the outer `T`) to be used, whereas
-    * `transCata` always uses the original context of the argument to `f`.
-    *
-    * This is noticable when `T` is `Cofree`. In this function, the result may
-    * have any `head` the algebra desires, whereas in `transCata`, it can only
-    * have the `head` of the argument to `f`.
-    */
   def transCataT[F[_]: Functor](t: T[F])(f: T[F] => T[F]): T[F] =
     f(map(t)(_.map(transCataT(_)(f))))
 
-  /** transAnaT : transAna :: transCataT : transCata */
   def transAnaT[F[_]: Functor](t: T[F])(f: T[F] => T[F]): T[F] =
     map(f(t))(_.map(transAnaT(_)(f)))
 
