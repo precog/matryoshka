@@ -208,7 +208,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
               Select(
                 New(Name("RegExp"), List(
                   pattern,
-                  If(insen, Literal(Js.Str("i")), Literal(Js.Str(""))))),
+                  If(insen, Literal(Js.Str("im")), Literal(Js.Str("m"))))),
                 "test"),
               List(field)))
         case Extract =>
@@ -497,7 +497,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
             x => Selector.ElemMatch(\/-(Selector.In(Bson.Arr(List(x))))))
 
         case (Search, List(_, patt, IsBool(b))) =>
-          stringOp(Selector.Regex(_, b, false, false, false), patt)
+          stringOp(Selector.Regex(_, b, true, false, false), patt)
 
         case (Between, _ :: IsBson(lower) :: IsBson(upper) :: Nil) =>
           \/-(({ case List(f) => Selector.And(
@@ -881,7 +881,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
                 jscore.Select(
                   jscore.New(jscore.Name("RegExp"), List(
                     p,
-                    jscore.If(i, jscore.Literal(Js.Str("i")), jscore.Literal(Js.Str(""))))),
+                    jscore.If(i, jscore.Literal(Js.Str("im")), jscore.Literal(Js.Str("m"))))),
                   "test"),
                 List(v))
             })
