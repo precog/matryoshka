@@ -540,7 +540,7 @@ object Compiler {
     val keys: List[Fix[LogicalPlan]] = boundCata(tree)(keysƒ)._2
 
     // Step 1: annotate nodes containing the keys.
-    val ann: Cofree[LogicalPlan, Boolean] = boundAttribute(tree)(keys contains _)
+    val ann: Cofree[LogicalPlan, Boolean] = boundAttribute(tree)(keys.contains)
 
     // Step 2: transform from the top, inserting Arbitrary where a key is not
     // otherwise reduced.
