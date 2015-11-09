@@ -31,10 +31,10 @@ object Utils {
    * Start a server, with the given backend, execute something, and then tear
    * down the server.
    */
-  def withServer[A](backend: Backend, config: Config)(body: Req => A): A =
+  def withServer[A](backend: Backend, config: WebConfig)(body: Req => A): A =
     withServer(_ => backend.point[EnvTask], config)(body)
 
-  def withServer[A](createBackend: Config => EnvTask[Backend], config: Config)(body: Req => A): A =
+  def withServer[A](createBackend: WebConfig => EnvTask[Backend], config: WebConfig)(body: Req => A): A =
     withServerRecordConfigChange(createBackend, config)((req, _) => body(req))
 
   /**
@@ -44,20 +44,26 @@ object Utils {
    * The body receives an accessor function that, when called, returns the list of
    * configs asked to be reloaded since the server started.
    */
-  def withServerRecordConfigChange[A](createBackend: Config => EnvTask[Backend], config: Config)(body: (Req, () => List[Config]) => A): A = {
-    import shapeless._
+  def withServerRecordConfigChange[A]
+    (createBackend: WebConfig => EnvTask[Backend], config: WebConfig)
+    (body: (Req, () => List[WebConfig]) => A): A = {
     // TODO: Extend specs2 to understand Task and avoid all the runs in this implementation. See SD-945
     val port = Server.anyAvailablePort.run
     val client = dispatch.host("localhost", port)
-    val reloads = mutable.ListBuffer[Config]()
-    def recordConfigChange(cfg: Config) = Task.delay { ignore(reloads += cfg) }
+    val reloads = mutable.ListBuffer[WebConfig]()
+    def recordConfigChange(cfg: WebConfig) = Task.delay { ignore(reloads += cfg) }
 
-    val updatedConfig = (lens[Config] >> 'server >> 'port0).set(config)(Some(port))
-    def unexpectedRestart(config: Config) = Task.fail(new java.lang.AssertionError("Did not expect the server to be restarted with this config: " + config))
+    val updatedConfig = Server.webConfigLens.wcPort.set(port)(config)
+    def unexpectedRestart(config: WebConfig) =
+      Task.fail(new java.lang.AssertionError("Did not expect the server to be restarted with this config: " + config))
     val api = FileSystemApi(updatedConfig, createBackend, tester,
                             restartServer = unexpectedRestart,
-                            configChanged = recordConfigChange)
-    val srv = Server.createServer(port, 5.seconds, api.AllServices).run.run
+                            configChanged = recordConfigChange,
+                            webConfigLens = Server.webConfigLens)
+    val srv = Server.createServer(
+      Server.webConfigLens.wcPort.set(port)(config),
+      5.seconds,
+      api.AllServices).run.run
     try { body(client, () => reloads.toList) } finally { srv.traverse_(_.shutdown.void).run }
   }
 
@@ -179,7 +185,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
               // TODO: Explore why that is and/or find a way to extract them so the rest of the tests can run in parallel
   args.report(showtimes = true)
 
-  def mounter(backend: Backend)(cfg: Config) = Errors.liftE[quasar.Evaluator.EnvironmentError](Task.now(backend))
+  def mounter(backend: Backend)(cfg: WebConfig) = Errors.liftE[quasar.Evaluator.EnvironmentError](Task.now(backend))
 
   def asLines(r: Response): (String, List[String]) = (r.getContentType, dispatch.as.String(r).split("\r\n").toList)
 
@@ -202,12 +208,12 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
   /**
    * Mounts a backend without any data at each of the mount points described in
-   * the [[Config]].
+   * the [[WebConfig]].
    */
-  val backendForConfig: Config => EnvTask[Backend] = {
+  val backendForConfig: WebConfig => EnvTask[Backend] = {
     val emptyFiles = Map.empty.withDefault((_: Path) => Process.halt)
     val bdefn = BackendDefinition(_ => Mock.JournaledBackend(emptyFiles).point[EnvTask])
-    Mounter.mount(_, bdefn)
+    cfg => Mounter.mount(WebConfig.mountings.get(cfg), bdefn)
   }
 
   val files1 = ListMap(
@@ -255,7 +261,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       DirNode("badPath1") -> Mock.emptyBackend,
       DirNode("badPath2") -> Mock.emptyBackend))
   // We don't put the port here as the `withServer` function will supply the port based on it's optional input.
-  val config1 = Config(SDServerConfig(None), ListMap(
+  val config1 = WebConfig(ServerConfig(None), ListMap(
     Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
     Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting"))))
 
@@ -1365,7 +1371,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== "moved /foo/ to /foo2/"
 
-          configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
+          configs() must_== List(WebConfig(ServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/foo2/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
             Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
 
@@ -1449,7 +1455,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== "added /local/"
 
-          configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
+          configs() must_== List(WebConfig(ServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
             Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")),
             Path("/local/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/test")))))
@@ -1572,7 +1578,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== "added /local/"
 
-          configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
+          configs() must_== List(WebConfig(ServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo")),
             Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")),
             Path("/local/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/test")))))
@@ -1590,7 +1596,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must_== "updated /foo/"
 
-          configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
+          configs() must_== List(WebConfig(ServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/foo/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/foo2")),
             Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
         }
@@ -1692,7 +1698,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           val result = Http(req OK as.String)
           result() must_== "deleted /foo/"
 
-          configs() must_== List(Config(SDServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
+          configs() must_== List(WebConfig(ServerConfig(Some(client.toRequest.getOriginalURI.getPort)), Map(
             Path("/non/root/mounting/") -> MongoDbConfig(new ConnectionString("mongodb://localhost/mounting")))))
 
           val fooMetadataNotExists = Http(fooMetadata)
@@ -1713,7 +1719,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   }
 
   "/server" should {
-    def withServerExpectingRestart[A, B](backend: Backend, config: Config, timeoutMillis: Long = 10000, port: Int = 8888)
+    def withServerExpectingRestart[A, B](backend: Backend, config: WebConfig, timeoutMillis: Long = 10000, port: Int = 8888)
                                         (causeRestart: Req => A)(afterRestart: => B): B = {
       type S = (Int, org.http4s.server.Server)
 
@@ -1730,7 +1736,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           Task.now(_),
           Task.fail(new RuntimeException("impossible!"))))
 
-      (forCfg(Some((port, config))) *> exec).runFor(timeoutMillis)
+      (forCfg(Some(Server.webConfigLens.wcPort.set(port)(config))) *> exec).runFor(timeoutMillis)
     }
 
     "be capable of providing it's name and version" in {
@@ -1770,7 +1776,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
         result2() must_== 200
       })({
-        val req3 = dispatch.host("localhost", SDServerConfig.DefaultPort) / "server" / "info"
+        val req3 = dispatch.host("localhost", ServerConfig.DefaultPort) / "server" / "info"
         val result3 = Http(req3 > code)
         result3() must_== 200
       })

@@ -26,6 +26,7 @@ import java.io.File
 import java.lang.System
 import scala.concurrent.duration._
 
+import argonaut.CodecJson
 import scalaz._, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
@@ -33,12 +34,29 @@ import scalaz.stream._
 import org.http4s.server.{Server => Http4sServer, HttpService}
 import org.http4s.server.blaze.BlazeBuilder
 
-object Server {
+object ServerOps {
+  final case class Options(
+    config: Option[String],
+    contentLoc: Option[String],
+    contentPath: Option[String],
+    contentPathRelative: Boolean,
+    openClient: Boolean,
+    port: Option[Int])
+}
+
+class ServerOps[WC: CodecJson, SC](
+  configOps: ConfigOps[WC],
+  defaultWC: WC,
+  val webConfigLens: WebConfigLens[WC, SC]) {
+  import webConfigLens._
+  import ServerOps._
+
   // NB: This is a terrible thing.
   //     Is there a better way to find the path to a jar?
   val jarPath: Task[String] =
     Task.delay {
-      val uri = Server.getClass.getProtectionDomain.getCodeSource.getLocation.toURI
+      val uri = getClass.getProtectionDomain.getCodeSource.getLocation.toURI
+      val path0 = uri.getPath
       val path =
         java.net.URLDecoder.decode(
           Option(uri.getPath)
@@ -70,17 +88,19 @@ object Server {
                        anyAvailablePort)
       .getOrElse(requested)
 
-  def createServer(port: Int, idleTimeout: Duration, svcs: EnvTask[ListMap[String, HttpService]]): EnvTask[Http4sServer] = {
+  def createServer(config: WC, idleTimeout: Duration, svcs: EnvTask[ListMap[String, HttpService]])
+    : EnvTask[Http4sServer] = {
+
     val builder = BlazeBuilder
                   .withIdleTimeout(idleTimeout)
-                  .bindHttp(port, "0.0.0.0")
+                  .bindHttp(wcPort.get(config), "0.0.0.0")
 
     svcs.flatMap(_.toList.reverse.foldLeft(builder) {
       case (b, (path, svc)) => b.mountService(Prefix(path)(svc))
     }.start.liftM[EnvErrT])
   }
 
- final case class StaticContent(loc: String, path: String)
+  case class StaticContent(loc: String, path: String)
 
   /**
    * Returns a process of (port, server) and an effectful function which will
@@ -95,20 +115,21 @@ object Server {
    */
   def servers(staticContent: List[StaticContent], redirect: Option[String],
               idleTimeout: Duration, tester: BackendConfig => EnvTask[Unit],
-              mounter: Config => EnvTask[Backend], configWriter: Config => Task[Unit])
-             : (Process[Task, (Int, Http4sServer)], Option[(Int, Config)] => Task[Unit]) = {
+              mounter: WC => EnvTask[Backend], configWriter: WC => Task[Unit])
+             : (Process[Task, (Int, Http4sServer)], Option[WC] => Task[Unit]) = {
 
-    val configQ = async.boundedQueue[Option[(Int, Config)]](2)(Strategy.DefaultStrategy)
-    val reload = (cfg: Config) => configQ.enqueueOne(Some((cfg.server.port, cfg)))
+    val configQ = async.boundedQueue[Option[WC]](2)(Strategy.DefaultStrategy)
+    val reload = (cfg: WC) => configQ.enqueueOne(Some(cfg))
 
     val fileSvcs = staticContent.map { case StaticContent(l, p) => l -> staticFileService(p) }.toListMap
     val redirSvc = ListMap("/" -> redirectService(redirect.getOrElse("/welcome")))
 
-    def start(port0: Int, config: Config): EnvTask[(Int, Http4sServer)] =
+    def start(config: WC): EnvTask[(Int, Http4sServer)] =
       for {
-        port    <- choosePort(port0).liftM[EnvErrT]
-        fsApi   =  FileSystemApi(config, mounter, tester, reload, configWriter)
-        server  <- createServer(port, idleTimeout, fsApi.AllServices.map(_ ++ fileSvcs ++ redirSvc))
+        port    <- choosePort(wcPort.get(config)).liftM[EnvErrT]
+        fsApi   =  FileSystemApi(config, mounter, tester, reload, configWriter, webConfigLens)
+        updCfg  =  wcPort.set(port)(config)
+        server  <- createServer(updCfg, idleTimeout, fsApi.AllServices.map(_ ++ fileSvcs ++ redirSvc))
         _       <- stdout("Server started listening on port " + port).liftM[EnvErrT]
       } yield (port, server)
 
@@ -119,8 +140,8 @@ object Server {
 
     def go(prevServer: Option[(Int, Http4sServer)]): Process[Task, (Int, Http4sServer)] =
       configQ.dequeue.take(1) flatMap {
-        case Some((port, cfg)) =>
-          Process.await(shutdown(prevServer, true) *> start(port, cfg).run)(_.fold(
+        case Some(cfg) =>
+          Process.await(shutdown(prevServer, true) *> start(cfg).run)(_.fold(
             err => Process.halt.causedBy(Cause.Error(new RuntimeException(err.message))),
             tpl => Process.emit(tpl) ++ go(Some(tpl))
           ))
@@ -148,14 +169,6 @@ object Server {
     Task.delay(java.awt.Desktop.getDesktop().browse(java.net.URI.create(url)))
         .or(stderr("Failed to open browser, please navigate to " + url))
   }
-
-  final case class Options(
-    config: Option[String],
-    contentLoc: Option[String],
-    contentPath: Option[String],
-    contentPathRelative: Boolean,
-    openClient: Boolean,
-    port: Option[Int])
 
   // scopt's recommended OptionParser construction involves side effects
   @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
@@ -206,13 +219,15 @@ object Server {
       cfgPath        <- opts.config.fold[EnvTask[Option[FsPath[pathy.Path.File, pathy.Path.Sandboxed]]]](
           liftE(Task.now(None)))(
           cfg => FsPath.parseSystemFile(cfg).toRight(InvalidConfig("Invalid path to config file: " + cfg)).map(Some(_)))
-      config         <- Config.fromFileOrEmpty(cfgPath)
-      port           =  opts.port getOrElse config.server.port
-      (proc, useCfg) =  servers(content.toList, Some(redirect), idleTimeout, Backend.test, Mounter.defaultMount,
-                                cfg => Config.toFile(cfg, cfgPath))
+      config         <- configOps.fromFileOrDefaultPaths(cfgPath).orElse(EitherT.right(Task.now(defaultWC)))
+      port           =  opts.port getOrElse wcPort.get(config)
+      updCfg         =  wcPort.set(port)(config)
+      (proc, useCfg) =  servers(content.toList, Some(redirect), idleTimeout, Backend.test,
+                                cfg => Mounter.defaultMount(mountings.get(cfg)),
+                                cfg => configOps.toFile(cfg, cfgPath))
       _              <- Task.gatherUnordered(List(
                           proc.observe(reactToFirstServerStarted(opts.openClient)).run,
-                          useCfg(Some((port, config))),
+                          useCfg(Some(updCfg)),
                           waitForInput *> useCfg(None)
                         )).liftM[EnvErrT]
     } yield ()
@@ -224,3 +239,12 @@ object Server {
       .run
   }
 }
+
+object Server extends ServerOps(
+  WebConfig,
+  WebConfig(ServerConfig(None), Map()),
+  WebConfigLens(
+    WebConfig.server,
+    WebConfig.mountings,
+    WebConfig.server composeLens ServerConfig.port,
+    ServerConfig.port))

@@ -10,7 +10,7 @@ import scalaz._
 class ServerSpecs extends Specification with DisjunctionMatchers {
   import Server._
 
-  val defaultOpts = Options(None, None, None, false, false, None)
+  val defaultOpts = ServerOps.Options(None, None, None, false, false, None)
 
   "interpretPaths" should {
     "be empty with defaults" in {
