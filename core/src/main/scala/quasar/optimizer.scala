@@ -17,7 +17,7 @@
 package quasar
 
 import quasar.Predef._
-import quasar.recursionschemes._, Recursive.ops._
+import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
 
 import scalaz._, Scalaz._
 
@@ -28,29 +28,31 @@ object Optimizer {
   import structural._
   import Planner._
 
-  private def countUsage(target: Symbol): LogicalPlan[Int] => Int = {
+  private def countUsageƒ(target: Symbol): LogicalPlan[Int] => Int = {
     case FreeF(symbol) if symbol == target => 1
     case LetF(ident, form, _) if ident == target => form
     case x => x.fold
   }
 
-  private def inline[A](target: Symbol, repl: Fix[LogicalPlan]):
-      LogicalPlan[(Fix[LogicalPlan], Fix[LogicalPlan])] => Fix[LogicalPlan] =
+  private def inlineƒ[T[_[_]], A](target: Symbol, repl: LogicalPlan[T[LogicalPlan]]):
+      LogicalPlan[(T[LogicalPlan], T[LogicalPlan])] => LogicalPlan[T[LogicalPlan]] =
     {
       case FreeF(symbol) if symbol == target => repl
       case LetF(ident, form, body) if ident == target =>
-        Let(ident, form._2, body._1)
-      case x => Fix(x.map(_._2))
+        LetF(ident, form._2, body._1)
+      case x => x.map(_._2)
     }
 
-  val simplifyƒ: LogicalPlan[Fix[LogicalPlan]] => Option[Fix[LogicalPlan]] = {
-    case InvokeF(func, args) => func.simplify(args)
-    case LetF(ident, form @ Fix(ConstantF(_)), in) =>
-      in.para(inline(ident, form)).some
-    case LetF(ident, form, in) => in.cata(countUsage(ident)) match {
-      case 0 => in.some
-      case 1 => in.para(inline(ident, form)).some
-      case _ => None
+  def simplifyƒ[T[_[_]]: Recursive: FunctorT]:
+      LogicalPlan[T[LogicalPlan]] => Option[LogicalPlan[T[LogicalPlan]]] = {
+    case inv @ InvokeF(func, _) => func.simplify(inv)
+    case LetF(ident, form, in) => form.project match {
+      case ConstantF(_) => in.transPara(inlineƒ(ident, form.project)).project.some
+      case _ => in.cata(countUsageƒ(ident)) match {
+        case 0 => in.project.some
+        case 1 => in.transPara(inlineƒ(ident, form.project)).project.some
+        case _ => None
+      }
     }
     case _ => None
   }
@@ -125,7 +127,7 @@ object Optimizer {
   }
 
   def preferProjections(t: Fix[LogicalPlan]): Fix[LogicalPlan] =
-    boundPara(t)(preferProjectionsƒ)._1.cata(repeatedly(simplifyƒ))
+    boundPara(t)(preferProjectionsƒ)._1.transCata(repeatedly(simplifyƒ))
 
   val elideTypeCheckƒ: LogicalPlan[Fix[LogicalPlan]] => Fix[LogicalPlan] = {
     case LetF(n, b, Fix(TypecheckF(Fix(FreeF(nf)), _, cont, _)))

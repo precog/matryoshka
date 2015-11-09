@@ -3,7 +3,7 @@ package quasar.physical.mongodb
 import quasar.Predef._
 import quasar.RenderTree
 import quasar.fp._
-import quasar.recursionschemes._, Recursive.ops._
+import quasar.recursionschemes._, FunctorT.ops._
 import quasar._; import Planner._
 import quasar.javascript._
 import quasar.specs2._
@@ -97,7 +97,7 @@ class WorkflowBuilderSpec
         city   <- lift(projectField(read, "city"))
         array  <- arrayConcat(makeArray(city), pureArr)
         state2 <- lift(projectIndex(array, 2))
-      } yield state2.cata(normalize)).evalZero
+      } yield state2.transCata(normalize)).evalZero
 
       op must beRightDisjunction(ExprBuilder(read, $literal(Bson.Int32(1)).right))
     }
@@ -454,7 +454,7 @@ class WorkflowBuilderSpec
               BsonField.Name("__tmp") -> -\/(jscore.JsFn(jscore.Name("x"), jscore.Literal(Js.Bool(true)))))),
           ListMap(
             BsonField.Name("0") -> \/-($var(DocField(BsonField.Name("__tmp"))))))
-        val exp = DocBuilder(
+        val exp = DocBuilderF(
           readFoo,
           ListMap(
             BsonField.Name("0") -> -\/(jscore.JsFn(jscore.Name("y"), jscore.Literal(Js.Bool(true))))))
@@ -470,7 +470,7 @@ class WorkflowBuilderSpec
               BsonField.Name("__tmp") -> \/-($var(DocField(BsonField.Name("foo")))))),
           ListMap(
             BsonField.Name("0") -> \/-($toLower($var(DocField(BsonField.Name("__tmp")))))))
-        val exp = DocBuilder(
+        val exp = DocBuilderF(
           readFoo,
           ListMap(
             BsonField.Name("0") -> \/-($toLower($var(DocField(BsonField.Name("foo")))))))
@@ -486,7 +486,7 @@ class WorkflowBuilderSpec
               BsonField.Name("__tmp") -> -\/(jscore.JsFn(jscore.Name("x"), jscore.Literal(Js.Str("ABC")))))),
           ListMap(
             BsonField.Name("0") -> \/-($toLower($var(DocField(BsonField.Name("__tmp")))))))
-        val exp = DocBuilder(
+        val exp = DocBuilderF(
           readFoo,
           ListMap(
             BsonField.Name("0") -> -\/(jscore.JsFn(jscore.Name("x"),
@@ -505,7 +505,7 @@ class WorkflowBuilderSpec
               BsonField.Name("__tmp") -> \/-($$ROOT))),
           ListMap(
             BsonField.Name("foo") -> \/-($var(DocField(BsonField.Name("__tmp") \ BsonField.Name("foo"))))))
-        val exp = DocBuilder(
+        val exp = DocBuilderF(
           readFoo,
           ListMap(
             BsonField.Name("foo") -> \/-($var(DocField(BsonField.Name("foo"))))))
@@ -523,7 +523,7 @@ class WorkflowBuilderSpec
             BsonField.Name("0") -> -\/(jscore.JsFn(jscore.Name("x"),
               jscore.Select(jscore.Select(jscore.ident("x"), "__tmp"), "length")))))
 
-        val exp = DocBuilder(
+        val exp = DocBuilderF(
           readFoo,
           ListMap(
             BsonField.Name("0") -> -\/(jscore.JsFn(jscore.Name("y"),
@@ -543,7 +543,7 @@ class WorkflowBuilderSpec
             BsonField.Name("__tmp3") -> -\/(jscore.JsFn(jscore.Name("x"),
               jscore.Arr(List(jscore.Select(jscore.ident("x"), "__tmp0")))))))
 
-        val exp = DocBuilder(
+        val exp = DocBuilderF(
           readFoo,
           ListMap(
             BsonField.Name("__tmp3") -> -\/(jscore.JsFn(jscore.Name("x"),
@@ -572,7 +572,7 @@ class WorkflowBuilderSpec
               BsonField.Name("__tmp8") -> \/-($field("__tmp7", "city")),
               BsonField.Name("__tmp9") -> \/-($field("__tmp6"))))
 
-        val exp = DocBuilder(
+        val exp = DocBuilderF(
           readFoo,
           ListMap(
             BsonField.Name("__tmp8") -> \/-($field("city")),

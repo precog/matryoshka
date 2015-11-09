@@ -18,8 +18,8 @@ package quasar.std
 
 import quasar.Predef._
 import quasar.{Data, Func, LogicalPlan, Type, Mapping, SemanticError}, LogicalPlan._, SemanticError._
-
-import quasar.recursionschemes._
+import quasar.fp._
+import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
 
 import scalaz._, Scalaz._, NonEmptyList.nel, Validation.{success, failure}
 
@@ -36,9 +36,13 @@ trait StringLib extends Library {
   // TODO: variable arity
   val Concat = Mapping("concat", "Concatenates two (or more) string values",
     Type.Str, Type.Str :: Type.Str :: Nil,
-    partialSimplifier {
-      case List(Fix(ConstantF(Data.Str(""))), other) => other
-      case List(other, Fix(ConstantF(Data.Str("")))) => other
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
+        orig match {
+          case IsInvoke(_, List(ConstantF(Data.Str("")), second)) => second.some
+          case IsInvoke(_, List(first, ConstantF(Data.Str(""))))  => first.some
+          case _                                                  => None
+        }
     },
     stringApply(_ + _),
     basicUntyper)
@@ -111,12 +115,19 @@ trait StringLib extends Library {
     "substring",
     "Extracts a portion of the string",
     Type.Str, Type.Str :: Type.Int :: Type.Int :: Nil,
-    partialSimplifier {
-      case List(Fix(ConstantF(Data.Str(str))), Fix(ConstantF(Data.Int(from))), for0) if 0 < from =>
-        Substring(
-          Constant(Data.Str(str.substring(from.intValue))),
-          Constant(Data.Int(0)),
-          for0)
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
+        orig match {
+          case InvokeF(f, List(str0, from0, for0)) => (str0.project, from0.project) match {
+            case (ConstantF(Data.Str(str)), ConstantF(Data.Int(from))) if 0 < from =>
+              InvokeF(f, List(
+                str0 ∘ κ(ConstantF[T[LogicalPlan]](Data.Str(str.substring(from.intValue)))),
+                from0 ∘ κ(ConstantF[T[LogicalPlan]](Data.Int(0))),
+                for0)).some
+            case _ => None
+          }
+          case _ => None
+        }
     },
     partialTyperV {
       case List(

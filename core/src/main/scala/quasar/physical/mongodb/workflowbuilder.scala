@@ -319,7 +319,7 @@ object WorkflowBuilder {
     * harder to pattern match. Should be applied before `objectConcat`,
     * `arrayConcat`, or `merge`.
     */
-  val normalizeƒ: WorkflowBuilderF[WorkflowBuilder] => Option[WorkflowBuilder] = {
+  val normalizeƒ: WorkflowBuilderF[WorkflowBuilder] => Option[WorkflowBuilderF[WorkflowBuilder]] = {
     def collapse(outer: Expr, inner: ListMap[BsonField.Name, Expr]): Option[Expr] = {
       def rewriteExpr(t: Expression)(applyExpr: PartialFunction[ExprOp[Expr], Option[Expr]]): Option[Expr] =
         t.cataM[Option, Expr] { x =>
@@ -396,35 +396,35 @@ object WorkflowBuilder {
         }))
 
     {
-      case ExprBuilderF(src, \/-($$ROOT)) => src.some
+      case ExprBuilderF(src, \/-($$ROOT)) => src.project.some
       case ExprBuilderF(src, outerExpr) =>
         src.unFix match {
           case ExprBuilderF(wb0, -\/(js1)) =>
-            exprToJs(outerExpr).map(js => ExprBuilder(wb0, -\/(js1 >>> js))).toOption
+            exprToJs(outerExpr).map(js => ExprBuilderF(wb0, -\/(js1 >>> js))).toOption
           case ExprBuilderF(src0, contents) =>
-            inln(outerExpr, Expr(contents)).map(expr => ExprBuilder(src0, \/-(expr)))
+            inln(outerExpr, Expr(contents)).map(expr => ExprBuilderF(src0, \/-(expr)))
           case DocBuilderF(src, innerShape) =>
-            collapse(outerExpr, innerShape).map(ExprBuilder(src, _))
+            collapse(outerExpr, innerShape).map(ExprBuilderF(src, _))
           case ShapePreservingBuilderF(src0, inputs, op) =>
-            ShapePreservingBuilder(
-              normalize(ExprBuilderF(src0, outerExpr)),
+            ShapePreservingBuilderF(
+              Fix(normalize(ExprBuilderF(src0, outerExpr))),
               inputs,
               op).some
           case GroupBuilderF(wb0, key, Expr(\/-($var(DocVar.ROOT(None))))) =>
-            GroupBuilder(
-              normalize(ExprBuilderF(wb0, outerExpr)),
+            GroupBuilderF(
+              Fix(normalize(ExprBuilderF(wb0, outerExpr))),
               key,
               Expr(\/-($$ROOT))).some
           case GroupBuilderF(wb0, key, contents) =>
-            inln(outerExpr, contents).map(expr => GroupBuilder(normalize(ExprBuilderF(wb0, \/-(expr))), key, Expr(\/-($$ROOT))))
+            inln(outerExpr, contents).map(expr => GroupBuilderF(Fix(normalize(ExprBuilderF(wb0, \/-(expr)))), key, Expr(\/-($$ROOT))))
           case _ => None
         }
       case DocBuilderF(Fix(DocBuilderF(src, innerShape)), outerShape) =>
-        outerShape.traverse(collapse(_, innerShape)).map(DocBuilder(src, _))
+        outerShape.traverse(collapse(_, innerShape)).map(DocBuilderF(src, _))
       case DocBuilderF(Fix(ExprBuilderF(src, innerExpr)), outerShape) =>
-        outerShape.traverse(inln(_, Expr(innerExpr))).map(exes => DocBuilder(src, exes ∘ (_.right)))
+        outerShape.traverse(inln(_, Expr(innerExpr))).map(exes => DocBuilderF(src, exes ∘ (_.right)))
       case DocBuilderF(Fix(ShapePreservingBuilderF(src, inputs, op)), shape) =>
-        ShapePreservingBuilder(normalize(DocBuilderF(src, shape)), inputs, op).some
+        ShapePreservingBuilderF(Fix(normalize(DocBuilderF(src, shape))), inputs, op).some
       case _ => None
     }
   }
@@ -809,7 +809,7 @@ object WorkflowBuilder {
       M[WorkflowBuilder] = {
     fold1Builders(wbs).fold[M[WorkflowBuilder]](
       fail(InternalError("impossible – no arguments")))(
-      _.map { case (wb, exprs) => normalize(ExprBuilderF(wb, \/-(f(exprs)))) })
+      _.map { case (wb, exprs) => Fix(normalize(ExprBuilderF(wb, \/-(f(exprs))))) })
   }
 
   def jsExpr1(wb: WorkflowBuilder, js: JsFn): WorkflowBuilder =
@@ -820,7 +820,7 @@ object WorkflowBuilder {
     fold1Builders(wbs).fold[M[WorkflowBuilder]](
       fail(InternalError("impossible – no arguments")))(
       _.flatMap { case (wb, exprs) =>
-        lift(exprs.traverseU(toJs).map(jses => normalize(ExprBuilderF(wb, -\/(JsFn(jsBase, f(jses.map(_(jscore.Ident(jsBase))))))))))
+        lift(exprs.traverseU(toJs).map(jses => Fix(normalize(ExprBuilderF(wb, -\/(JsFn(jsBase, f(jses.map(_(jscore.Ident(jsBase)))))))))))
       })
 
   def makeObject(wb: WorkflowBuilder, name: String): WorkflowBuilder =
@@ -1559,10 +1559,10 @@ object WorkflowBuilder {
       ks => distinctBy(src, ks match {
         case Root() => List(src)
         case Field(k) =>
-          List(normalize(ExprBuilderF(src, \/-($var(DocField(k))))))
+          List(Fix(normalize(ExprBuilderF(src, \/-($var(DocField(k)))))))
         case Subset(ks) =>
           ks.toList.map(k =>
-            normalize(ExprBuilderF(src, \/-($var(DocField(k))))))
+            Fix(normalize(ExprBuilderF(src, \/-($var(DocField(k)))))))
       }))
 
   def distinctBy(src: WorkflowBuilder, keys: List[WorkflowBuilder]):
@@ -1576,10 +1576,10 @@ object WorkflowBuilder {
           case $Sort(_, _) =>
             foldBuilders(src, sortKeys).map { case (newSrc, dv, ks) =>
 
-              val dist = distincting(normalize(ExprBuilderF(newSrc, \/-($var(dv.toDocVar)))))
+              val dist = distincting(Fix(normalize(ExprBuilderF(newSrc, \/-($var(dv.toDocVar))))))
               ShapePreservingBuilder(
-                normalize(ExprBuilderF(dist, \/-($var(dv.toDocVar)))),
-                ks.map(k => normalize(ExprBuilderF(dist, \/-($var(k.toDocVar))))), f)
+                Fix(normalize(ExprBuilderF(dist, \/-($var(dv.toDocVar))))),
+                ks.map(k => Fix(normalize(ExprBuilderF(dist, \/-($var(k.toDocVar)))))), f)
             }
           case _ => findSort(spbSrc)
         }
