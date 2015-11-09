@@ -138,7 +138,7 @@ abstract class ConfigSpec[Config: CodecJson] extends Specification with Disjunct
     }
   }
 
-  "fromFileOrEmpty" should {
+  "fromFileOrDefaultPaths" should {
     "result in error when file not found" in {
       val (p, r) =
         withTestConfigFile(fp =>
