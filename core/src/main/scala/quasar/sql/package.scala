@@ -145,7 +145,8 @@ package object sql {
       case InvokeFunctionF(name, args) =>
         import quasar.std.StdLib.string
         (name, args) match {
-          case (string.Like.name, (_, value) :: (_, pattern) :: (StringLiteral(""), _) :: Nil) => "(" + value + ") like (" + pattern + ")"
+          case (string.Like.name, (_, value) :: (_, pattern) :: (StringLiteral("\\"), _) :: Nil) =>
+            "(" + value + ") like (" + pattern + ")"
           case (string.Like.name, (_, value) :: (_, pattern) :: (_, esc) :: Nil) =>
             "(" + value + ") like (" + pattern + ") escape (" + esc + ")"
           case _ => name + "(" + args.map(_._2).mkString(", ") + ")"

@@ -281,6 +281,18 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         compileExp("select case pop when 0 then 'nobody' else null end from zips"))
     }
 
+    "have ~~ as alias for LIKE" in {
+      testLogicalPlanCompile(
+                   "select pop from zips where city ~~ '%BOU%'",
+        compileExp("select pop from zips where city LIKE '%BOU%'"))
+    }
+
+    "have !~~ as alias for NOT LIKE" in {
+      testLogicalPlanCompile(
+                   "select pop from zips where city !~~ '%BOU%'",
+        compileExp("select pop from zips where city NOT LIKE '%BOU%'"))
+    }
+
     "compile array length" in {
       testLogicalPlanCompile(
         "select array_length(bar, 1) from foo",
