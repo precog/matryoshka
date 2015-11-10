@@ -142,6 +142,6 @@ import simulacrum.typeclass
     loop(Monoid[Z].zero, t)
   }
 
-  def forget[R[_[_]]: Corecursive, F[_]: Functor](t: T[F]): R[F] =
-    Corecursive[R].embed(project(t).map(forget[R, F]))
+  def convertTo[F[_]: Functor, R[_[_]]: Corecursive](t: T[F]): R[F] =
+    Corecursive[R].embed(project(t).map(convertTo[F, R]))
 }

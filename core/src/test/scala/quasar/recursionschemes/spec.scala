@@ -66,15 +66,19 @@ object Exp {
     }
   }
 
-  implicit val ExpRenderTree: RenderTree[Exp[_]] =
-    new RenderTree[Exp[_]] {
-      def render(v: Exp[_]) = v match {
-        case Num(value)       => Terminal(List("Num"), Some(value.toString))
-        case Mul(_, _)        => Terminal(List("Mul"), None)
-        case Var(sym)         => Terminal(List("Var"), Some(sym.toString))
-        case Lambda(param, _) => Terminal(List("Lambda"), Some(param.toString))
-        case Apply(_, _)      => Terminal(List("Apply"), None)
-        case Let(name, _, _)  => Terminal(List("Let"), Some(name.toString))
+  implicit val ExpRenderTree: RenderTree ~> λ[α => RenderTree[Exp[α]]] =
+    new (RenderTree ~> λ[α => RenderTree[Exp[α]]]) {
+      def apply[α](ra: RenderTree[α]) = new RenderTree[Exp[α]] {
+        def render(v: Exp[α]) = v match {
+          case Num(value)       => Terminal(List("Num"), Some(value.toString))
+          case Mul(l, r)        => NonTerminal(List("Mul"), None, List(ra.render(l), ra.render(r)))
+          case Var(sym)         => Terminal(List("Var"), Some(sym.toString))
+          case Lambda(param, body) =>
+            NonTerminal(List("Lambda"), Some(param.toString), List(ra.render(body)))
+          case Apply(to, expr) =>
+            NonTerminal(List("Apply"), None, List(ra.render(to), ra.render(expr)))
+          case Let(name, form, body)  => NonTerminal(List("Let"), Some(name.toString), List(ra.render(form), ra.render(body)))
+        }
       }
     }
 
@@ -238,15 +242,15 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    def eval(t: Exp[Int]): Int = t match {
+    val eval: Exp[Int] => Int = {
       case Num(x) => x
       case Mul(x, y) => x*y
       case _ => ???
     }
 
-    def findConstants(t: Exp[List[Int]]): List[Int] = t match {
+    val findConstants: Exp[List[Int]] => List[Int] = {
       case Num(x) => x :: Nil
-      case _      => t.fold
+      case t      => t.fold
     }
 
     "cata" should {
@@ -264,24 +268,17 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    "zipCata" should {
+    "zipAlgebras" should {
       "both eval and find all constants" in {
-        mul(num(5), num(2)).cata(zipCata(eval, findConstants)) must_==
+        mul(num(5), num(2)).cata(zipAlgebras[Exp, Id](eval, findConstants)) must_==
           ((10, List(5, 2)))
       }
     }
 
-    "liftPara" should {
+    "generalizeAlgebra" should {
       "behave like cata" in {
         val v = mul(num(1), mul(num(2), num(3)))
-        v.para(liftPara(eval)) must_== v.cata(eval)
-      }
-    }
-
-    "liftHisto" should {
-      "behave like cata" in {
-        val v = mul(num(1), mul(num(2), num(3)))
-        v.histo(liftHisto(eval)) must_== v.cata(eval)
+        v.para(generalizeAlgebra[(Fix[Exp], ?)](eval)) must_== v.cata(eval)
       }
     }
 
@@ -289,16 +286,9 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       if (x > 2 && x % 2 == 0) Mul(2, x/2)
       else Num(x)
 
-    "liftApo" should {
+    "generalizeCoalgebra" should {
       "behave like ana" ! prop { (i: Int) =>
-        Corecursive[Fix].apo(i)(liftApo[Fix](extractFactors)) must_==
-          Corecursive[Fix].ana(i)(extractFactors)
-      }
-    }
-
-    "liftFutu" should {
-      "behave like ana" ! prop { (i: Int) =>
-        Corecursive[Fix].futu(i)(liftFutu(extractFactors)) must_==
+        Corecursive[Fix].apo(i)(generalizeCoalgebra[Fix[Exp] \/ ?](extractFactors)) must_==
           Corecursive[Fix].ana(i)(extractFactors)
       }
     }
@@ -516,8 +506,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       "render nodes and leaves" in {
         mul(num(0), num(1)).shows must_==
           """Mul
-            |├─ Num(0)
-            |╰─ Num(1)""".stripMargin
+            |├─ Num(Fix(0))
+            |╰─ Num(Fix(1))""".stripMargin
       }
     }
   }
@@ -620,47 +610,46 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
   "Attr" should {
     "attrSelf" should {
       "annotate all" ! Prop.forAll(expGen) { exp =>
-        Recursive[Cofree[?[_], Fix[Exp]]].universe(attrSelf(exp)) must
-          equal(exp.universe.map(attrSelf(_)))
+        Recursive[Cofree[?[_], Fix[Exp]]].universe(exp.cata(attrSelf)) must
+          equal(exp.universe.map(_.cata(attrSelf)))
       }
     }
 
-    "forget" should {
+    "convert" should {
       "forget unit" ! Prop.forAll(expGen) { exp =>
-        Recursive[Cofree[?[_], Unit]].forget(attrUnit(exp)) must_== exp
+        Recursive[Cofree[?[_], Unit]].convertTo(exp.cata(attrK(()))) must_== exp
       }
     }
 
     "foldMap" should {
       "zeros" ! Prop.forAll(expGen) { exp =>
-        Foldable[Cofree[Exp, ?]].foldMap(attrK(exp, 0))(_ :: Nil) must_== exp.universe.map(κ(0))
+        Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrK(0)))(_ :: Nil) must_== exp.universe.map(κ(0))
       }
 
       "selves" ! Prop.forAll(expGen) { exp =>
-        Foldable[Cofree[Exp, ?]].foldMap(attrSelf(exp))(_ :: Nil) must_== exp.universe
+        Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrSelf))(_ :: Nil) must_== exp.universe
       }
     }
 
     "RenderTree" should {
       "render simple nested expr" in {
-        implicit def RU = new RenderTree[Unit] { def render(v: Unit) = Terminal(List("()"), None) }
-        attrUnit(mul(num(0), num(1))).shows must_==
-          """Mul
-            |├─ Annotation
-            |│  ╰─ ()
-            |├─ Num(0)
-            |│  ╰─ Annotation
-            |│     ╰─ ()
-            |╰─ Num(1)
-            |   ╰─ Annotation
-            |      ╰─ ()""".stripMargin
+        mul(num(0), num(1)).cata(attrK(())).shows must_==
+          """Cofree
+            |├─ ()
+            |╰─ Mul
+            |   ├─ Cofree
+            |   │  ├─ ()
+            |   │  ╰─ Num(0)
+            |   ╰─ Cofree
+            |      ├─ ()
+            |      ╰─ Num(1)""".stripMargin
       }
     }
 
     "zip" should {
       "tuplify simple constants" ! Prop.forAll(expGen) { exp =>
-        unsafeZip2(attrK(exp, 0), attrK(exp, 1)) must
-          equal(attrK(exp, (0, 1)))
+        unsafeZip2(exp.cata(attrK(0)), exp.cata(attrK(1))) must
+          equal(exp.cata(attrK((0, 1))))
       }
     }
 
