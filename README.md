@@ -38,6 +38,27 @@ To compile the project and run tests, execute the following command:
 ./sbt test
 ```
 
+This will lead to failures in the integration test project (`it`). The reason for the failures is the fact that there is no configured
+"backend" to connect to in order to run the integration tests. Currently Quasar only supports MongoDB so in order to run the integration
+tests, you will need to provide a URL to a MongoDB. If you have a hosted MongoDB instance handy, then you can simply point to it, or else
+you probably want to install MongoDB locally and point Quasar to that one. Installing MongoDB locally is probably a good idea as it will
+allow you to run the integration tests offline as well as make the tests run as fast as possible.
+
+Visit the MongoDB website and follow the installation instructions in order to install MongoDB locally. Once that is done we need to set a few
+environment variables in order to inform Quasar about where to find the backends required in order to run the integration tests.
+
+Set the following enviroment variables:
+
+```bash
+QUASAR_MONGODB_3_0="{\"mongodb\":{\"connectionUri\":\"mongodb://`mongoURL`\"}}"
+QUASAR_MONGODB_2_6="{\"mongodb\":{\"connectionUri\":\"mongodb://`mongoURL`\"}}"
+```
+
+where \`mongoURL\` is the url at which one can find a Mongo database. This means the integration tests will be run against
+both MongoDB version 2.6 and version 3.0. Alternatively, you can choose to install only one of these and run the integration
+tests against only that one database. Simply omit one of the two in order to avoid testing against it. On the integration
+server, the tests are run against both supported versions of MongoDB.
+
 #### REPL Jar
 
 To build a JAR for the REPL, which allows entering commands at a command-line prompt, execute the following command:
