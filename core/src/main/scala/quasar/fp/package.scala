@@ -106,6 +106,18 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
   implicit val StringRenderTree: RenderTree[String] =
     RenderTree.fromToString[String]("String")
 
+  implicit val RU: RenderTree[Unit] = new RenderTree[Unit] {
+    def render(v: Unit) = Terminal(List("()", "Unit"), None)
+  }
+
+  implicit def CofreeRenderTree[F[_], A: RenderTree](implicit RF: RenderTree ~> λ[α => RenderTree[F[α]]]):
+      RenderTree[Cofree[F, A]] =
+    new RenderTree[Cofree[F, A]] {
+      def render(t: Cofree[F, A]) = {
+        NonTerminal(List("Cofree"), None, List(t.head.render, RF(CofreeRenderTree[F, A]).render(t.tail)))
+      }
+    }
+
   // NB: RenderTree should `extend Show[A]`, but Scalaz type classes don’t mesh
   //     with Simulacrum ones.
   implicit def RenderTreeToShow[N: RenderTree]: Show[N] = new Show[N] {

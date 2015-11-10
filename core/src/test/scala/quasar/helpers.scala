@@ -1,16 +1,14 @@
 package quasar
 
 import quasar.Predef._
-
 import quasar.recursionschemes._, FunctorT.ops._
 import quasar.sql.{SQLParser, Query}
 import quasar.std._
 import quasar.fs._
 
-import scalaz._
-
 import org.specs2.mutable._
 import org.specs2.matcher.{Matcher, Expectable}
+import scalaz._
 
 trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
   import StdLib._
@@ -21,7 +19,7 @@ trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
   val compile: String => String \/ Fix[LogicalPlan] = query => {
     for {
       select <- SQLParser.parseInContext(Query(query), Path("./")).leftMap(_.toString)
-      attr   <- AllPhases(tree(select)).leftMap(_.toString).disjunction
+      attr   <- AllPhases(select).leftMap(_.toString)
       cld    <- Compiler.compile(attr).leftMap(_.toString)
     } yield cld
   }
@@ -37,7 +35,10 @@ trait CompilerHelpers extends Specification with TermLogicalPlanMatchers {
 
   def read(name: String): Fix[LogicalPlan] = LogicalPlan.Read(fs.Path(name))
 
+  type FLP = Fix[LogicalPlan]
+  implicit def toFix[F[_]](unFixed: F[Fix[F]]): Fix[F] = Fix(unFixed)
+
   def makeObj(ts: (String, Fix[LogicalPlan])*): Fix[LogicalPlan] =
-    MakeObjectN(ts.map(t => Constant(Data.Str(t._1)) -> t._2): _*)
+    Fix(MakeObjectN(ts.map(t => Constant(Data.Str(t._1)) -> t._2): _*))
 
 }

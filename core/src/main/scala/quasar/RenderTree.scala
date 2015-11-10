@@ -29,6 +29,8 @@ import simulacrum.typeclass
 final case class RenderedTree(nodeType: List[String], label: Option[String], children: List[RenderedTree]) {
   def simpleType: Option[String] = nodeType.headOption
 
+  def relabel(f: String => String) = this.copy(label = label.map(f))
+
   /**
    A tree that describes differences between two trees:
    - If the two trees are identical, the result is the same as (either) input.

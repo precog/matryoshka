@@ -2,11 +2,13 @@ package quasar
 
 import quasar.Predef._
 import quasar.sql.SQLParser
-import org.specs2.mutable._
-import org.specs2.matcher.{Matcher, Expectable}
+import quasar.recursionschemes._, Recursive.ops._
 import quasar.specs2._
 
-class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
+import org.specs2.matcher.{Matcher, Expectable}
+import org.specs2.mutable._
+
+class SemanticsSpec extends Specification with PendingWithAccurateCoverage with TreeMatchers {
 
   "TransformSelect" should {
     import quasar.SemanticAnalysis._
@@ -14,8 +16,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
 
     val compiler = Compiler.trampoline
 
-    def transform(q: Expr): Option[Expr] =
-      SemanticAnalysis.TransformSelect(tree(q)).fold(e => None, tree => Some(tree.root))
+    def transform(q: Expr): Expr = q.cata(projectSortKeysƒ)
 
     "add single field for order by" in {
       val q = Select(SelectAll,
@@ -24,7 +25,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      None,
                      None,
                      Some(OrderBy((ASC, Ident("height")) :: Nil)))
-      transform(q) must beSome(
+      transform(q) must beTree(
                Select(SelectAll,
                       Proj(Ident("name"), None) :: Proj(Ident("height"), Some("__sd__0")) :: Nil,
                       Some(TableRelationAST("person", None)),
@@ -41,7 +42,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      None,
                      None,
                      Some(OrderBy((ASC, Ident("name")) :: Nil)))
-      transform(q) must beSome(q)
+      transform(q) must beTree(q)
     }
 
     "not add a field that appears as an alias in the projections" in {
@@ -51,7 +52,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      None,
                      None,
                      Some(OrderBy((ASC, Ident("name")) :: Nil)))
-      transform(q) must beSome(q)
+      transform(q) must beTree(q)
     }
 
     "not add a field with wildcard present" in {
@@ -61,7 +62,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      None,
                      None,
                      Some(OrderBy((ASC, Ident("height")) :: Nil)))
-      transform(q) must beSome(q)
+      transform(q) must beTree(q)
     }
 
     "add single field for order by" in {
@@ -73,7 +74,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                      Some(OrderBy((ASC, Ident("height")) ::
                                   (ASC, Ident("name")) ::
                                   Nil)))
-      transform(q) must beSome(
+      transform(q) must beTree(
                Select(SelectAll,
                       Proj(Ident("name"), None) ::
                         Proj(Ident("height"), Some("__sd__0")) ::
@@ -102,7 +103,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage {
                          In)),
                      None,
                      None)
-      transform(q) must beSome(
+      transform(q) must beTree(
               Select(SelectAll,
                      Proj(Splice(None), None) :: Nil,
                      Some(TableRelationAST("foo", None)),

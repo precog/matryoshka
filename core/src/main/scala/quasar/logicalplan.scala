@@ -80,19 +80,25 @@ object LogicalPlan {
             f(expr, f(cont, f(fallback, z)))
         }
     }
-  implicit val RenderTreeLogicalPlan: RenderTree[LogicalPlan[_]] = new RenderTree[LogicalPlan[_]] {
-    val nodeType = "LogicalPlan" :: Nil
+  implicit val RenderTreeLogicalPlan:
+      RenderTree ~> λ[α => RenderTree[LogicalPlan[α]]] =
+    new (RenderTree ~> λ[α => RenderTree[LogicalPlan[α]]]) {
+      def apply[α](ra: RenderTree[α]): RenderTree[LogicalPlan[α]] =
+        new RenderTree[LogicalPlan[α]] {
+          val nodeType = "LogicalPlan" :: Nil
 
-    // Note: these are all terminals; the wrapping Fix or Cofree will use these to build nodes with children.
-    def render(v: LogicalPlan[_]) = v match {
-      case ReadF(name)               => Terminal("Read" :: nodeType, Some(name.pathname))
-      case ConstantF(data)           => Terminal("Constant" :: nodeType, Some(data.toString))
-      case InvokeF(func, _)          => Terminal("Invoke" :: nodeType, Some(func.name))
-      case FreeF(name)               => Terminal("Free" :: nodeType, Some(name.toString))
-      case LetF(ident, _, _)         => Terminal("Let" :: nodeType, Some(ident.toString))
-      case TypecheckF(_, typ, _, _)  => Terminal("Typecheck" :: nodeType, Some(typ.shows))
+          def render(v: LogicalPlan[α]) = v match {
+            case ReadF(name)             => Terminal("Read" :: nodeType, Some(name.pathname))
+            case ConstantF(data)         => Terminal("Constant" :: nodeType, Some(data.toString))
+            case InvokeF(func, args)     => NonTerminal("Invoke" :: nodeType, Some(func.name), args.map(ra.render))
+            case FreeF(name)             => Terminal("Free" :: nodeType, Some(name.toString))
+            case LetF(ident, form, body) => NonTerminal("Let" :: nodeType, Some(ident.toString), List(ra.render(form), ra.render(body)))
+            case TypecheckF(expr, typ, cont, fallback) =>
+              NonTerminal("Typecheck" :: nodeType, Some(typ.shows),
+                List(ra.render(expr), ra.render(cont), ra.render(fallback)))
+          }
+        }
     }
-  }
   implicit val EqualFLogicalPlan: EqualF[LogicalPlan] =
     new EqualF[LogicalPlan] {
       def equal[A: Equal](v1: LogicalPlan[A], v2: LogicalPlan[A]): Boolean =
@@ -270,10 +276,10 @@ object LogicalPlan {
         case ConstantF(d)     => unifyOrCheck(inf, Type.Const(d), Constant(d))
         case InvokeF(MakeObject, List(name, value)) =>
           lift(MakeObject.apply(List(name.inferred, value.inferred)).disjunction).flatMap(
-            applyConstraints(_, value)(MakeObject(name.plan, _)))
+            applyConstraints(_, value)(x => Fix(MakeObject(name.plan, x))))
         case InvokeF(MakeArray, List(value)) =>
           lift(MakeArray.apply(List(value.inferred)).disjunction).flatMap(
-            applyConstraints(_, value)(MakeArray(_)))
+            applyConstraints(_, value)(x => Fix(MakeArray(x))))
         // TODO: Move this case to the Mongo planner once type information is
         //       available there.
         case InvokeF(ConcatOp, args) =>

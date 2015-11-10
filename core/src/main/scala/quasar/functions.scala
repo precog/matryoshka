@@ -32,8 +32,8 @@ sealed trait Func {
 
   def simplify: Func.Simplifier
 
-  def apply[T[_[_]]: Corecursive](args: T[LogicalPlan]*): T[LogicalPlan] =
-    Corecursive[T].embed(LogicalPlan.InvokeF(this, args.toList))
+  def apply[A](args: A*): LogicalPlan[A] =
+    LogicalPlan.InvokeF(this, args.toList)
 
   // TODO: Make this `unapplySeq`
   def unapply[A](node: LogicalPlan[A]): Option[List[A]] = {
