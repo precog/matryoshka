@@ -297,19 +297,15 @@ final case class ViewBackend(backend: Backend, views0: Map[Path, ViewConfig]) ex
   def expand(query: sql.Expr): sql.Expr = sql.rewriteRelations(query) {
     case sql.TableRelationAST(name, alias) =>
       val p = Path(name)
-      views.get(p).fold[Option[sql.ExprRelationAST[sql.Expr]]](None) { query =>
-        Some(sql.ExprRelationAST(query, alias.getOrElse(tableName(p))))
-      }
+      views.get(p).map(sql.ExprRelationAST(_, alias.getOrElse(tableName(p))))
     case _ => None
   }
 
   def ls0(dir: Path) = {
-    val vs = (views.keys.map { p =>
-      p.rebase(dir).toOption.map { rp =>
-        if (rp.pureFile) FilesystemNode(rp, Backend.Mount)
-        else FilesystemNode(rp.head, Backend.Plain)
-      }
-    }).toList.foldMap(_.toList).toSet
+    val vs = views.keys.toList.foldMap(_.rebase(dir).toSet).map { rp =>
+      if (rp.pureFile) FilesystemNode(rp, Backend.Mount)
+      else FilesystemNode(rp.head, Backend.Plain)
+    }
     def orEmpty(v: PathTask[Set[FilesystemNode]]): PathTask[Set[FilesystemNode]] =
       EitherT(v.run.map {
         case -\/(NonexistentPathError(_, _)) => \/-(Set.empty)
