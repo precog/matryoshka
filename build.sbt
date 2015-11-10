@@ -53,6 +53,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "-Yno-imports",
     "-Ywarn-unused-import"
   ),
+  wartremoverErrors in (Compile, compile) ++= warts,
   libraryDependencies ++= Seq(
     "org.scalaz"        %% "scalaz-core"               % scalazVersion  % "compile, test",
     "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion  % "compile, test",

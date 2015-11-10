@@ -28,7 +28,7 @@ object WebConfig extends ConfigOps[WebConfig] {
     casecodec2(WebConfig.apply, WebConfig.unapply)("server", "mountings")
 }
 
-case class WebConfigLens[WC, SC](
+final case class WebConfigLens[WC, SC](
   server: Lens[WC, SC],
   mountings: Lens[WC, MountingsConfig],
   wcPort: Lens[WC, Int],
