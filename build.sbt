@@ -7,6 +7,14 @@ val scalazVersion  = "7.1.4"
 val slcVersion     = "0.4"
 val monocleVersion = "1.1.1"
 
+// Exclusive execution settings
+lazy val ExclusiveTests = config("exclusive") extend Test
+
+val ExclusiveTest = Tags.Tag("exclusive-test")
+
+def exclusiveTasks(tasks: Scoped*) =
+  tasks flatMap (inTask(_)(tags := Seq(ExclusiveTest -> 1)))
+
 lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   headers := Map(
     "scala" -> Apache2_0("2014 - 2015", "SlamData Inc."),
@@ -54,6 +62,20 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "-Ywarn-unused-import"
   ),
   wartremoverErrors in (Compile, compile) ++= warts,
+  // Normal tests exclude those tagged in Specs2 with 'exclusive'.
+  testOptions in Test := Seq(
+    Tests.Argument("exclude", "exclusive")
+  ),
+  // Exclusive tests include only those tagged with 'exclusive'.
+  testOptions in ExclusiveTests := Seq(
+    Tests.Argument("include", "exclusive")
+  ),
+  // Tasks tagged with `ExclusiveTest` should be run exclusively.
+  concurrentRestrictions in Global := Seq(
+    Tags.exclusive(ExclusiveTest)
+  ),
+  console <<= console in Test, // console alias test:console
+  initialCommands in (Test, console) := """ammonite.repl.Repl.run("prompt.update(\"λ \")")""",
   libraryDependencies ++= Seq(
     "org.scalaz"        %% "scalaz-core"               % scalazVersion  % "compile, test",
     "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion  % "compile, test",
@@ -161,4 +183,11 @@ lazy val core = (project in file("core")) settings (oneJarSettings: _*) enablePl
 
 lazy val web = (project in file("web")) dependsOn (core % "test->test;compile->compile") settings (oneJarSettings: _*) enablePlugins(AutomateHeaderPlugin)
 
-lazy val it = (project in file("it")) dependsOn (core % "test->test;compile->compile", web % "test->test;compile->compile") settings (standardSettings: _*) enablePlugins(AutomateHeaderPlugin)
+lazy val it = (project in file("it"))
+                .configs(ExclusiveTests)
+                .dependsOn(core % "test->test;compile->compile", web % "test->test;compile->compile")
+                .settings(standardSettings: _*)
+                // Configure various test tasks to run exclusively in the `ExclusiveTests` config.
+                .settings(inConfig(ExclusiveTests)(Defaults.testTasks): _*)
+                .settings(inConfig(ExclusiveTests)(exclusiveTasks(test, testOnly, testQuick)): _*)
+                .enablePlugins(AutomateHeaderPlugin)
