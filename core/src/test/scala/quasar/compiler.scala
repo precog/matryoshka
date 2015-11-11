@@ -549,51 +549,114 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
         Except[FLP](setA, setB))
     }
 
-    "expand top-level object flatten" in {
-      testLogicalPlanCompile(
-                   "SELECT foo{*} FROM foo",
-        compileExp("SELECT Flatten_Object(foo) AS \"0\" FROM foo"))
-    }
-
-    "expand nested object flatten" in {
-      testLogicalPlanCompile(
-                   "SELECT foo.bar{*} FROM foo",
-        compileExp("SELECT Flatten_Object(foo.bar) AS \"bar\" FROM foo"))
-    }
-
-    "expand field object flatten" in {
+    "have {*} as alias for {:*}" in {
       testLogicalPlanCompile(
                    "SELECT bar{*} FROM foo",
-        compileExp("SELECT Flatten_Object(foo.bar) AS \"bar\" FROM foo"))
+        compileExp("SELECT bar{:*} FROM foo"))
+    }
+
+    "have [*] as alias for [:*]" in {
+      testLogicalPlanCompile(
+                   "SELECT foo[*] FROM foo",
+        compileExp("SELECT foo[:*] FROM foo"))
+    }
+
+    "expand top-level map flatten" in {
+      testLogicalPlanCompile(
+                   "SELECT foo{:*} FROM foo",
+        compileExp("SELECT Flatten_Map(foo) AS \"0\" FROM foo"))
+    }
+
+    "expand nested map flatten" in {
+      testLogicalPlanCompile(
+                   "SELECT foo.bar{:*} FROM foo",
+        compileExp("SELECT Flatten_Map(foo.bar) AS \"bar\" FROM foo"))
+    }
+
+    "expand field map flatten" in {
+      testLogicalPlanCompile(
+                   "SELECT bar{:*} FROM foo",
+        compileExp("SELECT Flatten_Map(foo.bar) AS \"bar\" FROM foo"))
     }
 
     "expand top-level array flatten" in {
       testLogicalPlanCompile(
-                   "SELECT foo[*] FROM foo",
+                   "SELECT foo[:*] FROM foo",
         compileExp("SELECT Flatten_Array(foo) AS \"0\" FROM foo"))
     }
 
     "expand nested array flatten" in {
       testLogicalPlanCompile(
-                   "SELECT foo.bar[*] FROM foo",
+        "SELECT foo.bar[:*] FROM foo",
         compileExp("SELECT Flatten_Array(foo.bar) AS \"bar\" FROM foo"))
     }
 
     "expand field array flatten" in {
       testLogicalPlanCompile(
-                   "SELECT bar[*] FROM foo",
+                   "SELECT bar[:*] FROM foo",
         compileExp("SELECT Flatten_Array(foo.bar) AS \"bar\" FROM foo"))
     }
 
-    "compile top-level object flatten" in {
+    "compile top-level map flatten" in {
       testLogicalPlanCompile(
-        "select zips{*} from zips",
-        Squash(makeObj("0" -> FlattenObject(read("zips")))))
+        "select zips{:*} from zips",
+        Squash(makeObj("0" -> FlattenMap(read("zips")))))
+    }
+
+    "have {_} as alias for {:_}" in {
+      testLogicalPlanCompile(
+                   "select length(commit.author{_}) from slamengine_commits",
+        compileExp("select length(commit.author{:_}) from slamengine_commits"))
+    }
+
+    "have [_] as alias for [:_]" in {
+      testLogicalPlanCompile(
+                   "select loc[_] / 10 from zips",
+        compileExp("select loc[:_] / 10 from zips"))
+    }
+
+    "compile map shift / unshift" in {
+      testLogicalPlanCompile(
+        "select {length(commit.author{:_})...} from slamengine_commits",
+        Squash(makeObj("0" ->
+          UnshiftMap[FLP](
+            Length[FLP](
+              ShiftMap[FLP](ObjectProject[FLP](ObjectProject(read("slamengine_commits"), Constant(Data.Str("commit"))), Constant(Data.Str("author")))))))))
+    }
+
+    "compile map shift / unshift keys" in {
+      testLogicalPlanCompile(
+        "select {length(commit.author{_:})...} from slamengine_commits",
+        Squash(makeObj("0" -> UnshiftMap[FLP](Length[FLP](ShiftMapKeys[FLP](ObjectProject[FLP](ObjectProject(read("slamengine_commits"), Constant(Data.Str("commit"))), Constant(Data.Str("author")))))))))
+    }
+
+    "compile array shift / unshift" in {
+      testLogicalPlanCompile(
+        "select [loc[:_] / 10 ...] from zips",
+        Squash(
+          makeObj(
+            "0" ->
+              UnshiftArray[FLP](
+                Divide[FLP](
+                  ShiftArray[FLP](ObjectProject(read("zips"), Constant(Data.Str("loc")))),
+                  Constant(Data.Int(10)))))))
+    }
+
+    "compile array shift / unshift indices" in {
+      testLogicalPlanCompile(
+        "select [loc[_:] * 10 ...] from zips",
+        Squash(
+          makeObj(
+            "0" ->
+              UnshiftArray[FLP](
+                Multiply[FLP](
+                  ShiftArrayIndices[FLP](ObjectProject(read("zips"), Constant(Data.Str("loc")))),
+                  Constant(Data.Int(10)))))))
     }
 
     "compile array flatten" in {
       testLogicalPlanCompile(
-        "select loc[*] from zips",
+        "select loc[:*] from zips",
         Squash(
           makeObj(
             "loc" ->

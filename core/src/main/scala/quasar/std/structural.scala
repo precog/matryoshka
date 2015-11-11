@@ -194,9 +194,9 @@ trait StructuralLib extends Library {
       case Obj(map, _)              => success(List(Obj(map, Some(Top)), Str))
     })
 
-  val FlattenObject = ExpansionFlat(
-    "FLATTEN_OBJECT",
-    "Flattens an object into a set",
+  val FlattenMap = Expansion(
+    "FLATTEN_MAP",
+    "Zooms in on the values of a map, extending the current dimension with the keys",
     Set(Top), AnyObject :: Nil,
     noSimplification,
     partialTyperV {
@@ -207,9 +207,9 @@ trait StructuralLib extends Library {
     },
     untyper(tpe => success(List(Obj(Map(), Some(tpe))))))
 
-  val FlattenArray = ExpansionFlat(
+  val FlattenArray = Expansion(
     "FLATTEN_ARRAY",
-    "Flattens an array into a set",
+    "Zooms in on the elements of an array, extending the current dimension with the indices",
     Set(Top), AnyArray :: Nil,
     noSimplification,
     partialTyperV {
@@ -220,10 +220,98 @@ trait StructuralLib extends Library {
     },
     untyper(tpe => success(List(FlexArr(0, None, tpe)))))
 
+  val FlattenMapKeys = Expansion(
+    "{*:}",
+    "Zooms in on the keys of a map, also extending the current dimension with the keys",
+    Set(Top), AnyObject :: Nil,
+    noSimplification,
+    partialTyper { case List(x) if x.objectLike => Str },
+    untyper(tpe => success(List(Obj(Map(), Some(Top))))))
+
+  val FlattenArrayIndices = Expansion(
+    "[*:]",
+    "Zooms in on the indices of an array, also extending the current dimension with the indices",
+    Set(Int), AnyArray :: Nil,
+    noSimplification,
+    partialTyper { case List(x) if x.arrayLike => Int },
+    partialUntyper {
+      case Set(Int) | Int => List(FlexArr(0, None, Top))
+    })
+
+  val ShiftMap = Expansion(
+    "SHIFT_MAP",
+    "Zooms in on the values of a map, adding the keys as a new dimension",
+    Set(Top), AnyObject :: Nil,
+    noSimplification,
+    partialTyperV {
+      case List(x) if x.objectLike =>
+        x.objectType.fold[ValidationNel[SemanticError, Type]](
+          failure(NonEmptyList(GenericError("internal error: objectLike, but no objectType"))))(
+          success)
+    },
+    untyper(tpe => success(List(Obj(Map(), Some(tpe))))))
+
+  val ShiftArray = Expansion(
+    "SHIFT_ARRAY",
+    "Zooms in on the elements of an array, adding the indices as a new dimension",
+    Set(Top), AnyArray :: Nil,
+    noSimplification,
+    partialTyperV {
+      case List(x) if x.arrayLike =>
+        x.arrayType.fold[ValidationNel[SemanticError, Type]](
+          failure(NonEmptyList(GenericError("internal error: arrayLike, but no arrayType"))))(
+          success)
+    },
+    untyper(tpe => success(List(FlexArr(0, None, tpe)))))
+
+  val ShiftMapKeys = Expansion(
+    "{_:}",
+    "Zooms in on the keys of a map, also adding the keys as a new dimension",
+    Set(Top), AnyObject :: Nil,
+    noSimplification,
+    partialTyper { case List(x) if x.objectLike => Str },
+    untyper(tpe => success(List(Obj(Map(), Some(Top))))))
+
+  val ShiftArrayIndices = Expansion(
+    "[_:]",
+    "Zooms in on the indices of an array, also adding the keys as a new dimension",
+    Set(Int), AnyArray :: Nil,
+    noSimplification,
+    partialTyper { case List(x) if x.arrayLike => Int },
+    partialUntyper {
+      case Set(Int) | Int => List(FlexArr(0, None, Top))
+    })
+
+  val UnshiftMap = Reduction(
+    "{...}",
+    "Unshifts a dimension from the set identity, creating a map with the dimensional values as the keys.",
+    AnyObject, Set(Top) :: Nil,
+    noSimplification,
+    partialTyper { case List(tpe) => Obj(Map(), Some(tpe)) },
+    partialUntyperV { case tpe if tpe.objectLike =>
+      tpe.objectType.fold[ValidationNel[SemanticError, List[Type]]](
+        failure(NonEmptyList(GenericError("internal error: objectLike, but no objectType"))))(
+        x => success(List(x)))
+    })
+
+  val UnshiftArray = Reduction(
+    "[...]",
+    "Unshifts an integral dimension from the set identity, creating an array with the dimensional values as the indices.",
+    AnyArray, Set(Top) :: Nil,
+    noSimplification,
+    partialTyper { case List(tpe) => FlexArr(0, None, tpe) },
+    partialUntyperV { case tpe if tpe.arrayLike =>
+      tpe.arrayType.fold[ValidationNel[SemanticError, List[Type]]](
+        failure(NonEmptyList(GenericError("internal error: arrayLike, but no arrayType"))))(
+        x => success(List(x)))
+    })
+
   def functions = MakeObject :: MakeArray ::
                   ObjectConcat :: ArrayConcat :: ConcatOp ::
                   ObjectProject :: ArrayProject ::
-                  FlattenObject :: FlattenArray ::
+                  FlattenMapKeys :: FlattenMap :: FlattenArrayIndices :: FlattenArray ::
+                  ShiftMapKeys :: ShiftMap :: ShiftArrayIndices :: ShiftArray ::
+                  UnshiftMap :: UnshiftArray ::
                   Nil
 
   // TODO: fix types and add the VirtualFuncs to the list of functions

@@ -32,7 +32,7 @@ trait SetLib extends Library {
       case x @ Type.Set(_)             => x
       case rez                         => rez // ⨿ Type.Set(rez)
     }
-  private def setUntyper(f: Type => ValidationNel[SemanticError, List[Type]]):
+  def setUntyper(f: Type => ValidationNel[SemanticError, List[Type]]):
       Func.Untyper =
     untyper {
       case Type.Set(t)             => f(t)

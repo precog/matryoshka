@@ -33,8 +33,8 @@ package object sql {
     def extractName(expr: Expr): Option[String] = expr match {
       case Ident(name) if Some(name) != relName      => Some(name)
       case Binop(_, StringLiteral(name), FieldDeref) => Some(name)
-      case Unop(expr, ObjectFlatten)                 => extractName(expr)
-      case Unop(expr, ArrayFlatten)                  => extractName(expr)
+      case Unop(expr, FlattenMapValues)              => extractName(expr)
+      case Unop(expr, FlattenArrayValues)            => extractName(expr)
       case _                                         => None
     }
 
@@ -150,9 +150,15 @@ package object sql {
         case _ => List("(" + lhs._2 + ")", op.sql, "(" + rhs._2 + ")").mkString(" ")
       }
       case UnopF(expr, op) => op match {
-        case ObjectFlatten => "(" + expr._2 + "){*}"
-        case ArrayFlatten  => "(" + expr._2 + ")[*]"
-        case IsNull        => "(" + expr._2 + ") is null"
+        case FlattenMapKeys      => "(" + expr._2 + "){*:}"
+        case FlattenMapValues    => "(" + expr._2 + "){:*}"
+        case ShiftMapKeys        => "(" + expr._2 + "){_:}"
+        case ShiftMapValues      => "(" + expr._2 + "){:_}"
+        case FlattenArrayIndices => "(" + expr._2 + ")[*:]"
+        case FlattenArrayValues  => "(" + expr._2 + ")[:*]"
+        case ShiftArrayIndices   => "(" + expr._2 + ")[_:]"
+        case ShiftArrayValues    => "(" + expr._2 + ")[:_]"
+        case IsNull              => "(" + expr._2 + ") is null"
         case _ =>
           val s = List(op.sql, "(", expr._2, ")") mkString " "
           // NB: dis-ambiguates the query in case this is the leading projection

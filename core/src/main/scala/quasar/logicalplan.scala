@@ -299,10 +299,10 @@ object LogicalPlan {
             consts <- emitName[SemDisj, List[Fix[LogicalPlan]]](args.map(ensureConstraint(_, Constant(Data.Arr(List(Data.NA))))).sequenceU)
             plan  <- unifyOrCheck(inf, types, Invoke(structural.FlattenArray, consts))
           } yield plan
-        case InvokeF(structural.FlattenObject, args) => for {
-          types <- lift(structural.FlattenObject.apply(args.map(_.inferred)).disjunction)
+        case InvokeF(structural.FlattenMap, args) => for {
+          types <- lift(structural.FlattenMap.apply(args.map(_.inferred)).disjunction)
           consts <- emitName[SemDisj, List[Fix[LogicalPlan]]](args.map(ensureConstraint(_, Constant(Data.Obj(Map("" -> Data.NA))))).sequenceU)
-          plan  <- unifyOrCheck(inf, types, Invoke(structural.FlattenObject, consts))
+          plan  <- unifyOrCheck(inf, types, Invoke(structural.FlattenMap, consts))
         } yield plan
         case InvokeF(f @ Mapping(_, _, _, _, _, _, _), args) =>
           val (types, constraints, terms) = args.foldMap(a =>

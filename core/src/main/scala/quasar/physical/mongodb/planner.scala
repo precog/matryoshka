@@ -858,7 +858,7 @@ object MongoDbPlanner extends Planner[Crystallized] with JsConversions {
           })
         case DeleteField  =>
           lift(Arity2(HasWorkflow, HasText).flatMap((deleteField(_, _)).tupled))
-        case FlattenObject => lift(Arity1(HasWorkflow).map(flattenObject))
+        case FlattenMap   => lift(Arity1(HasWorkflow).map(flattenMap))
         case FlattenArray => lift(Arity1(HasWorkflow).map(flattenArray))
         case Squash       => lift(Arity1(HasWorkflow).map(squash))
         case Distinct     =>
