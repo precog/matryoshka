@@ -17,7 +17,7 @@
 package quasar
 
 import quasar.Predef._
-import quasar.recursionschemes._, Recursive.ops._
+import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
 import quasar.fp._
 import quasar.analysis._, SemanticAnalysis._, SemanticError._
 import quasar.fs.Path
@@ -318,8 +318,7 @@ trait Compiler[F[_]] {
 
     node match {
       case s @ Select(isDistinct, projections, relations, filter, groupBy, orderBy) =>
-        /*
-         * 1. Joins, crosses, subselects (FROM)
+        /* 1. Joins, crosses, subselects (FROM)
          * 2. Filter (WHERE)
          * 3. Group by (GROUP BY)
          * 4. Filter (HAVING)
@@ -347,12 +346,9 @@ trait Compiler[F[_]] {
               case (_,          _)       => Nil
             })
 
-        relations match {
-          case None => for {
-            names <- names
-            projs <- projs.traverseU(compile0)
-          } yield buildRecord(names, projs)
-          case Some(relations) => {
+        relations.fold(
+          (names ⊛ projs.traverseU(compile0))(buildRecord))(
+          relations => {
             val stepBuilder = step(relations)
             stepBuilder(compileRelation(relations).some) {
               val filtered = filter.map(filter =>
@@ -419,8 +415,7 @@ trait Compiler[F[_]] {
                 }
               }
             }
-          }
-        }
+          })
 
       case SetLiteral(values0) =>
         val values = values0.traverseU {
@@ -532,7 +527,7 @@ object Compiler {
       def groupedKeys(t: LogicalPlan[Fix[LogicalPlan]], newSrc: Fix[LogicalPlan]): Option[List[Fix[LogicalPlan]]] = {
         t match {
           case InvokeF(set.GroupBy, List(src, structural.MakeArrayN(keys))) =>
-            Some(keys.map(_.transform(t => if (t ≟ src) newSrc else t)))
+            Some(keys.map(_.transCataT(t => if (t ≟ src) newSrc else t)))
           case InvokeF(Sifting(_, _, _, _, _, _, _), src :: _) =>
             groupedKeys(src.unFix, newSrc)
           case _ => None
@@ -545,7 +540,7 @@ object Compiler {
     val keys: List[Fix[LogicalPlan]] = boundCata(tree)(keysƒ)._2
 
     // Step 1: annotate nodes containing the keys.
-    val ann: Cofree[LogicalPlan, Boolean] = boundAttribute(tree)(keys contains _)
+    val ann: Cofree[LogicalPlan, Boolean] = boundAttribute(tree)(keys.contains)
 
     // Step 2: transform from the top, inserting Arbitrary where a key is not
     // otherwise reduced.

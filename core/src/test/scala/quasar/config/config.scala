@@ -2,9 +2,12 @@ package quasar.config
 
 import com.mongodb.ConnectionString
 import quasar.Predef._
+import quasar.config.FsPath.NonexistentFileError
+import quasar.Evaluator.EnvironmentError.EnvFsPathError
 import quasar.fp._
 import quasar.fs.{Path => QPath}
 
+import argonaut._, Argonaut._
 import pathy._, Path._
 import scalaz._, concurrent.Task, Scalaz._
 import scala.util.Properties
@@ -13,10 +16,14 @@ import org.specs2.scalaz._
 import org.specs2.ScalaCheck
 import org.scalacheck._
 
-class ConfigSpec extends Specification with ScalaCheck with DisjunctionMatchers {
+abstract class ConfigSpec[Config: CodecJson] extends Specification with DisjunctionMatchers {
   import FsPath._
 
   sequential
+
+  def configOps: ConfigOps[Config]
+
+  def sampleConfig(uri: ConnectionString): Config
 
   def printPosix[T](fp: FsPath[T, Sandboxed]) = printFsPath(posixCodec, fp)
 
@@ -25,10 +32,6 @@ class ConfigSpec extends Specification with ScalaCheck with DisjunctionMatchers 
   val dbName = "slamengine-test-01"
   val validURI = new ConnectionString(s"$host/$dbName")
   val invalidURI = new ConnectionString(s"$invalidHost/$dbName")
-  def sampleConfig(uri: ConnectionString) = Config(
-    server = SDServerConfig(Some(92)),
-    mountings = Map(
-      QPath.Root -> MongoDbConfig(uri)))
   val TestConfig = sampleConfig(validURI)
 
   val BrokenTestConfig = sampleConfig(invalidURI)
@@ -72,26 +75,8 @@ class ConfigSpec extends Specification with ScalaCheck with DisjunctionMatchers 
       a    <- t onFinish κ(prev.cata(setProp(n, _), Task.now(())))
     } yield a
 
-  val OldConfigStr =
-    """{
-      |  "server": {
-      |    "port": 92
-      |  },
-      |  "mountings": {
-      |    "/": {
-      |      "mongodb": {
-      |        "database": "slamengine-test-01",
-      |        "connectionUri": "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01"
-      |      }
-      |    }
-      |  }
-      |}""".stripMargin
-
   val ConfigStr =
     """{
-      |  "server": {
-      |    "port": 92
-      |  },
       |  "mountings": {
       |    "/": {
       |      "mongodb": {
@@ -103,17 +88,13 @@ class ConfigSpec extends Specification with ScalaCheck with DisjunctionMatchers 
 
   "fromString" should {
     "parse valid config" in {
-      Config.fromString(ConfigStr) must beRightDisjunction(TestConfig)
-    }
-
-    "parse previous config" in {
-      Config.fromString(OldConfigStr) must beRightDisjunction(TestConfig)
+      configOps.fromString(ConfigStr) must beRightDisjunction(TestConfig)
     }
   }
 
   "toString" should {
     "render same config" in {
-      Config.toString(TestConfig) must_== ConfigStr
+      configOps.showInstance.shows(TestConfig) must_== ConfigStr
     }
   }
 
@@ -158,16 +139,6 @@ class ConfigSpec extends Specification with ScalaCheck with DisjunctionMatchers 
     }
   }
 
-  "SDServerConfig encoding" should {
-    import ConfigGen._
-
-    "round-trip any well-formed config" ! prop { (cfg: Config) =>
-      val json = Config.Codec.encode(cfg)
-      val cfg2 = Config.Codec.decode(json.hcursor)
-      cfg2.result must beRightDisjunction(cfg)
-    }
-  }
-
   // NB: Not possible to test windows deterministically at this point as cannot
   //     programatically set environment variables like we can with properties.
   "defaultPath" should {
@@ -176,27 +147,27 @@ class ConfigSpec extends Specification with ScalaCheck with DisjunctionMatchers 
     val posixp = ".config"
 
     "mac when home dir" in {
-      val p = withProp("user.home", "/home/foo", Config.defaultPathForOS(file("quasar-config.json"))(OS.mac))
+      val p = withProp("user.home", "/home/foo", configOps.defaultPathForOS(file("quasar-config.json"))(OS.mac))
       printPosix(p.run) ==== s"/home/foo/$macp/$comp"
     }
 
     "mac no home dir" in {
-      val p = withoutProp("user.home", Config.defaultPathForOS(file("quasar-config.json"))(OS.mac))
+      val p = withoutProp("user.home", configOps.defaultPathForOS(file("quasar-config.json"))(OS.mac))
       printPosix(p.run) ==== s"./$macp/$comp"
     }
 
     "posix when home dir" in {
-      val p = withProp("user.home", "/home/bar", Config.defaultPathForOS(file("quasar-config.json"))(OS.posix))
+      val p = withProp("user.home", "/home/bar", configOps.defaultPathForOS(file("quasar-config.json"))(OS.posix))
       printPosix(p.run) ==== s"/home/bar/$posixp/$comp"
     }
 
     "posix when home dir with trailing slash" in {
-      val p = withProp("user.home", "/home/bar/", Config.defaultPathForOS(file("quasar-config.json"))(OS.posix))
+      val p = withProp("user.home", "/home/bar/", configOps.defaultPathForOS(file("quasar-config.json"))(OS.posix))
       printPosix(p.run) ==== s"/home/bar/$posixp/$comp"
     }
 
     "posix no home dir" in {
-      val p = withoutProp("user.home", Config.defaultPathForOS(file("quasar-config.json"))(OS.posix))
+      val p = withoutProp("user.home", configOps.defaultPathForOS(file("quasar-config.json"))(OS.posix))
       printPosix(p.run) ==== s"./$posixp/$comp"
     }
   }
@@ -204,47 +175,85 @@ class ConfigSpec extends Specification with ScalaCheck with DisjunctionMatchers 
   "toFile" should {
     "create loadable config" in {
       withTestConfigFile(fp =>
-        Config.toFile(TestConfig, Some(fp)) *>
-        Config.fromFile(fp).run
+        configOps.toFile(TestConfig, Some(fp)) *>
+        configOps.fromFile(fp).run
       ).run must beRightDisjunction(TestConfig)
     }
   }
 
-  "fromFileOrEmpty" should {
-    "result in empty config when file not found" in {
-      withTestConfigFile(fp =>
-        Config.fromFileOrEmpty(Some(fp)).run
-      ).run must beRightDisjunction(Config.empty)
+  "fromFileOrDefaultPaths" should {
+    "result in error when file not found" in {
+      val (p, r) =
+        withTestConfigFile(fp =>
+          configOps.fromFileOrDefaultPaths(Some(fp)).run.map((fp, _))
+        ).run
+      r must beLeftDisjunction(EnvFsPathError(NonexistentFileError(p)))
     }
   }
 
   "loadAndTest" should {
     "load a correct config" in {
       withTestConfigFile(fp =>
-        Config.toFile(TestConfig, Some(fp)) *>
-        Config.loadAndTest(fp).run
+        configOps.toFile(TestConfig, Some(fp)) *>
+        configOps.loadAndTest(fp).run
       ).run must beRightDisjunction(TestConfig)
     }
 
     "fail on a config with incorrect mounting" in {
       withTestConfigFile(fp =>
-        Config.toFile(BrokenTestConfig, Some(fp)) *>
-        Config.loadAndTest(fp).run
+        configOps.toFile(BrokenTestConfig, Some(fp)) *>
+        configOps.loadAndTest(fp).run
       ).run must beLeftDisjunction
     }
   }
 }
 
-object ConfigGen {
+class CoreConfigSpec extends ConfigSpec[CoreConfig] with ScalaCheck {
+
+  def configOps: ConfigOps[CoreConfig] = CoreConfig
+
+  def sampleConfig(uri: ConnectionString): CoreConfig = CoreConfig(
+    mountings = Map(
+      QPath.Root -> MongoDbConfig(uri)))
+
+  val OldConfigStr =
+    """{
+      |  "mountings": {
+      |    "/": {
+      |      "mongodb": {
+      |        "database": "slamengine-test-01",
+      |        "connectionUri": "mongodb://slamengine:slamengine@ds045089.mongolab.com:45089/slamengine-test-01"
+      |      }
+      |    }
+      |  }
+      |}""".stripMargin
+
+  "fromString" should {
+    "parse previous config" in {
+      configOps.fromString(OldConfigStr) must beRightDisjunction(TestConfig)
+    }
+  }
+
+  "encoding" should {
+    import CoreConfigGen._
+
+    "round-trip any well-formed config" ! prop { (cfg: CoreConfig) =>
+      val json = CoreConfig.Codec.encode(cfg)
+      val cfg2 = CoreConfig.Codec.decode(json.hcursor)
+      cfg2.result must beRightDisjunction(cfg)
+    }
+  }
+}
+
+object CoreConfigGen {
   import quasar.sql
   import Arbitrary._
   import Gen._
 
-  implicit val arbitraryConfig: Arbitrary[Config] = Arbitrary {
+  implicit val arbitraryConfig: Arbitrary[CoreConfig] = Arbitrary {
     for {
-      port   <- arbitrary[Int].flatMap(option(_))
       mounts <- listOf(mountGen)
-    } yield Config(SDServerConfig(port), Map(mounts: _*))
+    } yield CoreConfig(Map(mounts: _*))
   }
 
   def mountGen: Gen[(QPath, MountConfig)] = for {

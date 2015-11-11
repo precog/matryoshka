@@ -18,7 +18,7 @@ package quasar
 
 import quasar.Predef._
 import RenderTree.ops._
-import quasar.recursionschemes._, Recursive.ops._
+import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
 import quasar.fs._
 
 import scalaz._, Scalaz._
@@ -79,7 +79,7 @@ package object sql {
           (rewrite(left) |@| rewrite(right))((l,r) => sql.JoinRelation(l, r, tpe, clause))
         case _ => None
       })
-    q.topDownTransform(x => x match {
+    q.transAnaT(x => x match {
       case Fix(sel @ ExprF.SelectF(_, _, Some(rel), _, _, _)) =>
         rewrite(rel).fold(x)(r => Fix(sel.copy(relations = Some(r))))
       case _ => x
@@ -163,7 +163,8 @@ package object sql {
       case InvokeFunctionF(name, args) =>
         import quasar.std.StdLib.string
         (name, args) match {
-          case (string.Like.name, (_, value) :: (_, pattern) :: (StringLiteral(""), _) :: Nil) => "(" + value + ") like (" + pattern + ")"
+          case (string.Like.name, (_, value) :: (_, pattern) :: (StringLiteral("\\"), _) :: Nil) =>
+            "(" + value + ") like (" + pattern + ")"
           case (string.Like.name, (_, value) :: (_, pattern) :: (_, esc) :: Nil) =>
             "(" + value + ") like (" + pattern + ") escape (" + esc + ")"
           case _ => name + "(" + args.map(_._2).mkString(", ") + ")"

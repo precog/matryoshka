@@ -32,7 +32,8 @@ sealed trait Func {
 
   def simplify: Func.Simplifier
 
-  def apply(args: Fix[LogicalPlan]*): Fix[LogicalPlan] = LogicalPlan.Invoke(this, args.toList)
+  def apply[T[_[_]]: Corecursive](args: T[LogicalPlan]*): T[LogicalPlan] =
+    Corecursive[T].embed(LogicalPlan.InvokeF(this, args.toList))
 
   // TODO: Make this `unapplySeq`
   def unapply[A](node: LogicalPlan[A]): Option[List[A]] = {
@@ -48,7 +49,8 @@ sealed trait Func {
 
   def untype(tpe: Type) = untype0(this, tpe)
 
-  final def apply(arg1: Type, rest: Type*): ValidationNel[SemanticError, Type] = apply(arg1 :: rest.toList)
+  final def apply(arg1: Type, rest: Type*): ValidationNel[SemanticError, Type] =
+    apply(arg1 :: rest.toList)
 
   final def arity: Int = domain.length
 
@@ -59,8 +61,12 @@ trait FuncInstances {
     def render(v: Func) = Terminal("Func" :: Nil, Some(v.name))
   }
 }
+
 object Func extends FuncInstances {
-  type Simplifier = List[Fix[LogicalPlan]] => Option[Fix[LogicalPlan]]
+  trait Simplifier {
+    def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]):
+        Option[LogicalPlan[T[LogicalPlan]]]
+  }
   type Typer      = List[Type] => ValidationNel[SemanticError, Type]
   type Untyper    = (Func, Type) => ValidationNel[SemanticError, List[Type]]
 }

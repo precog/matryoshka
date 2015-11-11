@@ -42,21 +42,23 @@ import scodec.bits.ByteVector
 /**
  * The REST API to the Quasar Engine
  * @param initialConfig The config with which the server will be started initially
- * @param createBackend create a backend from the give config
+ * @param createBackend create a backend from the given config
  * @param validateConfig Is called to validate a `MountConfig` when the client changes a mount
  * @param restartServer Expected to restart server when called using the provided Configuration. Called only when the port changes.
  * @param configChanged Expected to persist a Config when called. Called whenever the Config changes.
  */
-final case class FileSystemApi(
-  initialConfig: Config,
-  createBackend: Config => EnvTask[Backend],
+final case class FileSystemApi[WC, SC](
+  initialConfig: WC,
+  createBackend: WC => EnvTask[Backend],
   validateConfig: MountConfig => EnvTask[Unit],
-  restartServer: Config => Task[Unit],
-  configChanged: Config => Task[Unit]) {
+  restartServer: WC => Task[Unit],
+  configChanged: WC => Task[Unit],
+  webConfigLens: WebConfigLens[WC, SC]) {
 
   import Method.{MOVE, OPTIONS}
+  import webConfigLens._
 
-  type S = (Config, Backend)
+  type S = (WC, Backend)
 
   val CsvColumnsFromInitialRowsCount = 1000
   val LineSep = "\r\n"
@@ -66,7 +68,7 @@ final case class FileSystemApi(
     for {
       s           <- sref.read.liftM[EnvErrT]
       (cfg, bknd) =  s
-      updCfg      =  cfg.copy(mountings = mounts)
+      updCfg      =  mountings.set(mounts)(cfg)
       updBknd     <- createBackend(updCfg)
       _           <- configChanged(updCfg).liftM[EnvErrT]
       _           <- sref.write((updCfg, updBknd)).liftM[EnvErrT]
@@ -78,16 +80,15 @@ final case class FileSystemApi(
    */
   private def upsertMount(path: Path, backendCfg: MountConfig, sref: TaskRef[S]): EnvTask[Boolean] =
     sref.read.liftM[EnvErrT].flatMap { case (cfg, _) =>
-      setMounts(cfg.mountings.updated(path, backendCfg), sref)
-        .as(cfg.mountings.keySet contains path)
+      setMounts(mountings.get(cfg).updated(path, backendCfg), sref)
+        .as(mountings.get(cfg).keySet contains path)
     }
 
-  private def updateServerConfig(scfg: SDServerConfig, current: Task[Config]): Task[Unit] =
+  private def updateWebServerConfig(config: Task[WC]): Task[Unit] =
     for {
-      cfg    <- current
-      updCfg =  cfg.copy(server = scfg)
-      _      <- configChanged(updCfg)
-      _      <- restartServer(updCfg)
+      cfg <- config
+      _   <- configChanged(cfg)
+      _   <- restartServer(cfg)
     } yield ()
 
   private def rawJsonLines[F[_]](codec: DataCodec, v: Process[F, Data]): Process[F, String] =
@@ -273,7 +274,7 @@ final case class FileSystemApi(
     }
   }
 
-  def serverService(config: Task[Config]) =
+  def serverService(config: Task[WC]) =
     HttpService {
       case req @ PUT -> Root / "port" =>
         EntityDecoder.decodeString(req).flatMap(body =>
@@ -281,12 +282,12 @@ final case class FileSystemApi(
             e => NotFound(e.getMessage),
             // TODO: If the requested port is unavailable the server will restart
             //       on a random one, thus this response text may not be accurate.
-            i => updateServerConfig(SDServerConfig(Some(i)), config) *>
+            i => updateWebServerConfig(config.map(wcPort.set(i))) *>
                  Ok("changed port to " + i)))
 
       case DELETE -> Root / "port" =>
-        updateServerConfig(SDServerConfig(None), config) *>
-        Ok("reverted to default port " + SDServerConfig.DefaultPort)
+        updateWebServerConfig(config.map(wcPort.set(ServerConfig.DefaultPort))) *>
+        Ok("reverted to default port " + ServerConfig.DefaultPort)
 
       case req @ GET -> Root / "info" =>
         Ok(versionAndNameInfo)
@@ -314,8 +315,8 @@ final case class FileSystemApi(
      *
      * FIXME: This should really be checked in the backend, not here
      */
-    def ensureNoOverlaps(cfg: Config, path: Path): Option[Task[Response]] =
-      cfg.mountings.keys.toList.traverseU(k =>
+    def ensureNoOverlaps(cfg: WC, path: Path): Option[Task[Response]] =
+      mountings.get(cfg).keys.toList.traverseU(k =>
         k.rebase(path)
           .as(Conflict(errorBody("Can't add a mount point above the existing mount point at " + k, None)))
           .swap *>
@@ -328,20 +329,20 @@ final case class FileSystemApi(
     HttpService {
       case GET -> AsPath(path) =>
         ref.read.flatMap { case (cfg, _) =>
-          cfg.mountings.find { case (k, _) => k == path }.cata(
+          mountings.get(cfg).find { case (k, _) => k == path }.cata(
             v => Ok(MountConfig.Codec.encode(v._2)),
             NotFound("There is no mount point at " + path))
         }
 
       case req @ MOVE -> AsPath(path) =>
         ref.read.flatMap { case (cfg, _) =>
-          (cfg.mountings.get(path), req.headers.get(Destination).map(_.value)) match {
+          (mountings.get(cfg).get(path), req.headers.get(Destination).map(_.value)) match {
             case (Some(mounting), Some(newPath)) =>
               mounting.validate(Path(newPath)).fold(
                 err => BadRequest(errorBody(err.message, None)),
                 κ(for {
                   newMnt <- (Path(newPath), mounting).point[Task]
-                  r      <- setMounts(cfg.mountings - path + newMnt, ref).run
+                  r      <- setMounts(mountings.get(cfg) - path + newMnt, ref).run
                   resp   <- r.as(Ok("moved " + path + " to " + newPath)) valueOr handleEnvironmentError
                 } yield resp))
 
@@ -364,14 +365,14 @@ final case class FileSystemApi(
 
       case req @ PUT -> AsPath(path) =>
         ref.read flatMap { case (cfg, _) =>
-          (if (cfg.mountings contains path) None else ensureNoOverlaps(cfg, path))
+          (if (mountings.get(cfg) contains path) None else ensureNoOverlaps(cfg, path))
             .getOrElse(respond(addPath(path, req).map(_.fold("updated", "added") + " " + path)))
         }
 
       case DELETE -> AsPath(path) =>
         ref.read.flatMap { case (cfg, _) =>
-          if (cfg.mountings contains path)
-            setMounts(cfg.mountings - path, ref)
+          if (mountings.get(cfg) contains path)
+            setMounts(mountings.get(cfg) - path, ref)
               .as(Ok("deleted " + path))
               .valueOr(handleEnvironmentError)
               .join

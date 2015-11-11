@@ -3,7 +3,7 @@ package quasar.physical.mongodb
 import quasar.Predef._
 import quasar.RenderTree, RenderTree.ops._
 import quasar.fp._
-import quasar.recursionschemes._, Recursive.ops._
+import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
 import quasar._
 import quasar.fs.Path
 import quasar.javascript._
@@ -58,7 +58,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   def plan(logical: Fix[LogicalPlan]): Either[PlannerError, Crystallized] =
     (for {
-      simplified <- emit(Vector.empty, \/-(logical.cata(repeatedly(Optimizer.simplifyƒ))))
+      simplified <- emit(Vector.empty, \/-(logical.transCata(repeatedly(Optimizer.simplifyƒ))))
       phys       <- MongoDbPlanner.plan(simplified)
     } yield phys).run._2.toEither
 
@@ -627,7 +627,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
              Selector.Type(BsonType.Text)),
            Selector.Doc(
              BsonField.Name("bar") ->
-               Selector.Regex("^A\\..*$", false, false, false, false))))))
+               Selector.Regex("^A\\..*$", false, true, false, false))))))
     }
 
     "plan filter with LIKE and OR" in {
@@ -640,12 +640,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                Selector.Doc(BsonField.Name("bar") ->
                  Selector.Type(BsonType.Text)),
                Selector.Doc(BsonField.Name("bar") ->
-                 Selector.Regex("^A.*$", false, false, false, false))),
+                 Selector.Regex("^A.*$", false, true, false, false))),
              Selector.And(
                Selector.Doc(BsonField.Name("bar") ->
                  Selector.Type(BsonType.Text)),
                Selector.Doc(BsonField.Name("bar") ->
-                 Selector.Regex("^Z.*$", false, false, false, false)))))))
+                 Selector.Regex("^Z.*$", false, true, false, false)))))))
     }
 
     "plan filter with field in constant array" in {
@@ -688,7 +688,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           Selector.Doc(
             BsonField.Name("city") -> Selector.Type(BsonType.Text)),
           Selector.Doc(
-            BsonField.Name("city") -> Selector.Regex("^B[AEIOU]+LD.*", false, false, false, false))))))
+            BsonField.Name("city") -> Selector.Regex("^B[AEIOU]+LD.*", false, true, false, false))))))
     }
 
     "plan filter with ~*" in {
@@ -698,7 +698,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           Selector.Doc(
             BsonField.Name("city") -> Selector.Type(BsonType.Text)),
           Selector.Doc(
-            BsonField.Name("city") -> Selector.Regex("^B[AEIOU]+LD.*", true, false, false, false))))))
+            BsonField.Name("city") -> Selector.Regex("^B[AEIOU]+LD.*", true, true, false, false))))))
     }
 
     "plan filter with !~" in {
@@ -708,7 +708,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           Selector.Doc(
             BsonField.Name("city") -> Selector.Type(BsonType.Text)),
           Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-            BsonField.Name("city") -> Selector.NotExpr(Selector.Regex("^B[AEIOU]+LD.*", false, false, false, false))))))))
+            BsonField.Name("city") -> Selector.NotExpr(Selector.Regex("^B[AEIOU]+LD.*", false, true, false, false))))))))
     }
 
     "plan filter with !~*" in {
@@ -718,7 +718,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           Selector.Doc(
             BsonField.Name("city") -> Selector.Type(BsonType.Text)),
           Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-            BsonField.Name("city") -> Selector.NotExpr(Selector.Regex("^B[AEIOU]+LD.*", true, false, false, false))))))))
+            BsonField.Name("city") -> Selector.NotExpr(Selector.Regex("^B[AEIOU]+LD.*", true, true, false, false))))))))
     }
 
     "plan filter with alternative ~" in {
@@ -726,13 +726,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("db", "a")),
         $simpleMap(NonEmptyList(MapExpr(JsFn(Name("x"), obj(
           "__tmp10" -> Call(
-            Select(New(Name("RegExp"), List(Select(ident("x"), "pattern"), jscore.Literal(Js.Str("")))), "test"),
+            Select(New(Name("RegExp"), List(Select(ident("x"), "pattern"), jscore.Literal(Js.Str("m")))), "test"),
             List(jscore.Literal(Js.Str("foo")))),
           "__tmp11" -> ident("x"),
           "__tmp12" -> Select(ident("x"), "pattern"),
           "__tmp13" -> Select(ident("x"), "target"),
           "__tmp14" -> Call(
-            Select(New(Name("RegExp"), List(Select(ident("x"), "pattern"), jscore.Literal(Js.Str("")))), "test"),
+            Select(New(Name("RegExp"), List(Select(ident("x"), "pattern"), jscore.Literal(Js.Str("m")))), "test"),
             List(Select(ident("x"), "target"))))))),
           ListMap()),
         $match(
@@ -1893,13 +1893,13 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           obj(
             "0" -> If(Call(ident("isString"), List(Select(ident("x"), "foo"))),
               Call(
-                Select(New(Name("RegExp"), List(jscore.Literal(Js.Str("bar.*")), jscore.Literal(Js.Str("")))), "test"),
+                Select(New(Name("RegExp"), List(jscore.Literal(Js.Str("bar.*")), jscore.Literal(Js.Str("m")))), "test"),
                 List(Select(ident("x"), "foo"))),
               ident("undefined")),
             "1" -> jscore.Literal(Js.Bool(true)),
             "2" -> If(Call(ident("isString"), List(Select(ident("x"), "regex"))),
               Call(
-                Select(New(Name("RegExp"), List(Select(ident("x"), "regex"), jscore.Literal(Js.Str("")))), "test"),
+                Select(New(Name("RegExp"), List(Select(ident("x"), "regex"), jscore.Literal(Js.Str("m")))), "test"),
                 List(jscore.Literal(Js.Str("baz")))),
               ident("undefined")),
             "3" ->
@@ -1908,7 +1908,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                   Call(ident("isString"), List(Select(ident("x"), "regex"))),
                   Call(ident("isString"), List(Select(ident("x"), "target")))),
                 Call(
-                  Select(New(Name("RegExp"), List(Select(ident("x"), "regex"), jscore.Literal(Js.Str("")))), "test"),
+                  Select(New(Name("RegExp"), List(Select(ident("x"), "regex"), jscore.Literal(Js.Str("m")))), "test"),
                   List(Select(ident("x"), "target"))),
                 ident("undefined")))))),
           ListMap()),
@@ -2180,9 +2180,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             Selector.Doc(
               BsonField.Name("__tmp21") \ BsonField.Name("__tmp16") \ BsonField.Name("id") -> Selector.Type(BsonType.Text)),
             Selector.Doc(
-              BsonField.Name("__tmp21") \ BsonField.Name("__tmp16") \ BsonField.Name("id") -> Selector.Regex("^.*Dr.*$", false, false, false, false))),
+              BsonField.Name("__tmp21") \ BsonField.Name("__tmp16") \ BsonField.Name("id") -> Selector.Regex("^.*Dr.*$", false, true, false, false))),
           Selector.Doc(
-            BsonField.Name("__tmp20") -> Selector.Regex("^.*Dr.*$", false, false, false, false)))),
+            BsonField.Name("__tmp20") -> Selector.Regex("^.*Dr.*$", false, true, false, false)))),
         $project(
           reshape("value" -> $field("__tmp21", "__tmp17")),
           ExcludeId)))

@@ -19,6 +19,9 @@ package quasar.repl
 import quasar.Predef._
 import quasar._, Backend._, Errors._, Planner._
 import quasar.config._
+import quasar.config.FsPath.NonexistentFileError
+import quasar.Evaluator._, EnvironmentError.EnvFsPathError
+import quasar.fp._
 import quasar.fs._, Path._
 import quasar.physical.mongodb.util
 import quasar.sql._
@@ -31,6 +34,7 @@ import org.jboss.aesh.console.Prompt
 import org.jboss.aesh.console.helper.InterruptHook
 import org.jboss.aesh.console.settings.SettingsBuilder
 import org.jboss.aesh.edit.actions.Action
+import pathy.Path.{File, Sandboxed}
 import scalaz._, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
@@ -352,25 +356,26 @@ object Repl {
       Process.eval[Task, Unit](handle(s, t))
 
     def backendFromArgs: Task[Backend] = {
-      def printErrorAndFail(t: Throwable): Task[Unit] =
+      def printErrorAndFail(e: String): Task[Backend] =
         Task.delay {
-          println("An error occured attempting to start the REPL:")
-          println(t.getMessage)
-        } *> Task.fail(t)
+          println(s"An error occurred attempting to start the REPL:\n$e")
+        } *> Task.fail(new RuntimeException(e))
 
-      def parsePath(s: String) =
+      def parsePath(s: String): Task[FsPath[File, Sandboxed]] =
         parseSystemFile(s).getOrElseF(Task.fail(
           new RuntimeException(s"Invalid path to config file: $s")))
 
+      def configFromPath(fsPath: Option[FsPath[File, Sandboxed]]): Task[CoreConfig] =
+        CoreConfig.fromFileOrDefaultPaths(fsPath).fold(κ(CoreConfig(Map())), ι)
+
+      def backendFromConfig(config: CoreConfig): Task[Backend] =
+        Mounter.defaultMount(config.mountings).fold(e => printErrorAndFail(e.message), Task.now _).join
+
       for {
-        pathStr <- Task.now(args.headOption)
-        fsPath  <- pathStr.fold[Task[Option[FsPath[pathy.Path.File, pathy.Path.Sandboxed]]]](Task.now(None))(s => parsePath(s).map(Some(_)))
-        cfg     <- (Config.fromFileOrEmpty(fsPath)
-                      .flatMap(Mounter.defaultMount(_))
-                      .fold(e => Task.fail(new RuntimeException(e.message)), Task.now _)
-                      .join)
-                    .onFinish(_.cata(printErrorAndFail, Task.now(())))
-      } yield cfg
+        fsPath <- args.headOption.map(parsePath).sequence
+        cfg <- configFromPath(fsPath)
+        backend <- backendFromConfig(cfg)
+      } yield backend
     }
 
     Process.eval[Task, Process[Task, Unit]](backendFromArgs.tuple(commandInput) map {

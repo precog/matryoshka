@@ -124,9 +124,7 @@ final case class RenderedTree(nodeType: List[String], label: Option[String], chi
 }
 object RenderedTree {
   implicit val RenderedTreeShow: Show[RenderedTree] = new Show[RenderedTree] {
-    override def show(t: RenderedTree) = {
-      t.draw.mkString("\n")
-    }
+    override def show(t: RenderedTree) = t.draw.mkString("\n")
   }
 
   implicit val RenderedTreeEncodeJson: EncodeJson[RenderedTree] = EncodeJson {

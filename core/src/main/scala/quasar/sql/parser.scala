@@ -97,7 +97,8 @@ class SQLParser extends StandardTokenParsers {
   ))
 
   ignore(lexical.delimiters += (
-    "*", "+", "-", "%", "~", "~*", "!~", "!~*", "||", "<", "=", "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";", "[", "]", "{", "}"
+    "*", "+", "-", "%", "~~", "!~~", "~", "~*", "!~", "!~*", "||", "<", "=",
+    "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";", "[", "]", "{", "}"
   ))
 
   override def keyword(name: String): Parser[String] =
@@ -156,12 +157,14 @@ class SQLParser extends StandardTokenParsers {
   def in_suffix: Parser[Expr => Expr] =
     keyword("in") ~ default_expr ^^ { case _ ~ a => In(_, a) }
 
+  private def LIKE(l: Expr, r: Expr, esc: Option[Expr]) =
+    InvokeFunction(StdLib.string.Like.name,
+      List(l, r, esc.getOrElse(StringLiteral("\\"))))
+
   def like_suffix: Parser[Expr => Expr] =
     keyword("like") ~ default_expr ~ opt(keyword("escape") ~> default_expr) ^^ {
-      case _ ~ a ~ esc =>
-        lhs => InvokeFunction(StdLib.string.Like.name,
-          List(lhs, a, esc.getOrElse(StringLiteral(""))))
-      }
+      case _ ~ a ~ esc => LIKE(_, a, esc)
+    }
 
   def is_suffix: Parser[Expr => Expr] =
     (keyword("is") ~ opt(keyword("not")) ~ (
@@ -196,10 +199,20 @@ class SQLParser extends StandardTokenParsers {
   /** The default precedence level, for some built-ins, and all user-defined */
   def default_expr: Parser[Expr] =
     concat_expr * (
-      op("~") ^^^ ((l: Expr, r: Expr) => InvokeFunction(StdLib.string.Search.name, List(l, r, BoolLiteral(false)))) |
-        op("~*") ^^^ ((l: Expr, r: Expr) => InvokeFunction(StdLib.string.Search.name, List(l, r, BoolLiteral(true)))) |
-        op("!~") ^^^ ((l: Expr, r: Expr) => Not(InvokeFunction(StdLib.string.Search.name, List(l, r, BoolLiteral(false))))) |
-        op("!~*") ^^^ ((l: Expr, r: Expr) => Not(InvokeFunction(StdLib.string.Search.name, List(l, r, BoolLiteral(true))))))
+      op("~") ^^^ ((l: Expr, r: Expr) =>
+        InvokeFunction(StdLib.string.Search.name,
+          List(l, r, BoolLiteral(false)))) |
+        op("~*") ^^^ ((l: Expr, r: Expr) =>
+          InvokeFunction(StdLib.string.Search.name,
+            List(l, r, BoolLiteral(true)))) |
+        op("!~") ^^^ ((l: Expr, r: Expr) =>
+          Not(InvokeFunction(StdLib.string.Search.name,
+            List(l, r, BoolLiteral(false))))) |
+        op("!~*") ^^^ ((l: Expr, r: Expr) =>
+          Not(InvokeFunction(StdLib.string.Search.name,
+            List(l, r, BoolLiteral(true))))) |
+        op("~~") ^^^ ((l: Expr, r: Expr) => LIKE(l, r, None)) |
+        op("!~~") ^^^ ((l: Expr, r: Expr) => Not(LIKE(l, r, None))))
 
   def concat_expr: Parser[Expr] =
     add_expr * (op("||") ^^^ Concat)

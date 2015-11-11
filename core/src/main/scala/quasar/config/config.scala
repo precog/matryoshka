@@ -18,34 +18,20 @@ package quasar.config
 
 import com.mongodb.ConnectionString
 import quasar.Predef._
+import quasar.config.FsPath.NonexistentFileError
 import quasar.fp._
 import quasar._, Evaluator._, Errors._
+import quasar.Evaluator.EnvironmentError.EnvFsPathError
 import quasar.fs.{Path => EnginePath}
 
 import java.io.{File => JFile}
 import scala.util.Properties._
 import argonaut._, Argonaut._
-import scalaz._, Scalaz._
+import monocle._
+import scalaz.{Lens => _, _}, Scalaz._
 import scalaz.concurrent.Task
+import simulacrum.typeclass
 import pathy._, Path._
-
-final case class SDServerConfig(port0: Option[Int]) {
-  val port = port0.getOrElse(SDServerConfig.DefaultPort)
-}
-
-object SDServerConfig {
-  val DefaultPort = 20223
-
-  implicit def Codec: CodecJson[SDServerConfig] =
-    casecodec1(SDServerConfig.apply, SDServerConfig.unapply)("port")
-}
-
-final case class Credentials(username: String, password: String)
-
-object Credentials {
-  implicit def Codec: CodecJson[Credentials] =
-    casecodec2(Credentials.apply, Credentials.unapply)("username", "password")
-}
 
 sealed trait MountConfig {
   def validate(path: EnginePath): EnvironmentError \/ Unit
@@ -124,20 +110,10 @@ object MountConfig {
     }).map(v => v: MountConfig))
 }
 
-final case class Config(
-  server:    SDServerConfig,
-  mountings: Map[EnginePath, MountConfig])
-
-object Config {
+trait ConfigOps[C] {
   import FsPath._
 
-  val empty = Config(SDServerConfig(None), Map())
-
-  private implicit val MapCodec = CodecJson[Map[EnginePath, MountConfig]](
-    encoder = map => map.map(t => t._1.pathname -> t._2).asJson,
-    decoder = cursor => implicitly[DecodeJson[Map[String, MountConfig]]].decode(cursor).map(_.map(t => EnginePath(t._1) -> t._2)))
-
-  implicit def Codec = casecodec2(Config.apply, Config.unapply)("server", "mountings")
+  def mountingsLens: Lens[C, MountingsConfig]
 
   def defaultPathForOS(file: RelFile[Sandboxed])(os: OS): Task[FsPath[File, Sandboxed]] = {
     def localAppData: OptionT[Task, FsPath.Aux[Abs, Dir, Sandboxed]] =
@@ -173,7 +149,7 @@ object Config {
   private def alternatePath: Task[FsPath[File, Sandboxed]] =
     OS.currentOS >>= defaultPathForOS(dir("SlamData") </> file("slamengine-config.json"))
 
-  def fromFile(path: FsPath[File, Sandboxed]): EnvTask[Config] = {
+  def fromFile(path: FsPath[File, Sandboxed])(implicit D: DecodeJson[C]): EnvTask[C] = {
     import java.nio.file._
     import java.nio.charset._
 
@@ -190,32 +166,26 @@ object Config {
 
   }
 
-  def fromFileOrEmpty(path: Option[FsPath[File, Sandboxed]]): EnvTask[Config] = {
-    def loadOr(path: FsPath[File, Sandboxed], alt: EnvTask[Config]): EnvTask[Config] =
-      handleWith(fromFile(path)) {
-        case _: java.nio.file.NoSuchFileException => alt
+  def fromFileOrDefaultPaths(path: Option[FsPath[File, Sandboxed]])(implicit D: DecodeJson[C]): EnvTask[C] = {
+    def load(path: Task[FsPath[File, Sandboxed]]): EnvTask[C] =
+      EitherT.right(path).flatMap { p =>
+        handleWith(fromFile(p)) {
+          case ex: java.nio.file.NoSuchFileException =>
+            EitherT.left(Task.now(EnvFsPathError(NonexistentFileError(p))))
+        }
       }
 
-    val empty = liftE[EnvironmentError](Task.now(Config.empty))
-
-    path match {
-      case Some(path) =>
-        loadOr(path, empty)
-      case None =>
-        liftE(defaultPath).flatMap { p =>
-          loadOr(p, liftE(alternatePath).flatMap { p =>
-            loadOr(p, empty)
-          })
-        }
-    }
+    path.cata(p => load(Task.now(p)), load(defaultPath).orElse(load(alternatePath)))
   }
 
-  def loadAndTest(path: FsPath[File, Sandboxed]): EnvTask[Config] = for {
-    config <- fromFile(path)
-    _      <- config.mountings.values.toList.map(Backend.test).sequenceU
-  } yield config
+  def loadAndTest(path: FsPath[File, Sandboxed])(implicit D: DecodeJson[C]): EnvTask[C] =
+    for {
+      config <- fromFile(path)
+      _      <- mountingsLens.get(config).values.toList.map(Backend.test).sequenceU
+    } yield config
 
-  def toFile(config: Config, path: Option[FsPath[File, Sandboxed]])(implicit encoder: EncodeJson[Config]): Task[Unit] = {
+
+  def toFile(config: C, path: Option[FsPath[File, Sandboxed]])(implicit E: EncodeJson[C]): Task[Unit] = {
     import java.nio.file._
     import java.nio.charset._
 
@@ -223,7 +193,7 @@ object Config {
       codec <- systemCodec
       p1    <- path.fold(defaultPath)(Task.now)
       cfg   <- Task.delay {
-        val text = toString(config)
+        val text = config.shows
         val p = Paths.get(printFsPath(codec, p1))
         ignore(Option(p.getParent).map(Files.createDirectories(_)))
         ignore(Files.write(p, text.getBytes(StandardCharsets.UTF_8)))
@@ -232,13 +202,11 @@ object Config {
     } yield cfg
   }
 
-  def fromString(value: String): EnvironmentError \/ Config =
-    Parse.decodeEither[Config](value).leftMap(InvalidConfig(_))
+  def fromString(value: String)(implicit D: DecodeJson[C]): EnvironmentError \/ C =
+    Parse.decodeEither[C](value).leftMap(InvalidConfig(_))
 
-  def toString(config: Config)(implicit encoder: EncodeJson[Config]): String =
-    encoder.encode(config).pretty(quasar.fp.multiline)
-
-  implicit val ShowConfig: Show[Config] = new Show[Config] {
-    override def shows(f: Config) = Config.toString(f)
+  implicit def showInstance(implicit E: EncodeJson[C]): Show[C] = new Show[C] {
+    override def shows(f: C): String = EncodeJson.of[C].encode(f).pretty(quasar.fp.multiline)
   }
+
 }
