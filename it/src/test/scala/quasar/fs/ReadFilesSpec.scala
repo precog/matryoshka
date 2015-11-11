@@ -20,6 +20,10 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
   import ReadFilesSpec._, FileSystemError._, PathError2._
   import ReadFile._
 
+  val read   = ReadFile.Ops[FileSystem]
+  val write  = WriteFile.Ops[FileSystem]
+  val manage = ManageFile.Ops[FileSystem]
+
   def loadForReading(run: Run): FsTask[Unit] = {
     type P[A] = Process[write.M, A]
 

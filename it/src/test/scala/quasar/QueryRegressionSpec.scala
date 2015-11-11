@@ -43,7 +43,10 @@ class QueryRegressionSpec
   def dataFile(fileName: String): AbsFile[Sandboxed] =
     DataDir </> file1(FileName(fileName).dropExtension)
 
-  val exec = ExecutePlan.Ops[QueryFsIO]
+  val read   = ReadFile.Ops[QueryFsIO]
+  val write  = WriteFile.Ops[QueryFsIO]
+  val manage = ManageFile.Ops[QueryFsIO]
+  val exec   = ExecutePlan.Ops[QueryFsIO]
 
   ////
 
@@ -225,49 +228,21 @@ class QueryRegressionSpec
 }
 
 object QueryRegressionSpec {
-  import quasar.physical.mongodb._
-  import quasar.physical.mongodb.fs._
-  import com.mongodb.ConnectionString
-  import com.mongodb.async.client.MongoClients
+  import quasar.physical.mongodb.{filesystems => mongofs}
 
   def externalQFS: Task[NonEmptyList[FileSystemUT[QueryFsIO]]] = {
     val extQfs = TestConfig.externalFileSystems {
       case (MongoDbConfig(cs), dir) =>
-        lazy val f = mongoQfs(cs, dir).run
+        lazy val f = mongofs.testQueryableFileSystem(cs, dir).run
         Task.delay(f)
     }
 
     extQfs map (_ map (ut => ut.contramap(chroot.queryableFileSystem(ut.testDir))))
   }
 
-  /** "Throw" the lhs of an `EitherT` given a `Catchable` base type. */
-  def rethrow[F[_]: Catchable : Monad, E: Show]: EitherT[F, E, ?] ~> F =
-    new (EitherT[F, E, ?] ~> F) {
-      def apply[A](et: EitherT[F, E, A]) =
-        et.fold(
-          e => Catchable[F].fail[A](new RuntimeException(e.shows)),
-          _.point[F]
-        ).join
-    }
-
   implicit val dataEncodeJson: EncodeJson[Data] =
     EncodeJson(d =>
       DataCodec.Precise
         .encode(d)
         .fold(err => scala.sys.error(err.message), ι))
-
-  ////
-
-  private def mongoQfs(
-    cs: ConnectionString,
-    dir: AbsDir[Sandboxed]
-  ): Task[QueryFsIO ~> Task] = for {
-    client   <- Task.delay(MongoClients create cs)
-    ddb      <- DefaultDb.fromPath(dir).cata(
-                  _.point[Task],
-                  Task.fail(new RuntimeException(s"No default db for `$cs`")))
-    mongofs  <- mongoDbFileSystem(client, ddb)
-    mongoex0 <- rethrow[Task, EnvironmentError2].apply(executeplan.run(client))
-    mongoex  =  rethrow[Task, WorkflowExecutionError] compose mongoex0
-  } yield interpret.interpret3(NaturalTransformation.refl[Task], mongoex, mongofs)
 }

@@ -4,10 +4,13 @@ package mongodb
 
 import quasar.Predef._
 import quasar.fp._
+import quasar.fs.{Path => QPath, _}
 import quasar.javascript._
-import quasar.recursionschemes.Fix
+import quasar.recursionschemes.{Fix, Recursive}
 
 import com.mongodb.async.client.MongoClient
+
+import pathy.Path._
 
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
@@ -15,7 +18,9 @@ import scalaz.concurrent.Task
 object executeplan {
   import Planner.{PlannerError => PPlannerError}
   import Workflow.Crystallized
-  import ExecutionError._
+  import ExecutionError._, PathError2._
+  import LogicalPlan.ReadF
+  import Recursive.ops._
 
   type MongoExecute[A] = WorkflowExecErrT[MongoDb, A]
   type TaskExecute[A]  = WorkflowExecErrT[Task, A]
@@ -27,6 +32,7 @@ object executeplan {
     new (ExecutePlan ~> MongoExecute) {
       def apply[A](ep: ExecutePlan[A]) = {
         val resultFile = for {
+          _      <- checkPathsExist(ep.lp)
           wf     <- convertP(ep.lp)(MongoDbPlanner.plan(ep.lp))
           dst    <- EitherT(Collection.fromFile(ep.out)
                               .leftMap(PathError(ep.lp, _))
@@ -96,5 +102,33 @@ object executeplan {
     execMongo: WorkflowExecutor[MongoDb]
   ) = ReaderT[G, String, Collection] { tmpPrefix =>
     liftG(EitherT(execMongo.execute(wf, dst).run.run(tmpPrefix).eval(0)))
+  }
+
+  private def checkPathsExist(lp: Fix[LogicalPlan]): G[Unit] = {
+    def checkPathExists(p: QPath): ExecErrT[MongoDb, Unit] = for {
+      coll <- EitherT(Collection.fromPath(p)
+                .leftMap(e => PathError(lp, InvalidPath(qPathToPathy(p), e.message)))
+                .point[MongoDb])
+      _    <- EitherT(MongoDb.collectionExists(coll)
+                .map(_ either (()) or PathError(lp, PathNotFound(qPathToPathy(p)))))
+    } yield ()
+
+    EitherT[F, ExecutionError, Unit](
+      paths(lp).traverse_[ExecErrT[MongoDb, ?]](checkPathExists)
+        .run.liftM[WorkflowExecErrT].liftM[PhaseResultT])
+  }
+
+  private def paths(lp: Fix[LogicalPlan]): Set[QPath] =
+    lp.foldMap(_.cata[Set[QPath]] {
+      case ReadF(p) => Set(p)
+      case other    => other.fold
+    })
+
+  // TODO: This is a hack, but is only used to create a Pathy.Path for error
+  //       messages and will go away once LogicalPlan is converted to Pathy.
+  private def qPathToPathy(p: QPath): AbsPath[Sandboxed] = {
+    val abs = p.asAbsolute
+    val absDir = abs.dir.foldLeft(rootDir[Sandboxed])((d, n) => d </> dir(n.value))
+    abs.file.map(n => absDir </> file(n.value)) \/> absDir
   }
 }

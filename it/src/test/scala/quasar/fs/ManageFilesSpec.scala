@@ -13,6 +13,10 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
   import FileSystemTest._, FileSystemError._, PathError2._
   import ManageFile._
 
+  val read   = ReadFile.Ops[FileSystem]
+  val write  = WriteFile.Ops[FileSystem]
+  val manage = ManageFile.Ops[FileSystem]
+
   val managePrefix: AbsDir[Sandboxed] = rootDir </> dir("formanage")
 
   def deleteForManage(run: Run): FsTask[Unit] =

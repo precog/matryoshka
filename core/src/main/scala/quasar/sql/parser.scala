@@ -36,6 +36,11 @@ final case class ParsingPathError(error: PathError) extends ParsingError {
   def message = error.message
 }
 
+object ParsingError {
+  implicit val parsingErrorShow: Show[ParsingError] =
+    Show.showFromToString
+}
+
 final case class Query(value: String)
 
 class SQLParser extends StandardTokenParsers {

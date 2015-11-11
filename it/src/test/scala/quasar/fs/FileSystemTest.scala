@@ -4,10 +4,7 @@ package fs
 import quasar.Predef._
 import quasar.fp._
 import quasar.config.{BackendConfig, MongoDbConfig}
-import quasar.physical.mongodb.fs._
-
-import com.mongodb.ConnectionString
-import com.mongodb.async.client.{MongoClient, MongoClients}
+import quasar.physical.mongodb.{filesystems => mongofs}
 
 import monocle.Optional
 import monocle.function.Index
@@ -34,20 +31,14 @@ import scalaz.stream._
   *       filesystems would run concurrently.
   */
 abstract class FileSystemTest[S[_]: Functor](
-  val fileSystems: Task[NonEmptyList[FileSystemUT[S]]])(
-  implicit S0: ReadFileF :<: S, S1: WriteFileF :<: S, S2: ManageFileF :<: S)
-
-  extends Specification {
+  val fileSystems: Task[NonEmptyList[FileSystemUT[S]]]
+) extends Specification {
 
   args.report(showtimes = true)
 
   type F[A]      = Free[S, A]
   type FsTask[A] = FileSystemErrT[Task, A]
   type Run       = F ~> Task
-
-  val read   = ReadFile.Ops[S]
-  val write  = WriteFile.Ops[S]
-  val manage = ManageFile.Ops[S]
 
   def fileSystemShould(examples: String => Run => Unit): Unit =
     fileSystems.map(_ foreach { case FileSystemUT(name, f, prefix) =>
@@ -109,30 +100,15 @@ object FileSystemTest {
 
   def externalFsUT = TestConfig.externalFileSystems {
     case (MongoDbConfig(cs), dir) =>
-      lazy val f = mongoDbUT(cs, dir).run
+      lazy val f = mongofs.testFileSystem(cs, dir).run
       Task.delay(f)
   }
 
-  ////
-
-  private val inMemUT: Task[FileSystemUT[FileSystem]] = {
+  val inMemUT: Task[FileSystemUT[FileSystem]] = {
     lazy val f = inmemory.runStatefully(inmemory.InMemState.empty)
                    .map(_ compose inmemory.fileSystem)
                    .run
 
     Task.delay(FileSystemUT("in-memory", f, rootDir))
-  }
-
-  private def mongoDbUT(
-    cs: ConnectionString,
-    prefix: AbsDir[Sandboxed]
-  ): Task[FileSystem ~> Task] = {
-    def noDefaultDbError = Task.fail(new RuntimeException(
-      s"Unable to determine a default database for `${cs.toString}`"
-    ))
-
-    DefaultDb.fromPath(prefix).cata(
-      ddb => mongoDbFileSystem(MongoClients.create(cs), ddb),
-      noDefaultDbError)
   }
 }

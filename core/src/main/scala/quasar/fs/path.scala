@@ -140,6 +140,7 @@ object Path {
   sealed trait PathError {
     def message: String
   }
+
   object PathError {
     final case class ExistingPathError(path: Path, hint: Option[String])
         extends PathError {
@@ -160,9 +161,10 @@ object Path {
 
     /** Path errors that are the fault of our implementation. */
     final case class InternalPathError(message: String) extends PathError
-  }
 
-  implicit val PathErrorShow: Show[PathError] = Show.showFromToString[PathError]
+    implicit val pathErrorShow: Show[PathError] =
+      Show.showFromToString
+  }
 
   object ExistingPathError {
     def apply(path: Path, hint: Option[String]): PathError = PathError.ExistingPathError(path, hint)
