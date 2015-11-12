@@ -31,7 +31,7 @@ object Mounter {
   def mount(mountings: MountingsConfig, backendDef: BackendDefinition): EnvTask[Backend] = {
     def rec0(backend: Backend, path: List[DirNode], conf: MountConfig): EnvTask[Backend] =
       conf match {
-        case ViewConfig(_, _) => EitherT.right(Task.now(backend))
+        case ViewConfig(_) => EitherT.right(Task.now(backend))
         case _ =>
           backend match {
             case NestedBackend(base) => path match {

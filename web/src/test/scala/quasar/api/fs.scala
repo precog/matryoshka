@@ -1483,7 +1483,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           result() must_== "added /local/view1"
 
           configs()(0).mountings.get(Path("/local/view1")) must beSome(
-            ViewConfig(None, expr))
+            ViewConfig(expr))
 
           // TODO: metadata not available for views yet (see SD-978)
           // val metadataExists = Http(viewMetadata)

@@ -104,26 +104,16 @@ abstract class ConfigSpec[Config: CodecJson] extends Specification with Disjunct
 
     val read = sql.Select(sql.SelectAll, List(sql.Proj(sql.Splice(None), None)), Some(sql.TableRelationAST("zips", None)), None, None, None)
 
-    "encode without tempPath" in {
-      ViewConfig.Codec.encode(ViewConfig(None, read)) must_==
+    "encode" in {
+      ViewConfig.Codec.encode(ViewConfig(read)) must_==
         Json("uri" := "sql2:///?q=%28select+*+from+zips%29")
-    }
-
-    "encode with tempPath" in {
-      ViewConfig.Codec.encode(ViewConfig(Some(QPath("foo/bar")), read)) must_==
-        Json("uri" := "sql2:///foo/bar?q=%28select+*+from+zips%29")
     }
 
     def decode(js: Json) = ViewConfig.Codec.decode(js.hcursor).result
 
-    "decode without tempPath" in {
+    "decode" in {
       decode(Json("uri" := "sql2:///?q=%28select+*+from+zips%29")) must beRightDisjunction(
-        ViewConfig(None, read))
-    }
-
-    "decode with tempPath" in {
-      decode(Json("uri" := "sql2:///foo/bar?q=%28select+*+from+zips%29")) must beRightDisjunction(
-        ViewConfig(Some(QPath("foo/bar")), read))
+        ViewConfig(read))
     }
 
     "decode with bad scheme" in {
@@ -269,7 +259,5 @@ object CoreConfigGen {
     Some(sql.TableRelationAST("foo", None)),
     None, None, None)
 
-  def viewCfgGen = for {
-    tempPath <- option(QPath("foo/bar"))
-  } yield ViewConfig(tempPath, SimpleQuery)
+  def viewCfgGen = Gen.const(ViewConfig(SimpleQuery))
 }

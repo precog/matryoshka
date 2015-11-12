@@ -288,7 +288,7 @@ final case class ViewBackend(backend: Backend, views0: Map[Path, ViewConfig]) ex
   import Backend._
 
   val views: Map[Path, sql.Expr] =
-    views0.map { case (p, ViewConfig(tp, q)) =>
+    views0.map { case (p, ViewConfig(q)) =>
       p.asRelative -> sql.relativizePaths(q, p.parent.asRelative).valueOr(κ(q))
     }
 
@@ -510,7 +510,7 @@ object Backend {
   def test(config: MountConfig): ETask[EnvironmentError, Unit] = config match {
     // NB: for now, this prevents users from creating views through the API,
     // but allows tests to run. See SD-1101.
-    case ViewConfig(_, _) => EitherT.left(Task.now(InvalidConfig("view creation not supported")))
+    case ViewConfig(_) => EitherT.left(Task.now(InvalidConfig("view creation not supported")))
 
     case _ =>
       for {

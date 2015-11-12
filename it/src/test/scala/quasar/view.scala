@@ -33,11 +33,11 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
     val nested = NestedBackend(Map(DirNode("mnt") -> backend))
 
     val views = Map(
-      Path("/view/simpleZips") -> config.ViewConfig(None, parse("select _id as zip, city, state from  \"/" + ZipsPath.simplePathname + "\"")),
-      Path("/view/smallCities") -> config.ViewConfig(None, parse("select city as City, state as St, sum(pop) as Size from \"/" + ZipsPath.simplePathname + "\" group by city, state having sum(pop) <= 1000 order by city, state")),
+      Path("/view/simpleZips") -> config.ViewConfig(parse("select _id as zip, city, state from  \"/" + ZipsPath.simplePathname + "\"")),
+      Path("/view/smallCities") -> config.ViewConfig(parse("select city as City, state as St, sum(pop) as Size from \"/" + ZipsPath.simplePathname + "\" group by city, state having sum(pop) <= 1000 order by city, state")),
       // NB: this view refers to the previous view using a relative path
-      Path("/view/smallCityCounts") -> config.ViewConfig(None, parse("select St, count(*) from smallCities group by St order by count(*) desc, St")),
-      Path("/view/badRef") -> config.ViewConfig(None, parse("""select foo from "/mnt/test/nonexistent"""")))
+      Path("/view/smallCityCounts") -> config.ViewConfig(parse("select St, count(*) from smallCities group by St order by count(*) desc, St")),
+      Path("/view/badRef") -> config.ViewConfig(parse("""select foo from "/mnt/test/nonexistent"""")))
 
     val root = ViewBackend(nested, views)
 
