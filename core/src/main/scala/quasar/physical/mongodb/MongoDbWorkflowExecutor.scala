@@ -4,6 +4,7 @@ package mongodb
 
 import quasar.Predef._
 import quasar.fs.Positive
+import quasar.physical.mongodb.workflowtask._
 
 import java.lang.IllegalArgumentException
 
@@ -16,7 +17,7 @@ import scalaz._, Scalaz._
 private[mongodb] final class MongoDbWorkflowExecutor
   extends WorkflowExecutor[MongoDb] {
 
-  def aggregate(src: Collection, pipeline: WorkflowTask.Pipeline) =
+  def aggregate(src: Collection, pipeline: Pipeline) =
     MongoDb.aggregate_(src, pipeline map (_.bson.repr), true)
 
   def drop(c: Collection) =

@@ -219,7 +219,7 @@ object ManageFile {
         parentDir(file) getOrElse scala.sys.error("impossible, files have parents!")
 
       ls(parent)
-        .map(_ flatMap (_.file map (parent </> _)) exists (identicalPath(file, _)))
+        .map(_ flatMap (_.file.map(parent </> _).toSet) exists (identicalPath(file, _)))
         .getOrElse(false)
     }
 

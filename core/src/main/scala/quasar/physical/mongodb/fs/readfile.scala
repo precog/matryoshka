@@ -23,7 +23,7 @@ object readfile {
   type ReadStateT[F[_], A] = ReaderT[F, TaskRef[ReadState], A]
   type MongoRead[A]        = ReadStateT[MongoDb, A]
 
-  /** Interpret the [[ReadFile]] algebra using MongoDB */
+  /** Interpret the `ReadFile` algebra using MongoDB */
   val interpret: ReadFile ~> MongoRead = new (ReadFile ~> MongoRead) {
     def apply[A](rf: ReadFile[A]) = rf match {
       case Open(file, offset, limit) =>
@@ -46,7 +46,7 @@ object readfile {
     }
   }
 
-  /** Run [[MongoRead]], using the given [[MongoClient]], in the [[Task]] monad. */
+  /** Run [[MongoRead]], using the given `MongoClient` in the `Task` monad. */
   def run(client: MongoClient): Task[MongoRead ~> Task] =
     TaskRef[ReadState]((0, Map.empty)) map { ref =>
       new (MongoRead ~> Task) {

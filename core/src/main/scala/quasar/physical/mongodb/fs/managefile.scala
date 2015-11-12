@@ -29,7 +29,7 @@ object managefile {
     *      dir succeeds, this should probably be changed to fail.
     */
 
-  /** Interpret [[ManageFile]] using MongoDB. */
+  /** Interpret `ManageFile` using MongoDB. */
   val interpret: ManageFile ~> MongoManage = new (ManageFile ~> MongoManage) {
     def apply[A](fs: ManageFile[A]) = fs match {
       case Move(scenario, semantics) =>
@@ -69,7 +69,7 @@ object managefile {
     }
   }
 
-  /** Run [[MongoManage]], given a [[MongoClient]] and the name of a database
+  /** Run [[MongoManage]], given a `MongoClient` and the name of a database
     * to use as a default location for temp collections when no other database
     * can be deduced.
     */
@@ -97,7 +97,7 @@ object managefile {
     for {
       colls    <- collectionsInDir(src)
       srcFiles =  colls map (_.asFile)
-      dstFiles =  srcFiles flatMap (_ relativeTo (src) map (dst </> _))
+      dstFiles =  srcFiles.map(_ relativeTo (src) map (dst </> _)).unite
       _        <- srcFiles zip dstFiles traverseU {
                     case (s, d) => moveFile(s, d, sem)
                   }

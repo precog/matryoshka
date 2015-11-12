@@ -5,6 +5,7 @@ package mongodb
 import quasar.Predef._
 import quasar.{NameGenerator => QNameGenerator}
 import quasar.javascript._
+import quasar.physical.mongodb.workflowtask._
 
 import scalaz._, Scalaz._
 
@@ -15,7 +16,7 @@ trait WorkflowExecutor[F[_]] {
   /** Execute the given aggregation pipeline with the given collection as
     * input.
     */
-  def aggregate(src: Collection, pipeline: WorkflowTask.Pipeline): F[Unit]
+  def aggregate(src: Collection, pipeline: Pipeline): F[Unit]
 
   /** Drop the given collection. */
   def drop(coll: Collection): F[Unit]
@@ -42,7 +43,6 @@ trait WorkflowExecutor[F[_]] {
 
   import WorkflowExecutionError._
   import Workflow._
-  import WorkflowTask._
 
   /** Returns the `Collection` containing the results of executing the given
     * (crystallized) `Workflow`.

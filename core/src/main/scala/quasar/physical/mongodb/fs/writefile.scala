@@ -19,7 +19,7 @@ object writefile {
   type WriteStateT[F[_], A] = ReaderT[F, TaskRef[WriteState], A]
   type MongoWrite[A]        = WriteStateT[MongoDb, A]
 
-  /** Interpret the [[WriteFile]] algebra using MongoDB. */
+  /** Interpret the `WriteFile` algebra using MongoDB. */
   val interpret: WriteFile ~> MongoWrite = new (WriteFile ~> MongoWrite) {
     def apply[A](wf: WriteFile[A]) = wf match {
       case Open(file) =>
@@ -39,7 +39,7 @@ object writefile {
           c => insertAny(c, docs)
                  .filter(_ < docs.size)
                  .map(n => PartialWrite(docs.size - n))
-                 .run.map(errs ++ _)
+                 .run.map(errs ++ _.toList)
                  .liftM[WriteStateT],
           (errs :+ UnknownWriteHandle(h)).point[MongoWrite]))
 
@@ -48,7 +48,7 @@ object writefile {
     }
   }
 
-  /** Run [[MongoWrite]] using the given [[MongoClient]], in the [[Task]]
+  /** Run [[MongoWrite]] using the given `MongoClient` in the `Task`
     * monad.
     */
   def run(client: MongoClient): Task[MongoWrite ~> Task] =

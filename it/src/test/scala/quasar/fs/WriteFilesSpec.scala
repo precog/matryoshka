@@ -13,7 +13,7 @@ import scalaz.stream._
 
 class WriteFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
   import FileSystemTest._, FileSystemError._
-  import WriteFile._
+  import WriteFile._, ManageFile._
 
   val read   = ReadFile.Ops[FileSystem]
   val write  = WriteFile.Ops[FileSystem]

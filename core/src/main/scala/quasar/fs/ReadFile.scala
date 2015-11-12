@@ -48,7 +48,7 @@ object ReadFile {
 
     /** Read a chunk of data from the file represented by the given handle.
       *
-      * An empty [[Vector]] signals that all data has been read.
+      * An empty `Vector` signals that all data has been read.
       */
     def read(rh: ReadHandle): M[Vector[Data]] =
       EitherT(lift(Read(rh)))

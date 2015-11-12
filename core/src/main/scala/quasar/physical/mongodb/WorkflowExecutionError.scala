@@ -4,6 +4,7 @@ package mongodb
 
 import quasar.Predef._
 import quasar.fp._
+import quasar.physical.mongodb.workflowtask._
 
 import monocle.Prism
 
@@ -27,8 +28,6 @@ sealed trait WorkflowExecutionError {
 }
 
 object WorkflowExecutionError {
-  import WorkflowTask._
-
   private final case class InvalidTask0(task: WorkflowTask, reason: String)
     extends WorkflowExecutionError
 

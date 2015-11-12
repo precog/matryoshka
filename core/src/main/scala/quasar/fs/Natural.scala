@@ -25,7 +25,7 @@ final class Natural private (val run: Long) {
 
 object Natural {
   def apply(n: Long): Option[Natural] =
-    Some(n).filter(_ > 0).map(new Natural(_))
+    Some(n).filter(_ >= 0).map(new Natural(_))
 
   val _0: Natural = new Natural(0)
   val _1: Natural = new Natural(1)

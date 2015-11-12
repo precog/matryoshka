@@ -56,7 +56,7 @@ object MongoConnectionString {
       _.as[String].flatMap(decode))
 }
 object MongoDbConfig {
-  import MongoConnectionString.codec
+  import MongoConnectionString._
   implicit def Codec: CodecJson[MongoDbConfig] =
     casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")
 }

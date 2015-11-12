@@ -58,7 +58,7 @@ object MongoDb {
         .useCursor(new JBoolean(true))))
 
   /** Aggregates documents according to the given aggregation pipeline, which
-    * must end with an `$out` stage specifying the collection where results
+    * must end with an `\$out` stage specifying the collection where results
     * may be found.
     */
   def aggregate_(
@@ -323,7 +323,7 @@ object MongoDb {
 
       val finalized = cfg.finalizer.cata(it.finalizeFunction, it)
       val filtered  = cfg.inputFilter.cata(finalized.filter, finalized)
-      val limited   = cfg.inputLimit.cata(l => filtered.limit(l.value.toInt), filtered)
+      val limited   = cfg.inputLimit.cata(l => filtered.limit(l.run.toInt), filtered)
       val scoped    = cfg.scope.cata(limited.scope, limited)
       val sorted    = cfg.sort.cata(scoped.sort, scoped)
 

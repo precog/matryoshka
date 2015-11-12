@@ -52,8 +52,8 @@ object WriteFile {
     /** Write a chunk of data to the file represented by the write handle.
       *
       * Attempts to write as much of the chunk as possible, even if parts of
-      * it fail, any such failures will be returned in the output [[Vector]].
-      * An empty [[Vector]] means the entire chunk was written successfully.
+      * it fail, any such failures will be returned in the output `Vector`
+      * An empty `Vector` means the entire chunk was written successfully.
       */
     def write(h: WriteHandle, chunk: Vector[Data]): F[Vector[FileSystemError]] =
       lift(Write(h, chunk))
@@ -105,7 +105,7 @@ object WriteFile {
     def append(dst: AbsFile[Sandboxed], src: Process[F, Data]): Process[M, FileSystemError] =
       appendChunked(dst, src map (Vector(_)))
 
-    /** Same as `append` but accepts a [[Foldable]] of [[Data]]. */
+    /** Same as `append` but accepts a `Foldable` of [[Data]]. */
     def appendF[H[_]: Foldable](dst: AbsFile[Sandboxed], data: H[Data]): Process[M, FileSystemError] =
       append(dst, processF(data))
 
@@ -128,7 +128,7 @@ object WriteFile {
       saveChunked(dst, src map (Vector(_)))
     }
 
-    /** Same as `save` but accepts a [[Foldable]] of [[Data]]. */
+    /** Same as `save` but accepts a `Foldable` of [[Data]]. */
     def saveF[H[_]: Foldable](dst: AbsFile[Sandboxed], data: H[Data])
                              (implicit MF: ManageFile.Ops[S])
                              : Process[M, FileSystemError] = {
@@ -156,7 +156,7 @@ object WriteFile {
       createChunked(dst, src map (Vector(_)))
     }
 
-    /** Same as `create` but accepts a [[Foldable]] of [[Data]]. */
+    /** Same as `create` but accepts a `Foldable` of [[Data]]. */
     def createF[H[_]: Foldable](dst: AbsFile[Sandboxed], data: H[Data])
                                (implicit MF: ManageFile.Ops[S])
                                : Process[M, FileSystemError] = {
@@ -186,7 +186,7 @@ object WriteFile {
       replaceChunked(dst, src map (Vector(_)))
     }
 
-    /** Same as `replace` but accepts a [[Foldable]] of [[Data]]. */
+    /** Same as `replace` but accepts a `Foldable` of [[Data]]. */
     def replaceF[H[_]: Foldable](dst: AbsFile[Sandboxed], data: H[Data])
                                 (implicit MF: ManageFile.Ops[S])
                                 : Process[M, FileSystemError] = {

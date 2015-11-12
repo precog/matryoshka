@@ -1,6 +1,7 @@
 package quasar
 
 import Predef._
+import quasar.fp._
 
 import org.specs2.time.NoTimeConversions
 import quasar.Evaluator.EvalPathError
@@ -8,8 +9,6 @@ import quasar.specs2.DisjunctionMatchers
 
 import quasar.fs.Path
 import quasar.fs.Path.NonexistentPathError
-
-import Errors._
 
 class ErrorConditions extends BackendTest with NoTimeConversions with DisjunctionMatchers {
 

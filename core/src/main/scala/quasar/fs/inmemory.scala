@@ -30,6 +30,9 @@ object inmemory {
 
   object InMemState {
     val empty = InMemState(0, Map.empty, Map.empty, Map.empty)
+
+    def fromFiles(files: FM): InMemState =
+      empty copy (fm = files)
   }
 
   val readFile: ReadFile ~> InMemoryFs = new (ReadFile ~> InMemoryFs) {
@@ -193,7 +196,7 @@ object inmemory {
   private def moveDir(src: AbsDir[Sandboxed], dst: AbsDir[Sandboxed], s: MoveSemantics): InMemoryFs[FileSystemError \/ Unit] =
     for {
       m     <- fmL.st
-      sufxs =  m.keys.flatMap(_ relativeTo src).toStream
+      sufxs =  m.keys.toStream.map(_ relativeTo src).unite
       files =  sufxs map (src </> _) zip (sufxs map (dst </> _))
       r0    <- files.traverseU { case (sf, df) => EitherT(moveFile(sf, df, s)) }.run
       r1    =  r0 flatMap (_.nonEmpty either (()) or PathError(DirNotFound(src)))
@@ -214,7 +217,7 @@ object inmemory {
   private def deleteDir(d: AbsDir[Sandboxed]): InMemoryFs[FileSystemError \/ Unit] =
     for {
       m  <- fmL.st
-      ss =  m.keys.flatMap(_ relativeTo d).toStream
+      ss =  m.keys.toStream.map(_ relativeTo d).unite
       r0 <- ss.traverseU(f => EitherT(deleteFile(d </> f))).run
       r1 =  r0 flatMap (_.nonEmpty either (()) or PathError(DirNotFound(d)))
     } yield r1
@@ -224,7 +227,7 @@ object inmemory {
 
   private def ls(d: AbsDir[Sandboxed]): InMemoryFs[FileSystemError \/ Set[Node]] =
     fmL.st map (
-      _.keys.flatMap(_ relativeTo d).toList.toNel
+      _.keys.toList.map(_ relativeTo d).unite.toNel
         .map(_ foldMap (f => Node.fromFirstSegmentOf(f).toSet))
         .toRightDisjunction(PathError(DirNotFound(d))))
 }

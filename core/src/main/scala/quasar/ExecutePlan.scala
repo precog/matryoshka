@@ -3,8 +3,8 @@ package quasar
 import quasar.Predef._
 import quasar.fp._
 import quasar.fs.{Path => QPath, _}
-import quasar.recursionschemes._
-import Recursive.ops._
+import quasar.recursionschemes._, Fix._
+import Recursive.ops._, FunctorT.ops._
 
 import pathy._, Path._
 
@@ -41,7 +41,7 @@ object ExecutePlan {
                            Variables.substVars[Unit](tree(ast), vars) leftMap (_.wrapNel))
       annTree     <- phase("Annotated Tree", AllPhases(substAst).disjunction)
       logical     <- phase("Logical Plan", Compiler.compile(annTree) leftMap (_.wrapNel))
-      simplified  <- phase("Simplified", logical.cata(Optimizer.simplify).right)
+      simplified  <- phase("Simplified", logical.transCata(repeatedly(Optimizer.simplifyƒ)).right)
       typechecked <- phase("Typechecked", LogicalPlan.ensureCorrectTypes(simplified).disjunction)
     } yield typechecked
   }

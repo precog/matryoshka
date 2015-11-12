@@ -25,7 +25,7 @@ final class Positive private (val run: Long) {
 
 object Positive {
   def apply(n: Long): Option[Positive] =
-    Some(n).filter(_ > 1).map(new Positive(_))
+    Some(n).filter(_ > 0).map(new Positive(_))
 
   val _1: Positive = new Positive(1)
   val _2: Positive = new Positive(2)

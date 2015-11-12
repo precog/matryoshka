@@ -4,6 +4,7 @@ package mongodb
 
 import quasar.Predef._
 import quasar.javascript.Js._
+import quasar.physical.mongodb.workflowtask._
 
 import scalaz._
 
@@ -18,7 +19,7 @@ private[mongodb] final class JavaScriptWorkflowExecutor
   def tell(stmt: Stmt): JavaScriptLog[Unit] =
     WriterT.tell(Vector(stmt))
 
-  def aggregate(src: Collection, pipeline: WorkflowTask.Pipeline) =
+  def aggregate(src: Collection, pipeline: Pipeline) =
     tell(Call(
       Select(toJsRef(src), "aggregate"),
       List(

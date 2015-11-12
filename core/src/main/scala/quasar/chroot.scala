@@ -12,7 +12,7 @@ import scalaz._
 
 object chroot {
 
-  /** Rebases all paths in [[ReadFile]] operations onto the given prefix. */
+  /** Rebases all paths in `ReadFile` operations onto the given prefix. */
   def readFile(prefix: AbsDir[Sandboxed]): ReadFileF ~> ReadFileF = {
     import ReadFile._
 
@@ -39,7 +39,7 @@ object chroot {
   def readFileIn[S[_]](prefix: AbsDir[Sandboxed])(implicit S: ReadFileF :<: S): S ~> S =
     interpret.injectedNT[ReadFileF, S](readFile(prefix))
 
-  /** Rebases all paths in [[WriteFile]] operations onto the given prefix. */
+  /** Rebases all paths in `WriteFile` operations onto the given prefix. */
   def writeFile(prefix: AbsDir[Sandboxed]): WriteFileF ~> WriteFileF = {
     import WriteFile._
 
@@ -66,7 +66,7 @@ object chroot {
   def writeFileIn[S[_]](prefix: AbsDir[Sandboxed])(implicit S: WriteFileF :<: S): S ~> S =
     interpret.injectedNT[WriteFileF, S](writeFile(prefix))
 
-  /** Rebases all paths in [[ManageFile]] operations onto the given prefix. */
+  /** Rebases all paths in `ManageFile` operations onto the given prefix. */
   def manageFile(prefix: AbsDir[Sandboxed]): ManageFileF ~> ManageFileF = {
     import ManageFile._, MoveScenario._
 
@@ -108,11 +108,11 @@ object chroot {
     readFileIn[S](prefix) compose writeFileIn[S](prefix) compose manageFileIn[S](prefix)
   }
 
-  /** Rebases paths in [[ExecutePlan]] onto the given prefix. */
+  /** Rebases paths in `ExecutePlan` onto the given prefix. */
   def executePlan(prefix: AbsDir[Sandboxed]): ExecutePlan ~> ExecutePlan = {
     import LogicalPlan.ReadF
     import ResultFile.resultFile
-    import Recursive.ops._
+    import FunctorT.ops._
 
     val base = QPath(posixCodec.printPath(prefix))
 
@@ -126,7 +126,7 @@ object chroot {
 
     new (ExecutePlan ~> ExecutePlan) {
       def apply[A](ep: ExecutePlan[A]) =
-        ExecutePlan(ep.lp.trans(rebasePlan), rebase(ep.out, prefix), {
+        ExecutePlan(ep.lp.translate(rebasePlan), rebase(ep.out, prefix), {
           case (xs, r) =>
             ep.f((xs, r.map(resultFile.modify(stripPrefix(prefix)))))
         })
