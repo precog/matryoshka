@@ -82,9 +82,9 @@ object ViewConfig {
     "sql2:///?q=" + java.net.URLEncoder.encode(sql.pprint(cfg.query), "UTF-8")
 
   implicit def Codec = CodecJson[ViewConfig](
-    cfg => Json("uri" := toUri(cfg)),
+    cfg => Json("connectionUri" := toUri(cfg)),
     c => {
-      val uriC = (c --\ "uri")
+      val uriC = (c --\ "connectionUri")
       for {
         uri <- uriC.as[String]
         cfg <- DecodeResult(fromUri(uri).leftMap(e => (e.toString, uriC.history)))

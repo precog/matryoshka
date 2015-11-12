@@ -1472,7 +1472,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = mount(client).POST
                     .setHeader("X-File-Name", "local/view1")
-                    .setBody("""{ "view": { "uri": "sql2:///?q=""" + query.replace(" ", "+") + """" } }""")
+                    .setBody("""{ "view": { "connectionUri": "sql2:///?q=""" + query.replace(" ", "+") + """" } }""")
 
           val viewMetadata = metadata(client) / "local" / "view1"
 
@@ -1564,7 +1564,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = mount(client).POST
                     .setHeader("X-File-Name", "local/view1/")
-                    .setBody("""{ "view": { "uri": "sql2:///?q=select+*+from+zips" } }""")
+                    .setBody("""{ "view": { "connectionUri": "sql2:///?q=select+*+from+zips" } }""")
           val meta = Http(req)
 
           val resp = meta()
@@ -1606,7 +1606,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = mount(client).POST
                     .setHeader("X-File-Name", "local/")
-                    .setBody("""{ "view": { "uri": "foo://bar" } }""")
+                    .setBody("""{ "view": { "connectionUri": "foo://bar" } }""")
           val meta = Http(req)
 
           val resp = meta()
@@ -1645,7 +1645,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "succeed with valid View config" in {
         withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "local" / "view1").PUT
-                    .setBody("""{ "view": { "uri": "sql2:///?q=select+*+from+zips" } }""")
+                    .setBody("""{ "view": { "connectionUri": "sql2:///?q=select+*+from+zips" } }""")
 
           val localMetadata = metadata(client) / "local" / "view1"
 
@@ -1737,7 +1737,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "be 400 with invalid View path (trailing slash)" in {
         withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "local" / "view1" / "").PUT
-                    .setBody("""{ "view": { "uri": "sql2:///?q=select+*+from+zips" } }""")
+                    .setBody("""{ "view": { "connectionUri": "sql2:///?q=select+*+from+zips" } }""")
           val meta = Http(req)
 
           val resp = meta()
@@ -1776,7 +1776,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       "be 400 with invalid View URI" in {
         withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = (mount(client) / "local" / "view1").PUT
-                    .setBody("""{ "view": { "uri": "foo://bar" } }""")
+                    .setBody("""{ "view": { "connectionUri": "foo://bar" } }""")
           val meta = Http(req)
 
           val resp = meta()

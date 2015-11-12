@@ -106,26 +106,26 @@ abstract class ConfigSpec[Config: CodecJson] extends Specification with Disjunct
 
     "encode" in {
       ViewConfig.Codec.encode(ViewConfig(read)) must_==
-        Json("uri" := "sql2:///?q=%28select+*+from+zips%29")
+        Json("connectionUri" := "sql2:///?q=%28select+*+from+zips%29")
     }
 
     def decode(js: Json) = ViewConfig.Codec.decode(js.hcursor).result
 
     "decode" in {
-      decode(Json("uri" := "sql2:///?q=%28select+*+from+zips%29")) must beRightDisjunction(
+      decode(Json("connectionUri" := "sql2:///?q=%28select+*+from+zips%29")) must beRightDisjunction(
         ViewConfig(read))
     }
 
     "decode with bad scheme" in {
-      decode(Json("uri" := "foo:///?q=%28select+*+from+zips%29")) must beLeftDisjunction
+      decode(Json("connectionUri" := "foo:///?q=%28select+*+from+zips%29")) must beLeftDisjunction
     }
 
     "decode with unparseable URI" in {
-      decode(Json("uri" := "?")) must beLeftDisjunction
+      decode(Json("connectionUri" := "?")) must beLeftDisjunction
     }
 
     "decode with bad encoding" in {
-      decode(Json("uri" := "sql2:///?q=%28select+*+from+zips%29%")) must beLeftDisjunction
+      decode(Json("connectionUri" := "sql2:///?q=%28select+*+from+zips%29%")) must beLeftDisjunction
     }
   }
 
