@@ -72,3 +72,11 @@ import simulacrum.{typeclass, op}
     map(tf)(_.map(topDownCata(_, a0)(f)))
   }
 }
+
+object FunctorT {
+  implicit def recCorecFunctorT[T[_[_]]: Recursive: Corecursive]: FunctorT[T] =
+    new FunctorT[T] {
+      def map[F[_], G[_]](t: T[F])(f: F[T[F]] => G[T[G]]) =
+        Corecursive[T].embed(f(Recursive[T].project(t)))
+    }
+}

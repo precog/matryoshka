@@ -3,7 +3,7 @@ package quasar
 import quasar.Predef._
 import RenderTree.ops._
 import quasar.fp._
-import quasar.recursionschemes._
+import quasar.recursionschemes._, cofree._, Fix._
 
 import scala.reflect.ClassTag
 

@@ -45,7 +45,8 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   import Planner._
   import WorkflowBuilder._
 
-  import quasar.recursionschemes._, Recursive.ops._, TraverseT.ops._
+  import quasar.recursionschemes._, cofree._, Fix._
+  import Recursive.ops._, TraverseT.ops._
 
   import agg._
   import array._

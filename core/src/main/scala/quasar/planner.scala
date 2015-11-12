@@ -19,7 +19,7 @@ package quasar
 import quasar.Predef._
 import quasar.fp._
 import quasar.fs.Path._
-import quasar.recursionschemes._, FunctorT.ops._
+import quasar.recursionschemes._, Fix._, FunctorT.ops._
 
 import scalaz.{Tree => _, _}, Scalaz._
 
