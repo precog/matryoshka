@@ -33,10 +33,10 @@ import scalaz.concurrent.Task
 import simulacrum.typeclass
 import pathy._, Path._
 
-sealed trait BackendConfig {
+sealed trait MountConfig {
   def validate(path: EnginePath): EnvironmentError \/ Unit
 }
-final case class MongoDbConfig(uri: ConnectionString) extends BackendConfig {
+final case class MongoDbConfig(uri: ConnectionString) extends MountConfig {
   def validate(path: EnginePath) =
     if (path.relative) -\/(InvalidConfig("Not an absolute path: " + path))
     else if (!path.pureDir) -\/(InvalidConfig("Not a directory path: " + path))
@@ -60,13 +60,53 @@ object MongoDbConfig {
     casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")
 }
 
-object BackendConfig {
-  implicit def BackendConfig: CodecJson[BackendConfig] =
-    CodecJson[BackendConfig](
-      encoder = _ match {
-        case x @ MongoDbConfig(_) => ("mongodb", MongoDbConfig.Codec.encode(x)) ->: jEmptyObject
-      },
-      decoder = _.get[MongoDbConfig]("mongodb").map(v => v: BackendConfig))
+final case class ViewConfig(query: sql.Expr) extends MountConfig {
+  def validate(path: EnginePath) =
+    if (path.relative) -\/(InvalidConfig("Not an absolute path: " + path))
+    else if (path.pureDir) -\/(InvalidConfig("Not a file path: " + path))
+    else \/-(())
+}
+object ViewConfig {
+  private val UriPattern = "([a-z][a-z0-9+-.]*):///\\?q=(.+)".r
+
+  private def fromUri(uri: String): String \/ ViewConfig = for {
+    gs       <- UriPattern.unapplySeq(uri) \/> ("could not parse URI: " + uri)
+    scheme   <- nonEmpty(gs(0))            \/> ("missing URI scheme: " + uri)
+    _        <- if (scheme == "sql2") \/-(()) else -\/("unrecognized scheme: " + scheme)
+    queryEnc <- nonEmpty(gs(1))            \/> ("missing query: " + uri)
+    queryStr <- \/.fromTryCatchNonFatal(java.net.URLDecoder.decode(queryEnc, "UTF-8")).leftMap(_.getMessage + "; " + queryEnc)
+    query <- new sql.SQLParser().parse(sql.Query(queryStr)).leftMap(_.message)
+  } yield ViewConfig(query)
+
+  private def toUri(cfg: ViewConfig) =
+    "sql2:///?q=" + java.net.URLEncoder.encode(sql.pprint(cfg.query), "UTF-8")
+
+  implicit def Codec = CodecJson[ViewConfig](
+    cfg => Json("connectionUri" := toUri(cfg)),
+    c => {
+      val uriC = (c --\ "connectionUri")
+      for {
+        uri <- uriC.as[String]
+        cfg <- DecodeResult(fromUri(uri).leftMap(e => (e.toString, uriC.history)))
+      } yield cfg
+    })
+
+  private def nonEmpty(strOrNull: String) =
+    if (strOrNull == "") None else Option(strOrNull)
+}
+
+object MountConfig {
+  implicit val Codec = CodecJson[MountConfig](
+    encoder = _ match {
+      case x @ MongoDbConfig(_) => ("mongodb", MongoDbConfig.Codec.encode(x)) ->: jEmptyObject
+      case x @ ViewConfig(_)    => ("view", ViewConfig.Codec.encode(x)) ->: jEmptyObject
+    },
+    decoder = c => (c.fields match {
+      case Some("mongodb" :: Nil) => c.get[MongoDbConfig]("mongodb")
+      case Some("view" :: Nil)    => c.get[ViewConfig]("view")
+      case Some(t :: Nil)         => DecodeResult.fail("unrecognized mount type: " + t, c.history)
+      case _                      => DecodeResult.fail("invalid mount: " + c.focus, c.history)
+    }).map(v => v: MountConfig))
 }
 
 trait ConfigOps[C] {

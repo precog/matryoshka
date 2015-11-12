@@ -17,7 +17,6 @@
 package quasar
 
 import quasar.Predef._
-import quasar.RenderTree.ops._
 import quasar.recursionschemes._, Recursive.ops._
 import quasar.analysis._
 import quasar.sql._
@@ -194,7 +193,7 @@ trait SemanticAnalysis {
         case Select(_, projections, relations, filter, groupBy, orderBy) =>
           relations.fold[ValidationNel[SemanticError, Map[String, SqlRelation[Expr]]]] (
             success(Map[String, SqlRelation[Expr]]()))(
-            findRelations).map(m => TableScope(parentScope(node).scope ++ m))
+            findRelations).map(TableScope(_))
 
         case _ => success(parentScope(node))
       }
@@ -257,12 +256,12 @@ trait SemanticAnalysis {
           v match {
             case Empty               => Terminal(ProvenanceNodeType, Some("Empty"))
             case Value               => Terminal(ProvenanceNodeType, Some("Value"))
-            case Relation(value)     => value.render.copy(nodeType = ProvenanceNodeType)
+            case Relation(value)     => Terminal(ProvenanceNodeType, Some(pprintRelation(value)))
             case Either(left, right) => nest(self.render(left), self.render(right), "|")
             case Both(left, right)   => nest(self.render(left), self.render(right), "&")
-          }
         }
       }
+    }
 
     implicit val ProvenanceOrMonoid: Monoid[Provenance] =
       new Monoid[Provenance] {

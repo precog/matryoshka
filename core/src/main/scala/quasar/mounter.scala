@@ -25,28 +25,32 @@ import scalaz._, Scalaz._
 import scalaz.concurrent._
 
 object Mounter {
-  def defaultMount(mountings:  MountingsConfig): EnvTask[Backend] =
+  def defaultMount(mountings: MountingsConfig): EnvTask[Backend] =
     mount(mountings, BackendDefinitions.All)
 
-  def mount(mountings:  Map[Path, BackendConfig], backendDef: BackendDefinition): EnvTask[Backend] = {
-    def rec0(backend: Backend, path: List[DirNode], conf: BackendConfig): EnvTask[Backend] =
-      backend match {
-        case NestedBackend(base) => path match {
-          case Nil =>
-            backendDef(conf).leftMap {
-              case MissingBackend(_) => MissingFileSystem(Path(path, None), conf)
-              case otherwise         => otherwise
+  def mount(mountings: MountingsConfig, backendDef: BackendDefinition): EnvTask[Backend] = {
+    def rec0(backend: Backend, path: List[DirNode], conf: MountConfig): EnvTask[Backend] =
+      conf match {
+        case ViewConfig(_) => EitherT.right(Task.now(backend))
+        case _ =>
+          backend match {
+            case NestedBackend(base) => path match {
+              case Nil =>
+                backendDef(conf).leftMap {
+                  case MissingBackend(_) => MissingFileSystem(Path(path, None), conf)
+                  case otherwise         => otherwise
+                }
+
+              case dir :: dirs =>
+                rec0(base.get(dir).getOrElse(NestedBackend(Map())), dirs, conf)
+                  .map(rez => NestedBackend(base + (dir -> rez)))
             }
 
-          case dir :: dirs =>
-            rec0(base.get(dir).getOrElse(NestedBackend(Map())), dirs, conf)
-              .map(rez => NestedBackend(base + (dir -> rez)))
-        }
-
-        case _ => EitherT.left(Task.now(InvalidConfig("attempting to mount a backend within an existing backend.")))
+            case _ => EitherT.left(Task.now(InvalidConfig("attempting to mount a backend within an existing backend.")))
+          }
       }
 
-    def rec(backend: Backend, mount: (Path, BackendConfig)): EnvTask[Backend] = mount match {
+    def rec(backend: Backend, mount: (Path, MountConfig)): EnvTask[Backend] = mount match {
       case (path, config) => rec0(backend, path.asAbsolute.asDir.dir, config)
     }
 

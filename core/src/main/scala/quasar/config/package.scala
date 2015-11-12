@@ -22,13 +22,13 @@ import quasar.fs.Path
 import argonaut._, Argonaut._
 
 package object config {
-  type MountingsConfig = Map[Path, BackendConfig]
+  type MountingsConfig = Map[Path, MountConfig]
 
   object implicits {
     implicit val mountingsConfigCodecJson: CodecJson[MountingsConfig] =
       CodecJson[MountingsConfig](
         encoder = map => map.map(t => t._1.pathname -> t._2).asJson,
-        decoder = cursor => implicitly[DecodeJson[Map[String, BackendConfig]]]
+        decoder = cursor => implicitly[DecodeJson[Map[String, MountConfig]]]
           .decode(cursor).map(_.map(t => Path(t._1) -> t._2)))
   }
 

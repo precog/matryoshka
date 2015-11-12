@@ -913,6 +913,30 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
               "size" -> ObjectProject(Free('tmp0), Constant(Data.Str("size")))))))
     }
 
+    "compile sub-select with ambiguous names" in {
+      testLogicalPlanCompile(
+        "select city, pop from (select city, pop from zips) temp",
+        Let('tmp0,
+          Let('tmp1,
+            read("zips"),
+            Let('tmp2,
+              makeObj(
+                "city" -> ObjectProject(Free('tmp1), Constant(Data.Str("city"))),
+                "pop" -> ObjectProject(Free('tmp1), Constant(Data.Str("pop")))
+              ),
+              Let('tmp3,
+                Squash(Free('tmp2)),
+                Free('tmp3)))),
+          Let('tmp4,
+            makeObj(
+              "city" -> ObjectProject(Free('tmp0), Constant(Data.Str("city"))),
+              "pop" -> ObjectProject(Free('tmp0), Constant(Data.Str("pop")))
+            ),
+            Let('tmp5,
+              Squash(Free('tmp4)),
+              Free('tmp5)))))
+    }.pendingUntilFixed("SD-1101")
+
     "compile simple distinct" in {
       testLogicalPlanCompile(
         "select distinct city from zips",

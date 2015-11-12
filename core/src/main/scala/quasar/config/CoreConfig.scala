@@ -27,6 +27,5 @@ object CoreConfig extends ConfigOps[CoreConfig] {
 
   val mountingsLens = CoreConfig.mountings
 
-  implicit val codecJson = casecodec1(CoreConfig.apply, CoreConfig.unapply)("mountings")
-
+  implicit val Codec = casecodec1(CoreConfig.apply, CoreConfig.unapply)("mountings")
 }

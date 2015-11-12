@@ -18,7 +18,7 @@ package quasar
 
 import quasar.Predef._
 import RenderTree.ops._
-import quasar.recursionschemes._, Recursive.ops._
+import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
 import quasar.fs._
 
 import scalaz._, Scalaz._
@@ -72,32 +72,50 @@ package object sql {
   def relativizePaths(q: Expr, basePath: Path): Path.PathError \/ Expr =
     q.cataM[Path.PathError \/ ?, Expr](mapPathsEƒ(_.from(basePath)))
 
-  def pprint(sql: Expr) = sql.para(sqlƒ)
+  def rewriteRelations(q: Expr)(f: SqlRelation[Expr] => Option[SqlRelation[Expr]]): Expr = {
+    def rewrite(r: SqlRelation[Expr]): Option[SqlRelation[Expr]] =
+      f(r).orElse(r match {
+        case JoinRelation(left, right, tpe, clause) =>
+          (rewrite(left) |@| rewrite(right))((l,r) => sql.JoinRelation(l, r, tpe, clause))
+        case _ => None
+      })
+    q.transAnaT(x => x match {
+      case Fix(sel @ ExprF.SelectF(_, _, Some(rel), _, _, _)) =>
+        rewrite(rel).fold(x)(r => Fix(sel.copy(relations = Some(r))))
+      case _ => x
+    })
+  }
 
-  val sqlƒ: ExprF[(Expr, String)] => String = {
-    val SimpleNamePattern = "[_a-zA-Z][_a-zA-Z0-9$]*".r
+  def pprint(sql: Expr) = sql.para(pprintƒ)
 
-    def _q(s: String): String = "'" + s.replace("'", "''") + "'"
+  private val SimpleNamePattern = "[_a-zA-Z][_a-zA-Z0-9$]*".r
 
-    def _qq(s: String): String = s match {
-      case SimpleNamePattern() => s
-      case _                   => "\"" + s.replace("\"", "\"\"") + "\""
-    }
+  private def _q(s: String): String = "'" + s.replace("'", "''") + "'"
 
+  private def _qq(s: String): String = s match {
+    case SimpleNamePattern() => s
+    case _                   => "\"" + s.replace("\"", "\"\"") + "\""
+  }
+
+  private def pprintRelationƒ(r: SqlRelation[(Expr, String)]): String = (r match {
+    case TableRelationAST(name, alias) => _qq(name) :: alias.toList
+    case ExprRelationAST(expr, aliasName) =>
+      List(expr._2, aliasName)
+    case JoinRelation(left, right, tpe, clause) =>
+      (tpe, clause._1) match {
+        case (InnerJoin, BoolLiteral(true)) =>
+          List("(", pprintRelationƒ(left), "cross join", pprintRelationƒ(right), ")")
+        case (_, _) =>
+          List("(", pprintRelationƒ(left), tpe.sql, pprintRelationƒ(right), "on", clause._2, ")")
+      }
+  }).mkString(" ")
+
+  def pprintRelation(r: SqlRelation[Expr]) =
+    pprintRelationƒ(traverseRelation[Id, Expr, (Expr, String)](r, x => (x, pprint(x))))
+
+  val pprintƒ: ExprF[(Expr, String)] => String = {
     def caseSql(c: Case[(Expr, String)]): String =
       List("when", c.cond._2, "then", c.expr._2) mkString " "
-    def relationSql(r: SqlRelation[(Expr, String)]): String = (r match {
-      case TableRelationAST(name, alias) => _qq(name) :: alias.toList
-      case ExprRelationAST(expr, aliasName) =>
-        List(expr._2, "as", aliasName)
-      case JoinRelation(left, right, tpe, clause) =>
-        (tpe, clause._1) match {
-          case (InnerJoin, BoolLiteral(true)) =>
-            List("(", relationSql(left), "cross join", relationSql(right), ")")
-          case (_, _) =>
-            List("(", relationSql(left), tpe.sql, relationSql(right), "on", clause._2, ")")
-        }
-    }).mkString(" ")
 
     {
       case SelectF(
@@ -112,7 +130,7 @@ package object sql {
           Some("select"),
           isDistinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
           Some(projections.map(p => p.alias.foldLeft(p.expr._2)(_ + " as " + _qq(_))).mkString(", ")),
-          relations.map(r => "from " + relationSql(r)),
+          relations.map(r => "from " + pprintRelationƒ(r)),
           filter.map("where " + _._2),
           groupBy.map(g =>
             ("group by" ::
@@ -257,6 +275,16 @@ package object sql {
     exprLoop(e)
   }
 
+  private def traverseRelation[G[_], A, B](r: SqlRelation[A], f: A => G[B])(
+      implicit G: Applicative[G]): G[SqlRelation[B]] = r match {
+    case TableRelationAST(name, alias) =>
+      G.point(TableRelationAST(name, alias))
+    case ExprRelationAST(expr, aliasName) =>
+      G.apply(f(expr))(ExprRelationAST(_, aliasName))
+    case JoinRelation(left, right, tpe, clause) =>
+      G.apply3(traverseRelation(left, f), traverseRelation(right, f), f(clause))(
+        JoinRelation(_, _, tpe, _))
+  }
 
   implicit val ExprFTraverse: Traverse[ExprF] = new Traverse[ExprF] {
     def traverseImpl[G[_], A, B](
@@ -266,21 +294,12 @@ package object sql {
         G[ExprF[B]] = {
       def traverseCase(c: Case[A]): G[Case[B]] =
         G.apply2(f(c.cond), f(c.expr))(Case(_, _))
-      def traverseRelation(r: SqlRelation[A]): G[SqlRelation[B]] = r match {
-        case TableRelationAST(name, alias) =>
-          G.point(TableRelationAST(name, alias))
-        case ExprRelationAST(expr, aliasName) =>
-          G.apply(f(expr))(ExprRelationAST(_, aliasName))
-        case JoinRelation(left, right, tpe, clause) =>
-          G.apply3(traverseRelation(left), traverseRelation(right), f(clause))(
-            JoinRelation(_, _, tpe, _))
-      }
 
       fa match {
         case SelectF(dist, proj, rel, filter, group, order) =>
           G.apply5(
             Traverse[List].sequence(proj.map(p => f(p.expr).map(Proj(_, p.alias)))),
-            Traverse[Option].sequence(rel.map(traverseRelation)),
+            Traverse[Option].sequence(rel.map(traverseRelation(_, f))),
             Traverse[Option].sequence(filter.map(f)),
             Traverse[Option].sequence(group.map(g =>
               G.apply2(

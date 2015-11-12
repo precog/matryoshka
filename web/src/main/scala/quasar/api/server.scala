@@ -114,7 +114,7 @@ class ServerOps[WC: CodecJson, SC](
    * prevent new ones from being started.
    */
   def servers(staticContent: List[StaticContent], redirect: Option[String],
-              idleTimeout: Duration, tester: BackendConfig => EnvTask[Unit],
+              idleTimeout: Duration, tester: MountConfig => EnvTask[Unit],
               mounter: WC => EnvTask[Backend], configWriter: WC => Task[Unit])
              : (Process[Task, (Int, Http4sServer)], Option[WC] => Task[Unit]) = {
 
