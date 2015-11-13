@@ -89,11 +89,11 @@ class SQLParser extends StandardTokenParsers {
   def floatLit: Parser[String] = elem("decimal", _.isInstanceOf[lexical.FloatLit]) ^^ (_.chars)
 
   ignore(lexical.reserved += (
-    "and", "as", "asc", "between", "by", "case", "cross", "date", "desc", "distinct",
-    "else", "end", "escape", "exists", "false", "for", "from", "full", "group", "having", "in",
-    "inner", "interval", "is", "join", "left", "like", "limit", "not", "null",
+    "all", "and", "as", "asc", "between", "by", "case", "cross", "date", "desc", "distinct",
+    "else", "end", "escape", "except", "exists", "false", "for", "from", "full", "group", "having", "in",
+    "inner", "intersect", "interval", "is", "join", "left", "like", "limit", "not", "null",
     "offset", "oid", "on", "or", "order", "outer", "right", "select", "then", "time",
-    "timestamp", "true", "when", "where"
+    "timestamp", "true", "union", "when", "where"
   ))
 
   ignore(lexical.delimiters += (
@@ -338,7 +338,14 @@ class SQLParser extends StandardTokenParsers {
     }, op(",")) ^^ (OrderBy(_))
 
   def expr: Parser[Expr] =
-    (or_expr | select) * (keyword("limit") ^^^ Limit | keyword("offset") ^^^ Offset)
+    (or_expr | select) * (
+      keyword("limit")                        ^^^ Limit        |
+        keyword("offset")                     ^^^ Offset       |
+        keyword("union") ~ keyword("all")     ^^^ UnionAll     |
+        keyword("union")                      ^^^ Union        |
+        keyword("intersect") ~ keyword("all") ^^^ IntersectAll |
+        keyword("intersect")                  ^^^ Intersect    |
+        keyword("except")                     ^^^ Except)
 
   private def stripQuotes(s:String) = s.substring(1, s.length-1)
 

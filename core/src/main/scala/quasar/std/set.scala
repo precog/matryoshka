@@ -165,6 +165,38 @@ trait SetLib extends Library {
     setTyper(partialTyper { case a :: _ :: Nil => a }),
     setUntyper(t => success(t :: Type.Top :: Nil)))
 
+  val Union = Transformation("(UNION ALL)",
+    "Creates a new set with all the elements of each input set, keeping duplicates.",
+    Type.Top, Type.Top :: Type.Top :: Nil,
+    noSimplification,
+    setTyper(partialTyper {
+      case List(Type.Const(Data.Set(Nil)), s2) => s2
+      case List(s1, Type.Const(Data.Set(Nil))) => s1
+      case List(s1, s2)                        => s1 ⨿ s2
+    }),
+    setUntyper(t => success(t :: t :: Nil)))
+
+  val Intersect = Transformation("(INTERSECT ALL)",
+    "Creates a new set with only the elements that exist in both input sets, keeping duplicates.",
+    Type.Top, Type.Top :: Type.Top :: Nil,
+    noSimplification,
+    setTyper(partialTyper {
+      case List(s1, s2) => if (s1 == s2) s1 else Type.Const(Data.Set(Nil))
+    }),
+    setUntyper(t => success(t :: t :: Nil)))
+
+  val Except = Transformation("(EXCEPT)",
+    "Removes the elements of the second set from the first set.",
+    Type.Top, Type.Top :: Type.Top :: Nil,
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) = orig match {
+        case IsInvoke(_, List(set, ConstantF(Data.Set(Nil)))) => set.some
+        case _                                                => None
+      }
+    },
+    setTyper(partialTyper { case List(s1, _) => s1 }),
+    setUntyper(t => success(t :: Type.Top :: Nil)))
+
   val Constantly = Mapping("CONSTANTLY", "Always return the same value",
     Type.Bottom, Type.Top :: Type.Top :: Nil,
     noSimplification,
@@ -178,6 +210,6 @@ trait SetLib extends Library {
     },
     setUntyper(t => success(t :: Type.Top :: Nil)))
 
-  def functions = Take :: Drop :: OrderBy :: Filter :: InnerJoin :: LeftOuterJoin :: RightOuterJoin :: FullOuterJoin :: GroupBy :: Distinct :: DistinctBy :: Nil
+  def functions = Take :: Drop :: OrderBy :: Filter :: InnerJoin :: LeftOuterJoin :: RightOuterJoin :: FullOuterJoin :: GroupBy :: Distinct :: DistinctBy :: Union :: Intersect :: Except :: Constantly :: Nil
 }
 object SetLib extends SetLib

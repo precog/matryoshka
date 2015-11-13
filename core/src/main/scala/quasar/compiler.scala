@@ -435,8 +435,14 @@ trait Compiler[F[_]] {
           CompilerState.fullTable.flatMap(_.map(emit _).getOrElse(fail(GenericError("Not within a table context so could not find table expression for wildcard")))))(
           compile0)
 
-      case Binop(left, right, op) =>
-        findFunction(op.name).flatMap(compileFunction(_, left :: right :: Nil))
+      case Binop(left, right, op) => op match {
+        case sql.Union =>
+          compile0(sql.Distinct(sql.UnionAll(left, right)))
+        case sql.Intersect =>
+          compile0(sql.Distinct(sql.IntersectAll(left, right)))
+        case _ =>
+          findFunction(op.name).flatMap(compileFunction(_, left :: right :: Nil))
+      }
 
       case Unop(expr, op) =>
         findFunction(op.name).flatMap(compileFunction(_, expr :: Nil))

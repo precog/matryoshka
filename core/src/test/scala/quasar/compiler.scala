@@ -508,6 +508,45 @@ class CompilerSpec extends Specification with CompilerHelpers with PendingWithAc
                 Constant(Data.Int(100))))))
     }
 
+    val setA =
+      Let('tmp0, read("zips"),
+        Squash(makeObj(
+          "loc" -> ObjectProject(Free('tmp0), Constant(Data.Str("loc"))),
+          "pop" -> ObjectProject(Free('tmp0), Constant(Data.Str("pop"))))))
+    val setB =
+      Squash(makeObj(
+        "city" -> ObjectProject(read("zips"), Constant(Data.Str("city")))))
+
+    "compile union" in {
+      testLogicalPlanCompile(
+        "select loc, pop from zips union select city from zips",
+        Distinct(Union(setA, setB)))
+    }
+
+    "compile union all" in {
+      testLogicalPlanCompile(
+        "select loc, pop from zips union all select city from zips",
+        Union(setA, setB))
+    }
+
+    "compile intersect" in {
+      testLogicalPlanCompile(
+        "select loc, pop from zips intersect select city from zips",
+        Distinct(Intersect(setA, setB)))
+    }
+
+    "compile intersect all" in {
+      testLogicalPlanCompile(
+        "select loc, pop from zips intersect all select city from zips",
+        Intersect(setA, setB))
+    }
+
+    "compile except" in {
+      testLogicalPlanCompile(
+        "select loc, pop from zips except select city from zips",
+        Except(setA, setB))
+    }
+
     "expand top-level object flatten" in {
       testLogicalPlanCompile(
                    "SELECT foo{*} FROM foo",
