@@ -13,9 +13,9 @@ import quasar.sql
 
 import com.mongodb.MongoException
 
-import monocle.Optional
+import monocle.Prism
 import monocle.std.{disjunction => D}
-import monocle.function.{Field1, Field2}
+import monocle.function.Field1
 import monocle.std.tuple2._
 
 import org.specs2.ScalaCheck
@@ -32,19 +32,18 @@ import scalaz.concurrent.Task
 
 /** Unit tests for the MongoDB filesystem implementation. */
 class MongoDbFileSystemSpec
-  extends FileSystemTest[QueryFsIO](MongoDbFileSystemSpec.mongoFsUT)
+  extends FileSystemTest[FileSystemIO](MongoDbFileSystemSpec.mongoFsUT)
   with ScalaCheck
   with ExclusiveExecution
   with SkippedOnUserEnv {
 
   import FileSystemTest._
   import FileSystemError._
-  import ManageFile._
   import DataGen._
 
-  val write  = WriteFile.Ops[QueryFsIO]
-  val manage = ManageFile.Ops[QueryFsIO]
-  val exec   = ExecutePlan.Ops[QueryFsIO]
+  val query  = QueryFile.Ops[FileSystemIO]
+  val write  = WriteFile.Ops[FileSystemIO]
+  val manage = ManageFile.Ops[FileSystemIO]
 
   /** The test prefix from the config.
     *
@@ -92,11 +91,11 @@ class MongoDbFileSystemSpec
             val f = d </> file("deldb")
 
             (
-              manage.ls(rootDir).liftM[Process]  |@|
+              query.ls(rootDir).liftM[Process]   |@|
               write.saveF(f, oneDoc).terminated  |@|
-              manage.ls(rootDir).liftM[Process]  |@|
+              query.ls(rootDir).liftM[Process]   |@|
               manage.deleteDir(d).liftM[Process] |@|
-              manage.ls(rootDir).liftM[Process]
+              query.ls(rootDir).liftM[Process]
             ) { (before, _, create, _, delete) =>
               val d0 = d.relativeTo(rootDir) getOrElse currentDir
               (before must not contain(Node.Dir(d0))) and
@@ -123,9 +122,9 @@ class MongoDbFileSystemSpec
             (
               write.saveF(f1, oneDoc).terminated       |@|
               write.saveF(f2, oneDoc).terminated       |@|
-              manage.ls(rootDir).liftM[Process]        |@|
+              query.ls(rootDir).liftM[Process]         |@|
               manage.deleteDir(rootDir).liftM[Process] |@|
-              manage.ls(rootDir).liftM[Process]
+              query.ls(rootDir).liftM[Process]
             ) { (_, _, before, _, after) =>
               val dA = d1.relativeTo(rootDir) getOrElse currentDir
               val dB = d2.relativeTo(rootDir) getOrElse currentDir
@@ -162,14 +161,14 @@ class MongoDbFileSystemSpec
         def shouldFailWithPathNotFound(f: String => String) = {
           val dne = testPrefix map (_ </> file("__DNE__"))
           val q = dne map (p => f(posixCodec.printPath(p)))
-          val xform = ExecutePlan.Transforms[exec.F]
+          val xform = QueryFile.Transforms[query.F]
           val parser = new sql.SQLParser()
 
           import xform._
 
-          val runExec: CompExecM ~> ExecErrT[PhaseResultT[Task, ?], ?] = {
+          val runExec: CompExecM ~> FileSystemErrT[PhaseResultT[Task, ?], ?] = {
             type X0[A] = PhaseResultT[Task, A]
-            type X1[A] = ExecErrT[X0, A]
+            type X1[A] = FileSystemErrT[X0, A]
 
             val x0: G ~> X0 =
               Hoist[PhaseResultT].hoist(run)
@@ -177,21 +176,20 @@ class MongoDbFileSystemSpec
             val x1: H ~> X0 =
               rethrow[X0, SemanticErrors].compose[H](Hoist[SemanticErrsT].hoist(x0))
 
-            Hoist[ExecErrT].hoist(x1)
+            Hoist[FileSystemErrT].hoist(x1)
           }
 
           def check(file: AbsFile[Sandboxed]) = {
-            val errP: Optional[ExecutionError \/ ResultFile, AbsFile[Sandboxed]] =
-              D.left                   composePrism
-              ExecutionError.pathError composeLens
-              Field2.second            composePrism
-              PathError2.pathNotFound  composePrism
+            val errP: Prism[FileSystemError \/ ResultFile, AbsFile[Sandboxed]] =
+              D.left                    composePrism
+              FileSystemError.pathError composePrism
+              PathError2.pathNotFound   composePrism
               D.right
 
             def check0(expr: sql.Expr) =
-              (run(manage.fileExists(file)).run must beFalse) and
+              (run(query.fileExists(file)).run must beFalse) and
               (errP.getOption(
-                runExec(exec.executeQuery_(expr, Variables.fromMap(Map()))).run.value.run
+                runExec(query.executeQuery_(expr, Variables.fromMap(Map()))).run.value.run
               ) must beSome(file))
 
             parser.parse(sql.Query(f(posixCodec.printPath(file)))) fold (
@@ -233,9 +231,9 @@ class MongoDbFileSystemSpec
 object MongoDbFileSystemSpec {
   // NB: No `chroot` here as we want to test deleting top-level
   //     dirs (i.e. databases).
-  def mongoFsUT: Task[NonEmptyList[FileSystemUT[QueryFsIO]]] =
+  def mongoFsUT: Task[NonEmptyList[FileSystemUT[FileSystemIO]]] =
     TestConfig.externalFileSystems {
       case (MongoDbConfig(cs), dir) =>
-        mongodb.filesystems.testQueryableFileSystem(cs, dir)
+        mongodb.filesystems.testFileSystemIO(cs, dir)
     }
 }

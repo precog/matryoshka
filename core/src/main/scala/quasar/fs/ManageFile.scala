@@ -6,8 +6,6 @@ import quasar.fp._
 
 import scala.Ordering
 
-import argonaut._, Argonaut._
-
 import pathy.{Path => PPath}, PPath._
 
 import scalaz._, Scalaz._
@@ -82,71 +80,11 @@ object ManageFile {
       FileToFile0(_, _)
   }
 
-  sealed trait Node {
-    import Node._
-
-    def fold[X](
-      mnt: RelDir[Sandboxed] => X,
-      pln: RelPath[Sandboxed] => X
-    ): X =
-      this match {
-        case Mount0(d) => mnt(d)
-        case Plain0(p) => pln(p)
-      }
-
-    def dir: Option[RelDir[Sandboxed]] =
-      fold(some, _.swap.toOption)
-
-    def file: Option[RelFile[Sandboxed]] =
-      fold(κ(none[RelFile[Sandboxed]]), _.toOption)
-
-    def path: RelPath[Sandboxed] =
-      fold(\/.left, ι)
-  }
-
-  object Node {
-    private final case class Mount0(d: RelDir[Sandboxed]) extends Node
-    private final case class Plain0(p: RelPath[Sandboxed]) extends Node
-
-    val Mount: RelDir[Sandboxed] => Node =
-      Mount0(_)
-
-    val Plain: RelPath[Sandboxed] => Node =
-      Plain0(_)
-
-    val Dir: RelDir[Sandboxed] => Node =
-      Plain compose \/.left
-
-    val File: RelFile[Sandboxed] => Node =
-      Plain compose \/.right
-
-    def fromFirstSegmentOf(f: RelFile[Sandboxed]): Option[Node] =
-      flatten(none, none, none,
-        n => Dir(dir(n)).some,
-        n => File(file(n)).some,
-        f).unite.headOption
-
-    implicit val nodeEncodeJson: EncodeJson[Node] =
-      EncodeJson(node => Json(
-        "name" := node.path.fold(posixCodec.printPath, posixCodec.printPath),
-        "type" := node.fold(κ("mount"), _.fold(κ("directory"), κ("file")))
-      ))
-
-    implicit val nodeOrdering: Ordering[Node] =
-      Ordering.by(_.path.fold(posixCodec.printPath, posixCodec.printPath))
-
-    implicit val nodeOrder: Order[Node] =
-      Order.fromScalaOrdering
-  }
-
   final case class Move(scenario: MoveScenario, semantics: MoveSemantics)
     extends ManageFile[FileSystemError \/ Unit]
 
   final case class Delete(path: AbsPath[Sandboxed])
     extends ManageFile[FileSystemError \/ Unit]
-
-  final case class ListContents(dir: AbsDir[Sandboxed])
-    extends ManageFile[FileSystemError \/ Set[Node]]
 
   final case class TempFile(nearTo: Option[AbsFile[Sandboxed]])
     extends ManageFile[AbsFile[Sandboxed]]
@@ -186,42 +124,6 @@ object ManageFile {
     /** Delete the given file, fails if the file does not exist. */
     def deleteFile(file: AbsFile[Sandboxed]): M[Unit] =
       delete(file.right)
-
-    /** Returns immediate children of the given directory, fails if the
-      * directory does not exist.
-      */
-    def ls(dir: AbsDir[Sandboxed]): M[Set[Node]] =
-      EitherT(lift(ListContents(dir)))
-
-    /** The children of the root directory. */
-    def ls: M[Set[Node]] =
-      ls(rootDir)
-
-    /** Returns the children of the given directory and all of their
-      * descendants, fails if the directory does not exist.
-      */
-    def lsAll(dir: AbsDir[Sandboxed]): M[Set[Node]] = {
-      type S[A] = StreamT[M, A]
-
-      def lsR(desc: RelDir[Sandboxed]): StreamT[M, Node] =
-        StreamT.fromStream[M, Node](ls(dir </> desc) map (_.toStream))
-          .flatMap(_.path.fold(
-            d => lsR(desc </> d),
-            f => Node.File(desc </> f).point[S]))
-
-      lsR(currentDir).foldLeft(Set.empty[Node])(_ + _)
-    }
-
-    /** Returns whether the given file exists. */
-    def fileExists(file: AbsFile[Sandboxed]): F[Boolean] = {
-      // TODO: Add fileParent[B, S](f: Path[B, File, S]): Path[B, Dir, S] to pathy
-      val parent =
-        parentDir(file) getOrElse scala.sys.error("impossible, files have parents!")
-
-      ls(parent)
-        .map(_ flatMap (_.file.map(parent </> _).toSet) exists (identicalPath(file, _)))
-        .getOrElse(false)
-    }
 
     /** Returns the path to a new temporary file. When `nearTo` is specified,
       * an attempt is made to return a tmp path that is as physically close to

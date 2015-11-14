@@ -96,10 +96,10 @@ trait SemanticAnalysis {
   sealed trait Synthetic
   object Synthetic {
     final case object SortKey extends Synthetic
-  }
 
-  implicit val SyntheticRenderTree: RenderTree[Synthetic] =
-    RenderTree.fromToString[Synthetic]("Synthetic")
+    implicit val SyntheticRenderTree: RenderTree[Synthetic] =
+      RenderTree.fromToString[Synthetic]("Synthetic")
+  }
 
   /** Inserts synthetic fields into the projections of each `select` stmt to
     * hold the values that will be used in sorting, and annotates each new

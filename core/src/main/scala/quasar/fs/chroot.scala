@@ -1,14 +1,19 @@
 package quasar
+package fs
 
 import quasar.fp._
-import quasar.fs.{Path => QPath, _}
-import quasar.recursionschemes._
+import quasar.recursionschemes._, FunctorT.ops._
+import LogicalPlan.ReadF
 
 import monocle.Optional
+import monocle.function.Field1
+import monocle.std.tuple2._
 
-import pathy._, Path._
+import pathy.{Path => PPath}, PPath._
 
 import scalaz._
+import scalaz.std.tuple._
+import scalaz.syntax.functor._
 
 object chroot {
 
@@ -84,10 +89,6 @@ object chroot {
           Coyoneda.lift(Delete(p.bimap(rebase(_, prefix), rebase(_, prefix))))
             .map(_ leftMap stripPathError(prefix))
 
-        case ListContents(d) =>
-          Coyoneda.lift(ListContents(rebase(d, prefix)))
-            .map(_.bimap(stripPathError(prefix), _ map stripNodePrefix(prefix)))
-
         case TempFile(nt) =>
           Coyoneda.lift(TempFile(nt map (rebase(_, prefix))))
             .map(stripPrefix(prefix))
@@ -102,19 +103,12 @@ object chroot {
   def manageFileIn[S[_]](prefix: AbsDir[Sandboxed])(implicit S: ManageFileF :<: S): S ~> S =
     interpret.injectedNT[ManageFileF, S](manageFile(prefix))
 
-  /** Rebases all paths in `FileSystem` operations onto the given prefix. */
-  def fileSystem[S[_]](prefix: AbsDir[Sandboxed])
-                      (implicit S0: ReadFileF :<: S, S1: WriteFileF :<: S, S2: ManageFileF :<: S): S ~> S = {
-    readFileIn[S](prefix) compose writeFileIn[S](prefix) compose manageFileIn[S](prefix)
-  }
-
-  /** Rebases paths in `ExecutePlan` onto the given prefix. */
-  def executePlan(prefix: AbsDir[Sandboxed]): ExecutePlan ~> ExecutePlan = {
-    import LogicalPlan.ReadF
+  /** Rebases paths in `QueryFile` onto the given prefix. */
+  def queryFile(prefix: AbsDir[Sandboxed]): QueryFileF ~> QueryFileF = {
+    import QueryFile._
     import ResultFile.resultFile
-    import FunctorT.ops._
 
-    val base = QPath(posixCodec.printPath(prefix))
+    val base = Path(posixCodec.printPath(prefix))
 
     val rebasePlan: LogicalPlan ~> LogicalPlan =
       new (LogicalPlan ~> LogicalPlan) {
@@ -124,54 +118,81 @@ object chroot {
         }
       }
 
-    new (ExecutePlan ~> ExecutePlan) {
-      def apply[A](ep: ExecutePlan[A]) =
-        ExecutePlan(ep.lp.translate(rebasePlan), rebase(ep.out, prefix), {
-          case (xs, r) =>
-            ep.f((xs, r.map(resultFile.modify(stripPrefix(prefix)))))
-        })
+    val f = new (QueryFile ~> QueryFileF) {
+      def apply[A](qf: QueryFile[A]) = qf match {
+        case ExecutePlan(lp, out) =>
+          Coyoneda.lift(ExecutePlan(lp.translate(rebasePlan), rebase(out, prefix)))
+            .map(_.map(_.bimap(stripPathError(prefix), resultFile.modify(stripPrefix(prefix)))))
+
+        case ListContents(d) =>
+          Coyoneda.lift(ListContents(rebase(d, prefix)))
+            .map(_.bimap(stripPathError(prefix), _ map stripNodePrefix(prefix)))
+      }
+    }
+
+    new (QueryFileF ~> QueryFileF) {
+      def apply[A](qf: QueryFileF[A]) = qf flatMap f
     }
   }
 
-  def executePlanIn[S[_]](prefix: AbsDir[Sandboxed])(implicit S: ExecutePlan :<: S): S ~> S =
-    interpret.injectedNT[ExecutePlan, S](executePlan(prefix))
+  def queryFileIn[S[_]](prefix: AbsDir[Sandboxed])(implicit S: QueryFileF :<: S): S ~> S =
+    interpret.injectedNT[QueryFileF, S](queryFile(prefix))
 
-  /** Rebases all paths in `QueryableFileSystem` operations onto the given prefix. */
-  def queryableFileSystem[S[_]](prefix: AbsDir[Sandboxed])
-                               (implicit S0: ReadFileF :<: S,
-                                         S1: WriteFileF :<: S,
-                                         S2: ManageFileF :<: S,
-                                         S3: ExecutePlan :<: S)
-                               : S ~> S = {
+  /** Rebases all paths in `FileSystem` operations onto the given prefix. */
+  def fileSystem[S[_]](prefix: AbsDir[Sandboxed])
+                      (implicit S0: ReadFileF :<: S,
+                                S1: WriteFileF :<: S,
+                                S2: ManageFileF :<: S,
+                                S3: QueryFileF :<: S)
+                      : S ~> S = {
 
-    executePlanIn[S](prefix) compose fileSystem[S](prefix)
+    readFileIn[S](prefix)   compose
+    writeFileIn[S](prefix)  compose
+    manageFileIn[S](prefix) compose
+    queryFileIn[S](prefix)
   }
 
   ////
 
-  import ManageFile.Node._
-
   private val fsPathError: Optional[FileSystemError, AbsPath[Sandboxed]] =
     FileSystemError.pathError composeLens PathError2.errorPath
 
+  private val fsPlannerError: Optional[FileSystemError, Fix[LogicalPlan]] =
+    FileSystemError.plannerError composeLens Field1.first
+
   // TODO: AbsDir relativeTo rootDir doesn't need to be partial, add the appropriate method to pathy
-  private def rebase[T](p: Path[Abs,T,Sandboxed], onto: AbsDir[Sandboxed]): Path[Abs,T,Sandboxed] =
+  private def rebase[T](p: PPath[Abs,T,Sandboxed], onto: AbsDir[Sandboxed]): PPath[Abs,T,Sandboxed] =
     p.relativeTo(rootDir[Sandboxed]).fold(p)(onto </> _)
 
-  private def stripPathError(prefix: AbsDir[Sandboxed]): FileSystemError => FileSystemError =
-    fsPathError.modify(stripPathPrefix(prefix))
+  private def stripPathError(prefix: AbsDir[Sandboxed]): FileSystemError => FileSystemError = {
+    val base = Path(posixCodec.printPath(prefix))
+
+    val stripRead: LogicalPlan ~> LogicalPlan =
+      new (LogicalPlan ~> LogicalPlan) {
+        def apply[A](lp: LogicalPlan[A]) = lp match {
+          case ReadF(p) => ReadF(p.rebase(base).map(_.asAbsolute) | p)
+          case _        => lp
+        }
+      }
+
+    val stripPlan: Fix[LogicalPlan] => Fix[LogicalPlan] =
+      _ translate stripRead
+
+    fsPathError.modify(stripPathPrefix(prefix)) compose
+    fsPlannerError.modify(stripPlan)
+  }
 
   private def stripPathPrefix(prefix: AbsDir[Sandboxed]): AbsPath[Sandboxed] => AbsPath[Sandboxed] =
     _.bimap(stripPrefix(prefix), stripPrefix(prefix))
 
-  private def stripNodePrefix(prefix: AbsDir[Sandboxed]): ManageFile.Node => ManageFile.Node =
+  private def stripNodePrefix(prefix: AbsDir[Sandboxed]): Node => Node =
     _.fold(
-      Mount compose stripRelPrefix(prefix),
-      p => Plain(p.bimap(stripRelPrefix(prefix), stripRelPrefix(prefix))))
+      Node.Mount compose stripRelPrefix(prefix),
+      p => Node.Plain(p.bimap(stripRelPrefix(prefix), stripRelPrefix(prefix))))
 
-  private def stripRelPrefix[T](prefix: AbsDir[Sandboxed]): Path[Rel, T, Sandboxed] => Path[Rel, T, Sandboxed] =
+  private def stripRelPrefix[T](prefix: AbsDir[Sandboxed]): PPath[Rel, T, Sandboxed] => PPath[Rel, T, Sandboxed] =
     p => prefix.relativeTo(rootDir).flatMap(p relativeTo _) getOrElse p
 
-  private def stripPrefix[T](prefix: AbsDir[Sandboxed]): Path[Abs, T, Sandboxed] => Path[Abs, T, Sandboxed] =
+  private def stripPrefix[T](prefix: AbsDir[Sandboxed]): PPath[Abs, T, Sandboxed] => PPath[Abs, T, Sandboxed] =
     p => p.relativeTo(prefix).fold(p)(rootDir </> _)
 }

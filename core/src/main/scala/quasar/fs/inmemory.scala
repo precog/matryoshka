@@ -15,7 +15,8 @@ import pathy.Path._
   *     the file system.
   */
 object inmemory {
-  import ReadFile._, WriteFile._, ManageFile._, FileSystemError._, PathError2._
+  import ReadFile._, WriteFile._, ManageFile._, QueryFile._
+  import FileSystemError._, PathError2._
 
   type FM = Map[AbsFile[Sandboxed], Vector[Data]]
   type RM = Map[ReadHandle, Reading]
@@ -114,9 +115,6 @@ object inmemory {
       case Delete(path) =>
         path.fold(deleteDir, deleteFile)
 
-      case ListContents(dir) =>
-        ls(dir)
-
       case TempFile(nearTo) =>
         nextSeq map (n => nearTo.cata(
           renameFile(_, κ(FileName(tmpName(n)))),
@@ -124,8 +122,19 @@ object inmemory {
     }
   }
 
+  val queryFile: QueryFile ~> InMemoryFs = new (QueryFile ~> InMemoryFs) {
+    def apply[A](qf: QueryFile[A]) = qf match {
+      case ExecutePlan(lp, out) =>
+        (Vector.empty[PhaseResult], ResultFile.User(out).right[FileSystemError])
+          .point[InMemoryFs]
+
+      case ListContents(dir) =>
+        ls(dir)
+    }
+  }
+
   val fileSystem: FileSystem ~> InMemoryFs =
-    interpretFileSystem(readFile, writeFile, manageFile)
+    interpretFileSystem(queryFile, readFile, writeFile, manageFile)
 
   def runStatefully(initial: InMemState): Task[InMemoryFs ~> Task] =
     runInspect(initial).map(_._1)

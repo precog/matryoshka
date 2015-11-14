@@ -137,7 +137,7 @@ object WriteFile {
 
     /** Same as `create` but accepts chunked [[Data]]. */
     def createChunked(dst: AbsFile[Sandboxed], src: Process[F, Vector[Data]])
-                     (implicit MF: ManageFile.Ops[S])
+                     (implicit QF: QueryFile.Ops[S], MF: ManageFile.Ops[S])
                      : Process[M, FileSystemError] = {
 
       def shouldNotExist: M[FileSystemError] =
@@ -150,7 +150,7 @@ object WriteFile {
 
     /** Create the given file with the contents of `src`. Fails if already exists. */
     def create(dst: AbsFile[Sandboxed], src: Process[F, Data])
-              (implicit MF: ManageFile.Ops[S])
+              (implicit QF: QueryFile.Ops[S], MF: ManageFile.Ops[S])
               : Process[M, FileSystemError] = {
 
       createChunked(dst, src map (Vector(_)))
@@ -158,14 +158,14 @@ object WriteFile {
 
     /** Same as `create` but accepts a `Foldable` of [[Data]]. */
     def createF[H[_]: Foldable](dst: AbsFile[Sandboxed], data: H[Data])
-                               (implicit MF: ManageFile.Ops[S])
+                               (implicit QF: QueryFile.Ops[S], MF: ManageFile.Ops[S])
                                : Process[M, FileSystemError] = {
       create(dst, processF(data))
     }
 
     /** Same as `replace` but accepts chunked [[Data]]. */
     def replaceChunked(dst: AbsFile[Sandboxed], src: Process[F, Vector[Data]])
-                      (implicit MF: ManageFile.Ops[S])
+                      (implicit QF: QueryFile.Ops[S], MF: ManageFile.Ops[S])
                       : Process[M, FileSystemError] = {
 
       def shouldExist: M[FileSystemError] =
@@ -180,7 +180,7 @@ object WriteFile {
       * doesn't exist.
       */
     def replace(dst: AbsFile[Sandboxed], src: Process[F, Data])
-               (implicit MF: ManageFile.Ops[S])
+               (implicit QF: QueryFile.Ops[S], MF: ManageFile.Ops[S])
                : Process[M, FileSystemError] = {
 
       replaceChunked(dst, src map (Vector(_)))
@@ -188,7 +188,7 @@ object WriteFile {
 
     /** Same as `replace` but accepts a `Foldable` of [[Data]]. */
     def replaceF[H[_]: Foldable](dst: AbsFile[Sandboxed], data: H[Data])
-                                (implicit MF: ManageFile.Ops[S])
+                                (implicit QF: QueryFile.Ops[S], MF: ManageFile.Ops[S])
                                 : Process[M, FileSystemError] = {
       replace(dst, processF(data))
     }
@@ -196,10 +196,10 @@ object WriteFile {
     ////
 
     private def fileExistsM(file: AbsFile[Sandboxed])
-                           (implicit MF: ManageFile.Ops[S])
+                           (implicit QF: QueryFile.Ops[S])
                            : M[Boolean] = {
 
-      MF.fileExists(file).liftM[FileSystemErrT]
+      QF.fileExists(file).liftM[FileSystemErrT]
     }
 
     private def saveChunked0(dst: AbsFile[Sandboxed], src: Process[F, Vector[Data]], sem: MoveSemantics)

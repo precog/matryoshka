@@ -14,6 +14,7 @@ import com.mongodb.async.client.{MongoClient, MongoClients}
 import pathy.Path._
 
 import scalaz._
+import scalaz.syntax.applicative._
 import scalaz.syntax.std.option._
 import scalaz.concurrent.Task
 
@@ -21,30 +22,31 @@ object filesystems {
   def testFileSystem(
     cs: ConnectionString,
     prefix: AbsDir[Sandboxed]
-  ): Task[FileSystem ~> Task] =
-    Task.delay(MongoClients create cs) flatMap (testFileSystem0(_, prefix))
+  ): Task[FileSystem ~> Task] = for {
+    defDb    <- defaultDb(cs, prefix)
+    client   <- Task.delay(MongoClients create cs)
+    mongofs0 <- rethrow[Task, EnvironmentError2]
+                  .apply(mongoDbFileSystem(client, defDb))
+    mongofs  =  rethrow[Task, WorkflowExecutionError] compose mongofs0
+  } yield mongofs
 
-  def testQueryableFileSystem(
+  def testFileSystemIO(
     cs: ConnectionString,
     prefix: AbsDir[Sandboxed]
-  ): Task[QueryFsIO ~> Task] = for {
-    client   <- Task.delay(MongoClients create cs)
-    mongofs  <- testFileSystem0(client, prefix)
-    mongoex0 <- rethrow[Task, EnvironmentError2].apply(executeplan.run(client))
-    mongoex  =  rethrow[Task, WorkflowExecutionError] compose mongoex0
-  } yield interpret.interpret3(NaturalTransformation.refl[Task], mongoex, mongofs)
+  ): Task[FileSystemIO ~> Task] =
+    testFileSystem(cs, prefix)
+      .map(interpret.interpret2(NaturalTransformation.refl[Task], _))
 
   ////
 
-  private def testFileSystem0(
-    client: MongoClient,
+  private def defaultDb(
+    cs: ConnectionString,
     prefix: AbsDir[Sandboxed]
-  ): Task[FileSystem ~> Task] = {
-    def noDefaultDbError = Task.fail(new RuntimeException(
-      s"Unable to determine a default database for `${client.toString}` from `${posixCodec.printPath(prefix)}`."
-    ))
+  ): Task[DefaultDb] = {
+    def noDefaultDbError = new RuntimeException(
+      s"Unable to determine a default database for `${cs.toString}` from `${posixCodec.printPath(prefix)}`."
+    )
 
-    DefaultDb.fromPath(prefix)
-      .cata(mongoDbFileSystem(client, _), noDefaultDbError)
+    DefaultDb fromPath prefix cata (_.point[Task], Task.fail(noDefaultDbError))
   }
 }

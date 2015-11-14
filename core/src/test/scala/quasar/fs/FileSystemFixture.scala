@@ -25,6 +25,7 @@ trait FileSystemFixture {
   type M[A]   = FileSystemErrT[G, A]
   type RWM[A] = FileSystemErrT[RWG, A]
 
+  val query  = QueryFile.Ops[FileSystem]
   val read   = ReadFile.Ops[FileSystem]
   val write  = WriteFile.Ops[FileSystem]
   val manage = ManageFile.Ops[FileSystem]
@@ -39,11 +40,12 @@ trait FileSystemFixture {
 
   val run: F ~> G =
     hoistFs compose[F]
-    hoistFree(interpretFileSystem(readFile, writeFile, manageFile))
+    hoistFree(interpretFileSystem(queryFile, readFile, writeFile, manageFile))
 
   val runRW: F ~> RWG =
     hoistRW compose[F]
     hoistFree(interpretFileSystem[RW](
+      liftMT[InMemoryFs, ReadWriteT] compose queryFile,
       interceptReads(readFile),
       amendWrites(writeFile),
       liftMT[InMemoryFs, ReadWriteT] compose manageFile))

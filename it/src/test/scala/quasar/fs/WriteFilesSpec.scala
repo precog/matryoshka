@@ -13,8 +13,9 @@ import scalaz.stream._
 
 class WriteFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
   import FileSystemTest._, FileSystemError._
-  import WriteFile._, ManageFile._
+  import WriteFile._
 
+  val query  = QueryFile.Ops[FileSystem]
   val read   = ReadFile.Ops[FileSystem]
   val write  = WriteFile.Ops[FileSystem]
   val manage = ManageFile.Ops[FileSystem]
@@ -34,7 +35,7 @@ class WriteFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
         val r = for {
           h <- write.open(f)
           _ <- write.close(h).liftM[FileSystemErrT]
-          p <- manage.fileExists(f).liftM[FileSystemErrT]
+          p <- query.fileExists(f).liftM[FileSystemErrT]
         } yield p
 
         r.run map (_.toEither must beRight(true))
@@ -72,7 +73,7 @@ class WriteFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
       "append empty input should result in a new file" >> {
         val f = writesPrefix </> file("emptyfile")
         val p = write.appendF(f, Vector[Data]()).drain ++
-                (manage.fileExists(f).liftM[FileSystemErrT] : manage.M[Boolean]).liftM[Process]
+                (query.fileExists(f).liftM[FileSystemErrT] : query.M[Boolean]).liftM[Process]
 
         runLogT(run, p).run.run must_== \/.right(Vector(true))
       }
@@ -85,7 +86,7 @@ class WriteFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
         val f2Node = Node.File(dir("subdir2") </> file("subdirfile2"))
         val p = write.appendF(f1, oneDoc).drain ++
                 write.appendF(f2, oneDoc).drain ++
-                manage.lsAll(d).liftM[Process]
+                query.lsAll(d).liftM[Process]
 
         runLogT(run, p).map(_.flatMap(_.toVector))
           .runEither must beRight(containTheSameElementsAs(List(f1Node, f2Node)))

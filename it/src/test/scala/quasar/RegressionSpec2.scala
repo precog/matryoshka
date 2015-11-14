@@ -23,18 +23,18 @@ import scalaz.stream.{merge => pmerge, _}
 import org.specs2.specification._
 import org.specs2.execute._
 
-class QueryRegressionSpec
-  extends FileSystemTest[QueryFsIO](QueryRegressionSpec.externalQFS) {
+class RegressionSpec2
+  extends FileSystemTest[FileSystemIO](RegressionSpec2.externalFS) {
 
-  import QueryRegressionSpec._
+  import RegressionSpec2._
 
   type FsErr[A] = FileSystemErrT[F, A]
 
-  val epTransforms = ExecutePlan.Transforms[F]
-  import epTransforms._
+  val qfTransforms = QueryFile.Transforms[F]
+  import qfTransforms._
 
   val injectTask: Task ~> F =
-    liftFT[QueryFsIO].compose(injectNT[Task, QueryFsIO])
+    liftFT[FileSystemIO].compose(injectNT[Task, FileSystemIO])
 
   val TestsRoot = new File("it/src/main/resources/tests")
   val DataDir: AbsDir[Sandboxed] = rootDir </> dir("regression")
@@ -43,10 +43,10 @@ class QueryRegressionSpec
   def dataFile(fileName: String): AbsFile[Sandboxed] =
     DataDir </> file1(FileName(fileName).dropExtension)
 
-  val read   = ReadFile.Ops[QueryFsIO]
-  val write  = WriteFile.Ops[QueryFsIO]
-  val manage = ManageFile.Ops[QueryFsIO]
-  val exec   = ExecutePlan.Ops[QueryFsIO]
+  val query  = QueryFile.Ops[FileSystemIO]
+  val read   = ReadFile.Ops[FileSystemIO]
+  val write  = WriteFile.Ops[FileSystemIO]
+  val manage = ManageFile.Ops[FileSystemIO]
 
   ////
 
@@ -92,31 +92,28 @@ class QueryRegressionSpec
 
   /** Verify that the given data file exists in the filesystem. */
   def verifyDataExists(dataFileName: String): F[Result] =
-    manage.fileExists(dataFile(dataFileName)) map (_ must beTrue)
+    query.fileExists(dataFile(dataFileName)) map (_ must beTrue)
 
   /** Verify the given results according to the provided expectation. */
   def verifyResults(
     exp: ExpectedResult,
-    act: Process[FileSystemErrT[CompExecM, ?], Data],
+    act: Process[CompExecM, Data],
     run: Run
   ): Task[Result] = {
-    val liftRun: FileSystemErrT[CompExecM, ?] ~> Task = {
+    val liftRun: CompExecM ~> Task = {
       type H1[A] = PhaseResultT[Task, A]
       type H2[A] = SemanticErrsT[H1, A]
-      type H3[A] = ExecErrT[H2, A]
-      type H4[A] = FileSystemErrT[H3, A]
+      type H3[A] = FileSystemErrT[H2, A]
 
       val h1: G ~> H1 = Hoist[PhaseResultT].hoist(run)
       val h2: H ~> H2 = Hoist[SemanticErrsT].hoist(h1)
-      val h3: CompExecM ~> H3 = Hoist[ExecErrT].hoist(h2)
-      val h4: FileSystemErrT[CompExecM, ?] ~> H4 = Hoist[FileSystemErrT].hoist(h3)
+      val h3: CompExecM ~> H3 = Hoist[FileSystemErrT].hoist(h2)
 
-      new (FileSystemErrT[CompExecM, ?] ~> Task) {
-        def apply[A](fa: FileSystemErrT[CompExecM, A]) =
+      new (CompExecM ~> Task) {
+        def apply[A](fa: CompExecM[A]) =
           rethrow[H1, NonEmptyList[SemanticError]].apply(
-            rethrow[H2, ExecutionError].apply(
-              rethrow[H3, FileSystemError].apply(
-                h4(fa)))).value
+            rethrow[H2, FileSystemError].apply(
+              h3(fa))).value
       }
     }
 
@@ -130,20 +127,18 @@ class QueryRegressionSpec
 
   /** Parse and execute the given query, returning a stream of results. */
   def execQuery(
-    query: String,
+    qry: String,
     vars: Map[String, String]
-  ): Process[FileSystemErrT[CompExecM, ?], Data] = {
-    type M[A] = FileSystemErrT[CompExecM, A]
-
-    val toM: Task ~> M =
-      liftMT[CompExecM, FileSystemErrT] compose toCompExec compose injectTask
+  ): Process[CompExecM, Data] = {
+    val f: Task ~> CompExecM =
+      toCompExec compose injectTask
 
     val parseTask: Task[Expr] =
-      SQLParser.parseInContext(Query(query), DataPath)
+      SQLParser.parseInContext(Query(qry), DataPath)
         .fold(e => Task.fail(new RuntimeException(e.message)), _.point[Task])
 
-    liftMT[M, Process].compose(toM).apply(parseTask)
-      .flatMap(exec.evaluateQuery(_, Variables.fromMap(vars)) : Process[M, Data])
+    f(parseTask).liftM[Process]
+      .flatMap(query.evaluateQuery(_, Variables.fromMap(vars)))
   }
 
   /** Loads all the test data needed by the given tests into the filesystem. */
@@ -227,17 +222,17 @@ class QueryRegressionSpec
     Task.delay(Source.fromInputStream(new FileInputStream(file)).mkString)
 }
 
-object QueryRegressionSpec {
+object RegressionSpec2 {
   import quasar.physical.mongodb.{filesystems => mongofs}
 
-  def externalQFS: Task[NonEmptyList[FileSystemUT[QueryFsIO]]] = {
-    val extQfs = TestConfig.externalFileSystems {
+  def externalFS: Task[NonEmptyList[FileSystemUT[FileSystemIO]]] = {
+    val extFs = TestConfig.externalFileSystems {
       case (MongoDbConfig(cs), dir) =>
-        lazy val f = mongofs.testQueryableFileSystem(cs, dir).run
+        lazy val f = mongofs.testFileSystemIO(cs, dir).run
         Task.delay(f)
     }
 
-    extQfs map (_ map (ut => ut.contramap(chroot.queryableFileSystem(ut.testDir))))
+    extFs map (_ map (ut => ut.contramap(chroot.fileSystem(ut.testDir))))
   }
 
   implicit val dataEncodeJson: EncodeJson[Data] =

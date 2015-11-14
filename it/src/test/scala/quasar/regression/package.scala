@@ -1,8 +1,10 @@
 package quasar
 
+import quasar.fs.FileSystem
+
 import scalaz._
 import scalaz.concurrent._
 
 package object regression {
-  type QueryFsIO[A] = Coproduct[Task, QueryableFileSystem, A]
+  type FileSystemIO[A] = Coproduct[Task, FileSystem, A]
 }

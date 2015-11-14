@@ -17,6 +17,8 @@ import scalaz.syntax.monadPlus._
 import scalaz.concurrent.Task
 
 package object fs {
+  type WFTask[A] = WorkflowExecErrT[Task, A]
+
   final case class DefaultDb(run: String) extends AnyVal
 
   object DefaultDb {
@@ -30,15 +32,18 @@ package object fs {
   def mongoDbFileSystem(
     client: MongoClient,
     defDb: DefaultDb
-  ): Task[FileSystem ~> Task] =
+  ): EnvErr2T[Task, FileSystem ~> WFTask] =
     for {
-      rfile  <- readfile.run(client)
-      wfile  <- writefile.run(client)
-      mfile  <- managefile.run(client, defDb)
+      qfile  <- queryfile.run(client)(queryfile.interpret)
+      rfile  <- readfile.run(client).liftM[EnvErr2T]
+      wfile  <- writefile.run(client).liftM[EnvErr2T]
+      mfile  <- managefile.run(client, defDb).liftM[EnvErr2T]
+      liftWF =  liftMT[Task, WorkflowExecErrT]
     } yield {
-      interpretFileSystem(
-        rfile compose readfile.interpret,
-        wfile compose writefile.interpret,
-        mfile compose managefile.interpret)
+      interpretFileSystem[WFTask](
+        qfile,
+        liftWF compose rfile compose readfile.interpret,
+        liftWF compose wfile compose writefile.interpret,
+        liftWF compose mfile compose managefile.interpret)
     }
 }

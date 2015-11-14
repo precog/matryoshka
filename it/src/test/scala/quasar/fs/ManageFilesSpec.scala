@@ -13,6 +13,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
   import FileSystemTest._, FileSystemError._, PathError2._
   import ManageFile._
 
+  val query  = QueryFile.Ops[FileSystem]
   val read   = ReadFile.Ops[FileSystem]
   val write  = WriteFile.Ops[FileSystem]
   val manage = ManageFile.Ops[FileSystem]
@@ -33,7 +34,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
                 manage.moveFile(f1, f2, MoveSemantics.FailIfExists)
                   .liftM[Process].drain ++
                 read.scanAll(f2).map(_.left[Boolean]) ++
-                (manage.fileExists(f1).liftM[FileSystemErrT]: manage.M[Boolean])
+                (query.fileExists(f1).liftM[FileSystemErrT]: query.M[Boolean])
                   .liftM[Process]
                   .map(_.right[Data])
 
@@ -45,7 +46,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val f1 = managePrefix </> dir("failifexists") </> file("f1")
         val f2 = managePrefix </> dir("failifexists") </> file("f2")
         val expectedFiles = List(Node.File(file("f1")), Node.File(file("f2")))
-        val ls = manage.ls(managePrefix </> dir("failifexists"))
+        val ls = query.ls(managePrefix </> dir("failifexists"))
         val p = write.saveF(f1, oneDoc).drain ++
                 write.saveF(f2, oneDoc).drain ++
                 manage.moveFile(f1, f2, MoveSemantics.FailIfExists).liftM[Process]
@@ -62,7 +63,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
                 manage.moveFile(f1, f2, MoveSemantics.Overwrite)
                   .liftM[Process].drain ++
                 read.scanAll(f2).map(_.left[Boolean]) ++
-                (manage.fileExists(f1).liftM[FileSystemErrT]: manage.M[Boolean])
+                (query.fileExists(f1).liftM[FileSystemErrT]: query.M[Boolean])
                   .liftM[Process]
                   .map(_.right[Data])
 
@@ -75,7 +76,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val f1 = d </> file("f1")
         val f2 = d </> file("f2")
         val expectedFiles = List(Node.File(file("f2")))
-        val ls = manage.ls(d)
+        val ls = query.ls(d)
         val p = write.saveF(f2, oneDoc).drain ++
                 manage.moveFile(f1, f2, MoveSemantics.Overwrite)
                   .liftM[Process]
@@ -110,7 +111,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
                  manage.moveFile(f1, f2, MoveSemantics.FailIfMissing).liftM[Process]
 
         (execT(run, p).runOption must beSome(PathError(FileNotFound(f2)))) and
-        (runT(run)(manage.ls(d)).runEither must beRight(containTheSameElementsAs(expectedFiles)))
+        (runT(run)(query.ls(d)).runEither must beRight(containTheSameElementsAs(expectedFiles)))
       }
 
       "moving a directory should move all files therein to dst path" >> {
@@ -127,8 +128,8 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
                 manage.moveDir(d1, d2, MoveSemantics.FailIfExists).liftM[Process]
 
         (execT(run, p).runOption must beNone) and
-        (runT(run)(manage.ls(d2)).runEither must beRight(containTheSameElementsAs(expectedFiles))) and
-        (runT(run)(manage.ls(d1)).runEither must beLeft(PathError(DirNotFound(d1))))
+        (runT(run)(query.ls(d2)).runEither must beRight(containTheSameElementsAs(expectedFiles))) and
+        (runT(run)(query.ls(d1)).runEither must beLeft(PathError(DirNotFound(d1))))
       }
 
       "moving a nonexistent dir to another nonexistent dir fails with src NotFound" >> {
@@ -178,50 +179,12 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         (execT(run, p).runOption must beNone) and
         (runLogT(run, read.scanAll(f1)).runEither must beLeft(PathError(FileNotFound(f1)))) and
         (runLogT(run, read.scanAll(f2)).runEither must beLeft(PathError(FileNotFound(f2)))) and
-        (runT(run)(manage.ls(d)).runEither must beLeft(PathError(DirNotFound(d))))
+        (runT(run)(query.ls(d)).runEither must beLeft(PathError(DirNotFound(d))))
       }
 
       "deleting a nonexistent directory returns DirNotFound" >> {
         val d = managePrefix </> dir("deldirnotfound")
         runT(run)(manage.deleteDir(d)).runEither must beLeft(PathError(DirNotFound(d)))
-      }
-
-      "listing directory returns immediate child nodes" >> {
-        val d = managePrefix </> dir("lschildren")
-        val d1 = d </> dir("d1")
-        val f1 = d1 </> file("f1")
-        val f2 = d1 </> dir("d2") </> file("f1")
-        val expectedNodes = List(Node.Dir(dir("d2")), Node.File(file("f1")))
-
-        val p = write.saveF(f1, oneDoc).drain ++
-                write.saveF(f2, anotherDoc).drain ++
-                manage.ls(d1).liftM[Process]
-                  .flatMap(ns => Process.emitAll(ns.toVector))
-
-        runLogT(run, p)
-          .runEither must beRight(containTheSameElementsAs(expectedNodes))
-      }
-
-      "listing nonexistent directory returns dir NotFound" >> {
-        val d = managePrefix </> dir("lsdne")
-        runT(run)(manage.ls(d)).runEither must beLeft(PathError(DirNotFound(d)))
-      }
-
-      "listing results should not contain deleted files" >> {
-        val d = managePrefix </> dir("lsdeleted")
-        val f1 = d </> file("f1")
-        val f2 = d </> file("f2")
-        val p  = write.saveF(f1, oneDoc).drain ++
-                 write.saveF(f2, anotherDoc).drain ++
-                 manage.ls(d).liftM[Process]
-                   .flatMap(ns => Process.emitAll(ns.toVector))
-
-        val preDelete = List(Node.File(file("f1")), Node.File(file("f2")))
-
-        (runLogT(run, p)
-          .runEither must beRight(containTheSameElementsAs(preDelete))) and
-        (runT(run)(manage.deleteFile(f1) *> manage.ls(d))
-          .runEither must beRight(containTheSameElementsAs(preDelete.tail)))
       }
 
       "write/read from temp dir near existing" >> {

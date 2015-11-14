@@ -15,8 +15,6 @@ sealed trait EnvironmentError2
 object EnvironmentError2 {
   final case class ConnectionFailed(message: String)
     extends EnvironmentError2
-  final case class EnvExecError(error: ExecutionError)
-    extends EnvironmentError2
   final case class EnvPathError(error: PathError2)
     extends EnvironmentError2
   final case class InsufficientPermissions(message: String)
@@ -33,12 +31,6 @@ object EnvironmentError2 {
       case ConnectionFailed2(msg) => Some(msg)
       case _ => None
     } (ConnectionFailed2(_))
-
-  val envExecError: Prism[EnvironmentError2, ExecutionError] =
-    Prism[EnvironmentError2, ExecutionError] {
-      case EnvExecError2(err) => Some(err)
-      case _ => None
-    } (EnvExecError2(_))
 
   val envPathError: Prism[EnvironmentError2, PathError2] =
     Prism[EnvironmentError2, PathError2] {
@@ -74,8 +66,6 @@ object EnvironmentError2 {
     Show.shows {
       case ConnectionFailed2(msg) =>
         s"Connection failed: $msg"
-      case EnvExecError2(error) =>
-        error.shows
       case EnvPathError2(error) =>
         error.shows
       case InsufficientPermissions2(msg) =>
@@ -110,13 +100,6 @@ object ConnectionFailed2 {
     EnvironmentError2.ConnectionFailed(message)
   def unapply(obj: EnvironmentError2): Option[String] =
     EnvironmentError2.connectionFailed.getOption(obj)
-}
-
-object EnvExecError2 {
-  def apply(execError: ExecutionError): EnvironmentError2 =
-    EnvironmentError2.EnvExecError(execError)
-  def unapply(obj: EnvironmentError2): Option[ExecutionError] =
-    EnvironmentError2.envExecError.getOption(obj)
 }
 
 object EnvPathError2 {

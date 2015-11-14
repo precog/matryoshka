@@ -49,7 +49,7 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
 
     "save with empty input should create an empty file" ! prop { f: AbsFile[Sandboxed] =>
       val p = write.saveF(f, Vector[Data]()) ++
-              (manage.fileExists(f).liftM[FileSystemErrT]: manage.M[Boolean]).liftM[Process]
+              (query.fileExists(f).liftM[FileSystemErrT]: query.M[Boolean]).liftM[Process]
 
       evalLogZero(p).run must_== \/.right(Vector(true))
     }
