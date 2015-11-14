@@ -3,7 +3,7 @@ package fs
 
 import quasar.Predef._
 import quasar.fp._
-import quasar.config.{BackendConfig, MongoDbConfig}
+import quasar.config.MongoDbConfig
 import quasar.physical.mongodb.{filesystems => mongofs}
 
 import monocle.Optional

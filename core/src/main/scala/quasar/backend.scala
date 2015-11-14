@@ -162,8 +162,6 @@ sealed trait Backend { self =>
   def append0(path: Path, values: Process[Task, Data]):
       Process[PathTask, WriteError]
 
-  // TODO: DIR
-
   def move(src: Path, dst: Path, semantics: MoveSemantics): PathTask[Unit] =
     move0(src.asRelative, dst.asRelative, semantics)
 
@@ -520,8 +518,6 @@ object Backend {
 /**
   Multi-mount backend that delegates each request to a single mount.
   Any request that references paths in more than one mount will fail.
-
-  TODO: This will become function Map[Dir, Backend ~> F] => (Backend ~> F)
 */
 final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Backend {
   import Backend._
