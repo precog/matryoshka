@@ -43,8 +43,14 @@ cp "$QUASAR_WEB_JAR_PATH" "$QUASAR_TEMP_JAR"
 # Perform setup for integration tests:
 if [[ ${LOCAL_MONGODB:-} == "true" ]] ; then
   export QUASAR_TEST_PATH_PREFIX="/${QUASAR_MONGODB_TESTDB}/"
-  export QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_2_6}\"}}"
-  export QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_0}\"}}"
+  if [[ "$1" == "2_6" ]]; then
+    export QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://localhost:27018\"}}"
+  elif [[ "$1" == "3_0" ]]; then
+    export QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://localhost:27018\"}}"
+  else
+    export QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_2_6}\"}}"
+    export QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_0}\"}}"
+  fi
 
   echo "Using local MongoDB config"
 fi

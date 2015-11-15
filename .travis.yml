@@ -3,10 +3,7 @@ scala:
 - 2.11.7
 jdk: oraclejdk8
 sudo: false
-before_install:
-- "./scripts/installMongo mongodb-linux-x86_64-2.6.9 mongo2.6 27018"
-- "./scripts/installMongo mongodb-linux-x86_64-3.0.4 mongo3.0 27019"
-script: "./scripts/build"
+script: "export MONGO_LINUX=\"MONGO_${MONGO_RELEASE}_LINUX\"; ./scripts/installMongo mongodb-linux-x86_64-${!MONGO_LINUX} mongo 27018 && ./scripts/build $MONGO_RELEASE"
 after_success:
 - "./scripts/publishJarIfMaster"
 # Upload coverage information to coveralls.io
@@ -22,6 +19,11 @@ notifications:
   slack:
     secure: KPCXtCAjtlpRQcH7TQtprrf67yIqPVpht9L6/+wbbNd14Tj3x53fiZ3OTabHVx3SL2ZWxbWq+FJGxdIFMyxC/fC0bV9flB7PlRtqHJV1Q7g49odAMAZL7syWr7vFP5bJt+TXuxHvMBihDHFk1Cehy4a1cnrOMReDgqGIFCwQtbI=
 env:
+  matrix:
+  - MONGO_RELEASE=2_6
+  - MONGO_RELEASE=3_0
   global:
   - LOCAL_MONGODB=true
   - ISOLATED_ENV=true
+  - MONGO_2_6_LINUX=2.6.11
+  - MONGO_3_0_LINUX=3.0.7

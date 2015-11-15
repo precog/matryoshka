@@ -50,8 +50,7 @@ class RegressionSpec2
 
   ////
 
-  lazy val fsNames = fileSystems.run.map(_.name).toSet
-  lazy val tests = regressionTests(TestsRoot, fsNames).run
+  lazy val tests = regressionTests(TestsRoot, knownFileSystems).run
 
   fileSystemShould { name => implicit run =>
     "Querying" should {
@@ -224,6 +223,8 @@ class RegressionSpec2
 
 object RegressionSpec2 {
   import quasar.physical.mongodb.{filesystems => mongofs}
+
+  lazy val knownFileSystems = TestConfig.backendNames.toSet
 
   def externalFS: Task[NonEmptyList[FileSystemUT[FileSystemIO]]] = {
     val extFs = TestConfig.externalFileSystems {
