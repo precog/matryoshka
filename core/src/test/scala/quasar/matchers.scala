@@ -24,10 +24,10 @@ trait TermLogicalPlanMatchers {
   case class equalToPlan(expected: Fix[LogicalPlan])
       extends Matcher[Fix[LogicalPlan]] {
     def apply[S <: Fix[LogicalPlan]](s: Expectable[S]) = {
-      val normed = FunctorT[Cofree[?[_], Fix[LogicalPlan]]].transCata(attrSelf(s.value))(repeatedly(Optimizer.simplifyƒ[Cofree[?[_], Fix[LogicalPlan]]]))
-      val diff = (Recursive[Cofree[?[_], Fix[LogicalPlan]]].forget(normed).render diff expected.render).shows
+      val normed = FunctorT[Cofree[?[_], Fix[LogicalPlan]]].transCata(Recursive[Fix].cata(s.value)(attrSelf))(repeatedly(Optimizer.simplifyƒ[Cofree[?[_], Fix[LogicalPlan]]]))
+      val diff = (Recursive[Cofree[?[_], Fix[LogicalPlan]]].convertTo(normed).render diff expected.render).shows
       result(
-        expected ≟ Recursive[Cofree[?[_], Fix[LogicalPlan]]].forget(normed),
+        expected ≟ Recursive[Cofree[?[_], Fix[LogicalPlan]]].convertTo(normed),
         "\ntrees are equal:\n" + diff,
         "\ntrees are not equal:\n" + diff +
           "\noriginal was:\n" + normed.head.render.shows,

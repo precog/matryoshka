@@ -117,10 +117,11 @@ object Optimizer {
         src._2._2.fold(
           Invoke(DeleteField, List(preserveFree(src), preserveFree(field)))) {
           fields =>
-          val name = freshName("src", fields)
-            Let(name, preserveFree(src),
-                MakeObjectN(fields.filterNot(_ == field._2._1).map(f =>
-                  f -> Invoke(ObjectProject, List(Free(name), f))): _*))}
+            val name = freshName("src", fields)
+              Let(name, preserveFree(src),
+                Fix(MakeObjectN(fields.filterNot(_ == field._2._1).map(f =>
+                  f -> Invoke(ObjectProject, List(Free(name), f))): _*)))
+        }
       case lp => Fix(lp.map(preserveFree))
     },
       shapeƒ(node.map(_._2)))

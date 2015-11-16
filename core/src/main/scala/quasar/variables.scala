@@ -17,13 +17,11 @@
 package quasar
 
 import quasar.Predef._
-import quasar.fp._
-import quasar.recursionschemes._, Recursive.ops._
+import quasar.recursionschemes._
 import quasar.SemanticError._
-import quasar.analysis._
 import quasar.sql._
 
-import scalaz.{Tree => _, _}, Scalaz._
+import scalaz._, Scalaz._
 
 final case class Variables(value: Map[VarName, VarValue])
 final case class VarName(value: String) {
@@ -34,47 +32,12 @@ final case class VarValue(value: String)
 object Variables {
   def fromMap(value: Map[String, String]): Variables = Variables(value.map(t => VarName(t._1) -> VarValue(t._2)))
 
-  def substVars[A](tree: AnnotatedTree[Expr, A], vars: Variables): SemanticError \/ AnnotatedTree[Expr, A] = {
-    type S = List[(Expr, A)]
-    type EitherM[A] = EitherT[Free.Trampoline, SemanticError, A]
-    type M[A] = StateT[EitherM, S, A]
-
-    def unchanged[A](t: (A, A)): M[A] =
-      StateT[EitherM, S, A] { state =>
-        EitherT.right(((state, t._2)).point[Free.Trampoline])
-    }
-
-    def changed(old: Expr, new0: SemanticError \/ Expr): M[Expr] =
-      StateT[EitherM, S, Expr] { state =>
-        EitherT(new0.map { new0 =>
-          val ann = tree.attr(old)
-
-          (((new0 -> ann) :: state, new0))
-        }.point[Free.Trampoline])
-    }
-
-    exprMapUpM0[M](
-      tree.root)(
-      unchanged,
-        unchanged,
-        {
-          case (old, v @ Vari(name)) if vars.value.contains(VarName(name)) =>
-            val varValue = vars.value(VarName(name))
-            val parsed = (new SQLParser()).parseExpr(varValue.value)
-              .leftMap(err => VariableParseError(VarName(name), varValue, err))
-            changed(old, parsed)
-          case t => changed(t._1, \/-(t._2))
-        },
-        unchanged,
-        unchanged,
-        unchanged
-    ).run(Nil).run.run.map {
-      case (tuples, root) =>
-        val map1 = tuples.foldLeft(new java.util.IdentityHashMap[Expr, A]) { // TODO: Use ordinary map when AnnotatedTree has been off'd
-          case (map, (k, v)) => ignore(map.put(k, v)); map
-        }
-
-        Tree[Expr](root, _.children).annotate(map1.get(_))
-    }
+  def substVarsƒ[A](vars: Variables): ExprF[Expr] => SemanticError \/ Expr = {
+    case VariF(name) =>
+      vars.value.get(VarName(name)).fold[SemanticError \/ Expr](
+        UnboundVariable(VarName(name)).left)(
+        varValue => (new SQLParser()).parseExpr(varValue.value)
+          .leftMap(VariableParseError(VarName(name), varValue, _)))
+    case x => Fix(x).right
   }
 }
