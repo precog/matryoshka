@@ -16,11 +16,10 @@ import argonaut._, Argonaut._
 import org.specs2.execute._
 import org.specs2.matcher._
 import org.specs2.specification.{Example}
+import pathy.Path.FileName
 import scalaz.{Failure => _, _}, Scalaz._
 import scalaz.stream._
 import scalaz.concurrent._
-
-import pathy.Path.FileName
 
 class RegressionSpec extends BackendTest {
 

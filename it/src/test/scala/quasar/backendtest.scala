@@ -3,18 +3,18 @@ package quasar
 import quasar.Backend.ProcessingError
 import quasar.Predef._
 import quasar.fs._
+import quasar.specs2._
 import quasar.interactive.DataSource
 
 import java.lang.System
+import scala.io.Source
 
 import org.specs2.mutable._
-
-import scala.io.Source
 import scalaz._, Scalaz._
 import scalaz.concurrent._
 
-trait BackendTest extends Specification {
-  sequential  // makes it easier to clean up
+trait BackendTest extends Specification with ExclusiveExecution {
+
   args.report(showtimes=true)
 
   lazy val AllBackends: Task[NonEmptyList[(String, Backend)]] = {

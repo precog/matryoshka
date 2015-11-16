@@ -10,7 +10,7 @@ import org.specs2.specification.{SpecificationStructure, Fragments}
   * Use this when you have tests that muck with global state.
   */
 trait ExclusiveExecution extends SpecificationStructure { self: Specification =>
-  import SerialExecution._
+  import ExclusiveExecution._
 
   sequential
 
@@ -18,7 +18,7 @@ trait ExclusiveExecution extends SpecificationStructure { self: Specification =>
     section(ExclusiveExecutionTag) ^ super.map(fs) ^ section(ExclusiveExecutionTag)
 }
 
-object SerialExecution {
+object ExclusiveExecution {
   /** The tag that indicates an example should be executed exclusively.
     *
     * NB: Take care when modifying this to update the SBT configuration.
