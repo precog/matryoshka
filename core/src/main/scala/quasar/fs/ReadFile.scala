@@ -31,7 +31,55 @@ object ReadFile {
   final case class Close(h: ReadHandle)
     extends ReadFile[Unit]
 
-  final class Ops[S[_]](implicit S0: Functor[S], S1: ReadFileF :<: S) {
+  final class Ops[S[_]](implicit S: Functor[S], val unsafe: Unsafe[S]) {
+    type F[A] = unsafe.F[A]
+    type M[A] = unsafe.M[A]
+
+    /** Returns a process which produces data from the given file, beginning
+      * at the specified offset. An optional limit may be supplied to restrict
+      * the maximum amount of data read.
+      */
+    def scan(file: AbsFile[Sandboxed], offset: Natural, limit: Option[Positive]): Process[M, Data] = {
+      def readUntilEmpty(h: ReadHandle): Process[M, Data] =
+        Process.await(unsafe.read(h)) { data =>
+          if (data.isEmpty)
+            Process.halt
+          else
+            Process.emitAll(data) ++ readUntilEmpty(h)
+        }
+
+      Process.await(unsafe.open(file, offset, limit))(h =>
+        readUntilEmpty(h) onComplete Process.eval_[M, Unit](unsafe.close(h).liftM[FileSystemErrT]))
+    }
+
+    /** Returns a process that produces all the data contained in the
+      * given file.
+      */
+    def scanAll(file: AbsFile[Sandboxed]): Process[M, Data] =
+      scan(file, Natural._0, None)
+
+    /** Returns a process that produces at most `limit` items from the beginning
+      * of the given file.
+      */
+    def scanTo(file: AbsFile[Sandboxed], limit: Positive): Process[M, Data] =
+      scan(file, Natural._0, Some(limit))
+
+    /** Returns a process that produces data from the given file, beginning
+      * at the specified offset.
+      */
+    def scanFrom(file: AbsFile[Sandboxed], offset: Natural): Process[M, Data] =
+      scan(file, offset, None)
+  }
+
+  object Ops {
+    implicit def apply[S[_]](implicit S: Functor[S], U: Unsafe[S]): Ops[S] =
+      new Ops[S]
+  }
+
+  /** Low-level, unsafe operations. Clients are responsible for resource-safety
+    * when using these.
+    */
+  final class Unsafe[S[_]](implicit S0: Functor[S], S1: ReadFileF :<: S) {
     type F[A] = Free[S, A]
     type M[A] = FileSystemErrT[F, A]
 
@@ -57,49 +105,14 @@ object ReadFile {
     def close(rh: ReadHandle): F[Unit] =
       lift(Close(rh))
 
-    /** Returns a process which produces data from the given file, beginning
-      * at the specified offset. An optional limit may be supplied to restrict
-      * the maximum amount of data read.
-      */
-    def scan(file: AbsFile[Sandboxed], offset: Natural, limit: Option[Positive]): Process[M, Data] = {
-      def readUntilEmpty(h: ReadHandle): Process[M, Data] =
-        Process.await(read(h)) { data =>
-          if (data.isEmpty)
-            Process.halt
-          else
-            Process.emitAll(data) ++ readUntilEmpty(h)
-        }
-
-      Process.await(open(file, offset, limit))(h =>
-        readUntilEmpty(h) onComplete Process.eval_[M, Unit](close(h).liftM[FileSystemErrT]))
-    }
-
-    /** Returns a process that produces all the data contained in the
-      * given file.
-      */
-    def scanAll(file: AbsFile[Sandboxed]): Process[M, Data] =
-      scan(file, Natural._0, None)
-
-    /** Returns a process that produces at most `limit` items from the beginning
-      * of the given file.
-      */
-    def scanTo(file: AbsFile[Sandboxed], limit: Positive): Process[M, Data] =
-      scan(file, Natural._0, Some(limit))
-
-    /** Returns a process that produces data from the given file, beginning
-      * at the specified offset.
-      */
-    def scanFrom(file: AbsFile[Sandboxed], offset: Natural): Process[M, Data] =
-      scan(file, offset, None)
-
     ////
 
     private def lift[A](rf: ReadFile[A]): F[A] =
       Free.liftF(S1.inj(Coyoneda.lift(rf)))
   }
 
-  object Ops {
-    implicit def apply[S[_]](implicit S0: Functor[S], S1: ReadFileF :<: S): Ops[S] =
-      new Ops[S]
+  object Unsafe {
+    implicit def apply[S[_]](implicit S0: Functor[S], S1: ReadFileF :<: S): Unsafe[S] =
+      new Unsafe[S]
   }
 }

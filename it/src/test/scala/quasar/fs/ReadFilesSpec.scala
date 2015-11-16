@@ -50,23 +50,23 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
 
       "open returns FileNotFound when file DNE" >>* {
         val dne = rootDir </> dir("doesnt") </> file("exist")
-        read.open(dne, Natural._0, None).run map { r =>
+        read.unsafe.open(dne, Natural._0, None).run map { r =>
           r.toEither must beLeft(PathError(FileNotFound(dne)))
         }
       }
 
       "read unopened file handle returns UnknownReadHandle" >>* {
         val h = ReadHandle(42)
-        read.read(h).run map { r =>
+        read.unsafe.read(h).run map { r =>
           r.toEither must beLeft(UnknownReadHandle(h))
         }
       }
 
       "read closed file handle returns UnknownReadHandle" >>* {
         val r = for {
-          h  <- read.open(smallFile.file, Natural._0, None)
-          _  <- read.close(h).liftM[FileSystemErrT]
-          xs <- read.read(h)
+          h  <- read.unsafe.open(smallFile.file, Natural._0, None)
+          _  <- read.unsafe.close(h).liftM[FileSystemErrT]
+          xs <- read.unsafe.read(h)
         } yield xs
 
         r.run map { x =>

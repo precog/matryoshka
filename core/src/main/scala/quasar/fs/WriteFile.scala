@@ -32,35 +32,13 @@ object WriteFile {
   final case class Close(h: WriteHandle)
     extends WriteFile[Unit]
 
-  final class Ops[S[_]](implicit S0: Functor[S], S1: WriteFileF :<: S) {
+  final class Ops[S[_]](implicit S: Functor[S], val unsafe: Unsafe[S]) {
     import FileSystemError._, PathError2._
     import ManageFile.MoveSemantics
 
-    type F[A]    = Free[S, A]
-    type M[A]    = FileSystemErrT[F, A]
+    type F[A]    = unsafe.F[A]
+    type M[A]    = unsafe.M[A]
     type G[E, A] = EitherT[F, E, A]
-
-    /** Returns a write handle for the specified file which may be used to
-      * append data to the file it represents, creating it if necessary.
-      *
-      * Care must be taken to `close` the handle when it is no longer needed
-      * to avoid potential resource leaks.
-      */
-    def open(file: AbsFile[Sandboxed]): M[WriteHandle] =
-      EitherT(lift(Open(file)))
-
-    /** Write a chunk of data to the file represented by the write handle.
-      *
-      * Attempts to write as much of the chunk as possible, even if parts of
-      * it fail, any such failures will be returned in the output `Vector`
-      * An empty `Vector` means the entire chunk was written successfully.
-      */
-    def write(h: WriteHandle, chunk: Vector[Data]): F[Vector[FileSystemError]] =
-      lift(Write(h, chunk))
-
-    /** Close the write handle, freeing any resources it was using. */
-    def close(h: WriteHandle): F[Unit] =
-      lift(Close(h))
 
     /** Returns a channel that appends chunks of data to the given file, creating
       * it if it doesn't exist. Any errors encountered while writing are emitted,
@@ -69,11 +47,11 @@ object WriteFile {
       */
     def appendChannel(dst: AbsFile[Sandboxed]): Channel[M, Vector[Data], Vector[FileSystemError]] = {
       def writeChunk(h: WriteHandle): Vector[Data] => M[Vector[FileSystemError]] =
-        xs => write(h, xs).liftM[FileSystemErrT]
+        xs => unsafe.write(h, xs).liftM[FileSystemErrT]
 
-      Process.await(open(dst))(h =>
+      Process.await(unsafe.open(dst))(h =>
         channel.lift(writeChunk(h))
-          .onComplete(Process.eval_[M, Unit](close(h).liftM[FileSystemErrT])))
+          .onComplete(Process.eval_[M, Unit](unsafe.close(h).liftM[FileSystemErrT])))
     }
 
     /** Same as `append` but accepts chunked [[Data]]. */
@@ -228,13 +206,50 @@ object WriteFile {
 
     private def processF[H[_]: Foldable](data: H[Data]): Process0[Data] =
       data.foldRight[Process0[Data]](Process.halt)((d, p) => Process.emit(d) ++ p)
+  }
+
+  object Ops {
+    implicit def apply[S[_]](implicit S: Functor[S], U: Unsafe[S]): Ops[S] =
+      new Ops[S]
+  }
+
+  /** Low-level, unsafe operations. Clients are responsible for resource-safety
+    * when using these.
+    */
+  final class Unsafe[S[_]](implicit S0: Functor[S], S1: WriteFileF :<: S) {
+    type F[A] = Free[S, A]
+    type M[A] = FileSystemErrT[F, A]
+
+    /** Returns a write handle for the specified file which may be used to
+      * append data to the file it represents, creating it if necessary.
+      *
+      * Care must be taken to `close` the handle when it is no longer needed
+      * to avoid potential resource leaks.
+      */
+    def open(file: AbsFile[Sandboxed]): M[WriteHandle] =
+      EitherT(lift(Open(file)))
+
+    /** Write a chunk of data to the file represented by the write handle.
+      *
+      * Attempts to write as much of the chunk as possible, even if parts of
+      * it fail, any such failures will be returned in the output `Vector`
+      * An empty `Vector` means the entire chunk was written successfully.
+      */
+    def write(h: WriteHandle, chunk: Vector[Data]): F[Vector[FileSystemError]] =
+      lift(Write(h, chunk))
+
+    /** Close the write handle, freeing any resources it was using. */
+    def close(h: WriteHandle): F[Unit] =
+      lift(Close(h))
+
+    ////
 
     private def lift[A](wf: WriteFile[A]): F[A] =
       Free.liftF(S1.inj(Coyoneda.lift(wf)))
   }
 
-  object Ops {
-    implicit def apply[S[_]](implicit S0: Functor[S], S1: WriteFileF :<: S): Ops[S] =
-      new Ops[S]
+  object Unsafe {
+    implicit def apply[S[_]](implicit S0: Functor[S], S1: WriteFileF :<: S): Unsafe[S] =
+      new Unsafe[S]
   }
 }

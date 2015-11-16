@@ -33,8 +33,8 @@ class WriteFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
         val f = writesPrefix </> dir("opencreates") </> file("f1")
 
         val r = for {
-          h <- write.open(f)
-          _ <- write.close(h).liftM[FileSystemErrT]
+          h <- write.unsafe.open(f)
+          _ <- write.unsafe.close(h).liftM[FileSystemErrT]
           p <- query.fileExists(f).liftM[FileSystemErrT]
         } yield p
 
@@ -43,7 +43,7 @@ class WriteFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
 
       "write to unknown handle returns UnknownWriteHandle" >>* {
         val h = WriteHandle(42)
-        write.write(h, Vector()) map { r =>
+        write.unsafe.write(h, Vector()) map { r =>
           r must_== Vector(UnknownWriteHandle(h))
         }
       }
@@ -51,9 +51,9 @@ class WriteFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
       "write to closed handle returns UnknownWriteHandle" >>* {
         val f = writesPrefix </> dir("d1") </> file("f1")
         val r = for {
-          h    <- write.open(f)
-          _    <- write.close(h).liftM[FileSystemErrT]
-          errs <- write.write(h, Vector()).liftM[FileSystemErrT]
+          h    <- write.unsafe.open(f)
+          _    <- write.unsafe.close(h).liftM[FileSystemErrT]
+          errs <- write.unsafe.write(h, Vector()).liftM[FileSystemErrT]
         } yield errs
 
         r.run.map { xs =>
