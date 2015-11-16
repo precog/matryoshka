@@ -48,7 +48,7 @@ import simulacrum.typeclass
     embed(f(a).map(_.fold(ι, apo(_)(f))))
 
   def apoM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[T[F] \/ A]]): M[T[F]] =
-    f(a).flatMap(_.map(_.fold(_.point[M], apoM(_)(f))).sequence).map(embed(_))
+    f(a).flatMap(_.traverse(_.fold(_.point[M], apoM(_)(f)))).map(embed(_))
 
   def postpro[F[_]: Functor, A](a: A)(e: F ~> F, g: A => F[A])(implicit T: Recursive[T]): T[F] =
     embed(g(a).map(x => ana(postpro(x)(e, g))(x => e(x.project))))
@@ -66,4 +66,11 @@ import simulacrum.typeclass
 
   def futu[F[_]: Functor, A](a: A)(f: A => F[Free[F, A]]): T[F] =
     gana[F, Free[F, ?], A](a)(distFutu, f)
+
+  def futuM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[Free[F, A]]]):
+      M[T[F]] = {
+    def loop(free: Free[F, A]): M[T[F]] =
+      free.fold(futuM(_)(f), _.traverse(loop).map(embed))
+    f(a).flatMap(_.traverse(loop)).map(embed)
+  }
 }
