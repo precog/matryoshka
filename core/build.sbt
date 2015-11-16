@@ -8,7 +8,7 @@ connectInput in run := true
 
 outputStrategy := Some(StdoutOutput)
 
-import ScoverageSbtPlugin._
+import scoverage._
 
 ScoverageKeys.coverageExcludedPackages := "quasar.repl;.*RenderTree"
 
