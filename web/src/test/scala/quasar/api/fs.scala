@@ -56,7 +56,7 @@ object Utils {
     val updatedConfig = Server.webConfigLens.wcPort.set(port)(config)
     def unexpectedRestart(config: WebConfig) =
       Task.fail(new java.lang.AssertionError("Did not expect the server to be restarted with this config: " + config))
-    val api = FileSystemApi(updatedConfig, createBackend, tester,
+    val api = new FileSystemApi(updatedConfig, createBackend, tester,
                             restartServer = unexpectedRestart,
                             configChanged = recordConfigChange,
                             webConfigLens = Server.webConfigLens)

@@ -52,6 +52,7 @@ object ServerOps {
 
 abstract class ServerOps[WC: CodecJson, SC](
   configOps: ConfigOps[WC],
+  fileSystemApi: FileSystemApi.Apply[WC, SC],
   defaultWC: WC,
   val webConfigLens: WebConfigLens[WC, SC]) {
   import webConfigLens._
@@ -141,7 +142,7 @@ abstract class ServerOps[WC: CodecJson, SC](
     def start(config: WC): EnvTask[Servers] =
       for {
         port <- choosePort(wcPort.get(config)).liftM[EnvErrT]
-        fsApi =  FileSystemApi(config, mounter, tester, reload, configWriter, webConfigLens)
+        fsApi = fileSystemApi(config, mounter, tester, reload, configWriter, webConfigLens)
         updCfg =  wcPort.set(port)(config)
         serversErrors <- createServers(updCfg, idleTimeout, fsApi.AllServices.map(_.toList ++ fileSvcs ++ redirSvc))
         servers <- serversErrors.traverseM {
@@ -260,6 +261,7 @@ abstract class ServerOps[WC: CodecJson, SC](
 @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
 object Server extends ServerOps(
   WebConfig,
+  FileSystemApi.apply,
   WebConfig(ServerConfig(None), Map()),
   WebConfigLens(
     WebConfig.server,
