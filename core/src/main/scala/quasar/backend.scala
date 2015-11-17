@@ -508,9 +508,8 @@ object Backend {
     scala.Ordering[Path].on(_.path)
 
   def test(config: MountConfig): ETask[EnvironmentError, Unit] = config match {
-    // NB: for now, this prevents users from creating views through the API,
-    // but allows tests to run. See SD-1101.
-    case ViewConfig(_) => EitherT.left(Task.now(InvalidConfig("view creation not supported")))
+    // NB: can't meaningfully test the view query in isolation
+    case ViewConfig(_) => liftE(Task.now(()))
 
     case _ =>
       for {

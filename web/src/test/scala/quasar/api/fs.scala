@@ -350,12 +350,14 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
     }
 
-    "return empty for missing path" in {
+    "be 404 with missing sub-directory" in {
       withServer(backends1, config1) { client =>
         val path = metadata(client) / "foo" / "baz" / ""
-        val meta = Http(path OK asJson)
+        val meta = Http(path)
 
-        meta() must beRightDisjunction((jsonContentType, List(Json("children" := List[Json]()))))
+        val resp = meta()
+        resp.getStatusCode must_== 404
+        resp.getResponseBody must_== ""
       }
     }
 
@@ -1841,7 +1843,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       (forCfg(Some(Server.webConfigLens.wcPort.set(port)(config))) *> exec).runFor(timeoutMillis)
     }
 
-    "be capable of providing it's name and version" in {
+    "be capable of providing its name and version" in {
       withServer(noBackends, config1) { client =>
         val req = (client / "server" / "info").GET
         val result = Http(req OK as.String)
