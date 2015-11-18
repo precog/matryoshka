@@ -102,7 +102,7 @@ abstract class ConfigSpec[Config: CodecJson] extends Specification with Disjunct
     import quasar.sql
     import argonaut._, Argonaut._
 
-    val read = sql.Select(sql.SelectAll, List(sql.Proj(sql.Splice(None), None)), Some(sql.TableRelationAST("zips", None)), None, None, None)
+    val read = sql.Select(sql.SelectAll, sql.Row(List(sql.Splice(None))), Some(sql.TableRelationAST("zips", None)), None, None, None)
 
     "encode" in {
       ViewConfig.Codec.encode(ViewConfig(read)) must_==
@@ -255,7 +255,7 @@ object CoreConfigGen {
     Gen.const(MongoDbConfig(new ConnectionString("mongodb://localhost/test")))
 
   val SimpleQuery = sql.Select(sql.SelectAll,
-    List(sql.Proj(sql.Splice(None), None)),
+    sql.Row(List(sql.Splice(None))),
     Some(sql.TableRelationAST("foo", None)),
     None, None, None)
 

@@ -20,14 +20,14 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage with 
 
     "add single field for order by" in {
       val q = Select(SelectAll,
-                     Proj(Ident("name"), None) :: Nil,
+                     Row(List(Ident("name"))),
                      Some(TableRelationAST("person", None)),
                      None,
                      None,
                      Some(OrderBy((ASC, Ident("height")) :: Nil)))
       transform(q) must beTree(
                Select(SelectAll,
-                      Proj(Ident("name"), None) :: Proj(Ident("height"), Some("__sd__0")) :: Nil,
+                      Row(List(Ident("name"), As(Ident("height"), StringLiteral("__sd__0")))),
                       Some(TableRelationAST("person", None)),
                       None,
                       None,
@@ -37,7 +37,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage with 
 
     "not add a field that appears in the projections" in {
       val q = Select(SelectAll,
-                     Proj(Ident("name"), None) :: Nil,
+                     Row(List(Ident("name"))),
                      Some(TableRelationAST("person", None)),
                      None,
                      None,
@@ -47,7 +47,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage with 
 
     "not add a field that appears as an alias in the projections" in {
       val q = Select(SelectAll,
-                     Proj(Ident("foo"), Some("name")) :: Nil,
+                     Row(List(As(Ident("foo"), StringLiteral("name")))),
                      Some(TableRelationAST("person", None)),
                      None,
                      None,
@@ -57,7 +57,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage with 
 
     "not add a field with wildcard present" in {
       val q = Select(SelectAll,
-                     Proj(Splice(None), None) :: Nil,
+                     Row(List(Splice(None))),
                      Some(TableRelationAST("person", None)),
                      None,
                      None,
@@ -67,7 +67,7 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage with 
 
     "add single field for order by" in {
       val q = Select(SelectAll,
-                     Proj(Ident("name"), None) :: Nil,
+                     Row(List(Ident("name"))),
                      Some(TableRelationAST("person", None)),
                      None,
                      None,
@@ -76,9 +76,9 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage with 
                                   Nil)))
       transform(q) must beTree(
                Select(SelectAll,
-                      Proj(Ident("name"), None) ::
-                        Proj(Ident("height"), Some("__sd__0")) ::
-                        Nil,
+                      Row(List(
+                        Ident("name"),
+                        As(Ident("height"), StringLiteral("__sd__0")))),
                       Some(TableRelationAST("person", None)),
                       None,
                       None,
@@ -89,13 +89,13 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage with 
 
     "transform sub-select" in {
       val q = Select(SelectAll,
-                     Proj(Splice(None), None) :: Nil,
+                     Row(List(Splice(None))),
                      Some(TableRelationAST("foo", None)),
                      Some(
                        Binop(
                          Ident("a"),
                          Select(SelectAll,
-                                Proj(Ident("a"), None) :: Nil,
+                                Row(List(Ident("a"))),
                                 Some(TableRelationAST("bar", None)),
                                 None,
                                 None,
@@ -105,15 +105,15 @@ class SemanticsSpec extends Specification with PendingWithAccurateCoverage with 
                      None)
       transform(q) must beTree(
               Select(SelectAll,
-                     Proj(Splice(None), None) :: Nil,
+                     Row(List(Splice(None))),
                      Some(TableRelationAST("foo", None)),
                      Some(
                        Binop(
                          Ident("a"),
                          Select(SelectAll,
-                                Proj(Ident("a"), None) ::
-                                  Proj(Ident("b"), Some("__sd__0")) ::
-                                  Nil,
+                                Row(List(
+                                  Ident("a"),
+                                  As(Ident("b"), StringLiteral("__sd__0")))),
                                 Some(TableRelationAST("bar", None)),
                                 None,
                                 None,

@@ -3302,7 +3302,10 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   }
 
   def columnNames(q: Query): List[String] =
-    (new SQLParser).parse(q).foldMap(sql.namedProjections(_, None).map(_._1))
+    (new SQLParser).parse(q).foldMap {
+      case sql.Select(_, p, _, _, _, _) => sql.nameProjections(p, None).map(_._1)
+      case _                               => Nil
+    }
 
   def fieldNames(wf: Workflow): Option[List[String]] =
     Workflow.simpleShape(wf).map(_.map(_.asText))
@@ -3339,12 +3342,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     for {
       distinct <- distinctGen
       projs    <- Gen.nonEmptyListOf(exprGen).map(_.zipWithIndex.map {
-        case (x, n) => Proj(x, Some("p" + n))
+        case (x, n) => As(x, sql.StringLiteral("p" + n))
       })
       filter   <- filterGen
       groupBy  <- groupByGen
       orderBy  <- orderByGen
-    } yield Query(pprint(sql.Select(distinct, projs, Some(TableRelationAST("zips", None)), filter, groupBy, orderBy)))
+    } yield Query(pprint(sql.Select(distinct, Row(projs), Some(TableRelationAST("zips", None)), filter, groupBy, orderBy)))
 
   def genInnerInt = Gen.oneOf(
     sql.Ident("pop"),
@@ -3393,11 +3396,11 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       else as.toStream.map(a => as.filterNot(_ == a))
 
     Shrink {
-      case Select(d, projs, rel, filter, groupBy, orderBy) =>
-        val sDistinct = if (d == SelectDistinct) Stream(sql.Select(SelectAll, projs, rel, filter, groupBy, orderBy)) else Stream.empty
-        val sProjs = shortened(projs).map(ps => sql.Select(d, ps, rel, filter, groupBy, orderBy))
+      case Select(d, Row(projs), rel, filter, groupBy, orderBy) =>
+        val sDistinct = if (d == SelectDistinct) Stream(sql.Select(SelectAll, Row(projs), rel, filter, groupBy, orderBy)) else Stream.empty
+        val sProjs = shortened(projs).map(pjs => sql.Select(d, Row(pjs), rel, filter, groupBy, orderBy))
         val sGroupBy = groupBy.map { case GroupBy(keys, having) =>
-          shortened(keys).map(ks => sql.Select(d, projs, rel, filter, Some(GroupBy(ks, having)), orderBy))
+          shortened(keys).map(ks => sql.Select(d, Row(projs), rel, filter, Some(GroupBy(ks, having)), orderBy))
         }.getOrElse(Stream.empty)
         sDistinct ++ sProjs ++ sGroupBy
       case expr => Stream(expr)

@@ -111,23 +111,23 @@ class SQLParser extends StandardTokenParsers {
     else failure("You are trying to parse \""+op+"\" as an operator, but it is not contained in the operators list")
 
   def select: Parser[Expr] =
-    keyword("select") ~> opt(keyword("distinct")) ~ projections ~
+    keyword("select") ~> opt(keyword("distinct")) ~ row_expr ~
       opt(relations) ~ opt(filter) ~
       opt(group_by) ~ opt(order_by) ^^ {
         case d ~ p ~ r ~ f ~ g ~ o =>
           Select(d.map(κ(SelectDistinct)).getOrElse(SelectAll), p, r.join, f, g, o)
       }
 
-  def projections: Parser[List[Proj[Expr]]] =
-    repsep(projection, op(",")).map(_.toList)
-
-  def projection: Parser[Proj[Expr]] = expr ~ opt(keyword("as") ~> ident) ^^ {
-    case expr ~ ident => Proj(expr, ident)
-  }
-
   def variable: Parser[Expr] = elem("variable", _.isInstanceOf[lexical.Variable]) ^^ (token => Vari(token.chars))
 
   def command: Parser[Expr] = expr <~ opt(op(";"))
+
+  def row_expr: Parser[Expr] =
+    repsep(alias_expr, op(",")) ^^ (elems => Row(elems.toList))
+
+  def alias_expr: Parser[Expr] = or_expr ~ opt(opt(keyword("as")) ~> ident) ^^ {
+    case expr ~ ident => ident.fold(expr)(i => As(expr, StringLiteral(i)))
+  }
 
   def or_expr: Parser[Expr] = and_expr * (keyword("or") ^^^ Or)
 

@@ -305,6 +305,22 @@ trait Compiler[F[_]] {
       }
 
     node.tail match {
+      case RowF(elems) =>
+        val (names, exprs) = nameProjections[CoAnn](node, relationName(node).toOption.map(Path(_).filename)).map {
+          case (name, expr) => (expr.project match {
+            case SpliceF(_) => None
+            case _          => name.some
+          }, expr)
+        }.unzip
+
+        (CompilerState.rootTable ⊛ exprs.traverse(compile0))((t, elems) =>
+          buildRecord(names,
+            t.fold(
+              elems)(
+              t => elems.map(p => p.unFix match {
+                case LogicalPlan.ConstantF(_) => Fix(Constantly(p, t))
+                case _                        => p
+              }))))
       case s @ SelectF(isDistinct, projections, relations, filter, groupBy, orderBy) =>
         /* 1. Joins, crosses, subselects (FROM)
          * 2. Filter (WHERE)
@@ -320,21 +336,21 @@ trait Compiler[F[_]] {
         // Selection of wildcards aren't named, we merge them into any other
         // objects created from other columns:
         val names: List[Option[String]] =
-          namedProjections(node.convertTo[Fix], relationName(node).toOption.map(Path(_).filename)).map {
-            case (_,    Splice(_)) => None
-            case (name, _)         => Some(name)
+          nameProjections[CoAnn](projections, relationName(node).toOption.map(Path(_).filename)).map {
+            case (name, expr) => expr.project match {
+              case SpliceF(_) => None
+              case _          => name.some
+            }
           }
-        
-        val projs = projections.map(_.expr)
 
         val syntheticNames: List[String] =
-          names.zip(syntheticOf(node)).flatMap {
+          names.zip(syntheticOf(projections)).flatMap {
             case (Some(name), Some(_)) => List(name)
             case (_,          _)       => Nil
           }
 
         relations.fold(
-          projs.traverseU(compile0).map(buildRecord(names, _)))(
+          compile0(projections))(
           relations => {
             val stepBuilder = step(relations)
             stepBuilder(compileRelation(relations).some) {
@@ -354,15 +370,7 @@ trait Compiler[F[_]] {
                       Fix(Filter(set, filt))))
 
                   stepBuilder(having) {
-                    val select =
-                      (CompilerState.rootTableReq ⊛ projs.traverseU(compile0))((t, projs) =>
-                        buildRecord(
-                          names,
-                          projs.map(p => p.unFix match {
-                            case LogicalPlan.ConstantF(_) => Fix(Constantly(p, t))
-                            case _                        => p
-                          })))
-
+                    val select = compile0(projections)
                     val squashed = select.map(set => Fix(Squash(set)))
 
                     stepBuilder(squashed.some) {
@@ -420,8 +428,10 @@ trait Compiler[F[_]] {
           CompilerState.fullTable.flatMap(_.map(emit _).getOrElse(fail(GenericError("Not within a table context so could not find table expression for wildcard")))))(
           compile0)
 
-      case BinopF(left, right, op) =>
-        findFunction(op.name).flatMap(compileFunction(_, left :: right :: Nil))
+      case BinopF(left, right, op) => op match {
+        case As => compile0(left)
+        case _  => findFunction(op.name).flatMap(compileFunction(_, left :: right :: Nil))
+      }
 
       case UnopF(expr, op) =>
         findFunction(op.name).flatMap(compileFunction(_, expr :: Nil))
@@ -433,8 +443,8 @@ trait Compiler[F[_]] {
               Fix(ObjectProject(obj, LogicalPlan.Constant(Data.Str(name)))))
           else
             for {
-              rName   <- relationName(node).fold(fail, emit)
-              table   <- CompilerState.subtableReq(rName)
+              rName <- relationName(node).fold(fail, emit)
+              table <- CompilerState.subtableReq(rName)
             } yield
               if (Path(rName).filename ≟ name) table
               else Fix(ObjectProject(table, LogicalPlan.Constant(Data.Str(name)))))

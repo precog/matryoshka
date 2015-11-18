@@ -318,7 +318,7 @@ final case class ViewBackend(backend: Backend, views0: Map[Path, ViewConfig]) ex
     views.get(path).fold(backend.count(path)) { query =>
       val countQuery = sql.Select(
           sql.SelectAll,
-          List(sql.Proj(sql.InvokeFunction(quasar.std.StdLib.agg.Count.name, List(sql.Splice(None))), Some("0"))),
+          sql.Row(List(sql.As(sql.InvokeFunction(quasar.std.StdLib.agg.Count.name, List(sql.Splice(None))), sql.Ident("0")))),
           Some(sql.ExprRelationAST(expand(query), tableName(path))),
           None, None, None)
 

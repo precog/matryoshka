@@ -265,6 +265,9 @@ package object recursionschemes {
   // These lifts are largely useful when you want to zip a cata (or ana) with
   // some more complicated algebra.
 
+  /** Generalizes an F-algebra to be usable in any kind of fold
+    * (zygo, histo, …).
+    */
   def generalizeAlgebra[W[_]] = new GeneralizeAlgebraPartiallyApplied[W]
   final class GeneralizeAlgebraPartiallyApplied[W[_]] {
     def apply[F[_]: Functor, A](f: F[A] => A)(implicit W: Comonad[W]):
@@ -272,11 +275,22 @@ package object recursionschemes {
       node => f(node.map(_.copoint))
   }
 
+  /** Allows the use of a paramorphism in a cata context by propagating the
+    * fixpoint value to the result.
+    */
+  def paraToCata[T[_[_]]: Corecursive, F[_]: Functor, A](f: F[(T[F], A)] => A):
+      F[(T[F], A)] => (T[F], A) =
+    ex => (Corecursive[T].embed(ex.map(_._1)), f(ex))
+
+  /** Generalizes an F-algebra to be usable as an Elgot coalgebra. */
   def generalizeCoelgot[A] = new GeneralizeCoelgotPartiallyApplied[A]
   final class GeneralizeCoelgotPartiallyApplied[A] {
     def apply[F[_], B](f: F[B] => B): (A, F[B]) => B = (a, node) => f(node)
   }
 
+  /** Generalizes an F-coalgebra to be usable in any kind of unfold
+    * (apo, futu, …).
+    */
   def generalizeCoalgebra[M[_]] = new GeneralizeCoalgebraPartiallyApplied[M]
   final class GeneralizeCoalgebraPartiallyApplied[M[_]] {
     def apply[F[_]: Functor, A](f: A => F[A])(implicit M: Monad[M]):
@@ -284,6 +298,9 @@ package object recursionschemes {
       f(_).map(_.point[M])
   }
 
+  /** Combines two algebras (in the same comonad) into one where the carrier is
+    * a pair containing the carriers of the original algebras.
+    */
   def zipAlgebras[F[_], W[_]] = new ZipAlgebrasPartiallyApplied[F, W]
   final class ZipAlgebrasPartiallyApplied[F[_], W[_]] {
     def apply[A, B](f: F[W[A]] => A, g: F[W[B]] => B)(implicit F: Functor[F], W: Functor[W]):
@@ -315,6 +332,8 @@ package object recursionschemes {
     */
   def once[A](f: A => Option[A]): A => A = expr => f(expr).getOrElse(expr)
 
+  /** A simple para that counts the occurances of a fixpoint value in some other
+    * fixpoint value. */
   def count[T[_[_]]: Recursive, F[_]: Functor: Foldable](form: T[F]): F[(T[F], Int)] => Int =
     e => e.foldRight(if (e.map(_._1) == form.project) 1 else 0)(_._2 + _)
 

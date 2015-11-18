@@ -19,10 +19,15 @@ package quasar.sql
 import quasar.Predef._
 import quasar.recursionschemes._
 
+object Row {
+  def apply(elems: List[Expr]): Expr = Fix[ExprF](RowF(elems))
+  def unapply(obj: Expr): Option[List[Expr]] = RowF.unapply(obj.unFix)
+}
+
 object Select {
   def apply(
     isDistinct:   IsDistinct,
-    projections:  List[Proj[Expr]],
+    projections:  Expr,
     relations:    Option[SqlRelation[Expr]],
     filter:       Option[Expr],
     groupBy:      Option[GroupBy[Expr]],
@@ -38,7 +43,7 @@ object Select {
   def unapply(obj: Expr):
       Option[(
         IsDistinct,
-        List[Proj[Expr]],
+        Expr,
         Option[SqlRelation[Expr]],
         Option[Expr],
         Option[GroupBy[Expr]],

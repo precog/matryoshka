@@ -136,7 +136,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
         beRightDisjOrDiff(
           Select(
             SelectAll,
-            List(Proj(Splice(None), None)),
+            Row(List(Splice(None))),
             Some(TableRelationAST("users",None)),
             Some(Binop(Ident("add_date"),IntLiteral(1425460451000L), Gt)),
             None,None))
@@ -193,7 +193,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       parser.parse(q) must beRightDisjunction(
         Select(
           SelectAll,
-          List(Proj(Splice(None), None)),
+          Row(List(Splice(None))),
           Some(
             CrossRelation(
               TableRelationAST("a", None),
@@ -206,19 +206,16 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
     "parse array constructor and concat op" in {
       parser.parse("select loc || [ pop ] from zips") must beRightDisjunction(
         Select(SelectAll,
-          List(
-            Proj(
-              Binop(Ident("loc"),
-                ArrayLiteral(List(
-                  Ident("pop"))),
-                Concat),
-              None)),
+          Row(List(
+            Concat(
+              Ident("loc"),
+              ArrayLiteral(List(Ident("pop")))))),
           Some(TableRelationAST("zips", None)),
           None, None, None))
     }
 
     val expectedSelect = Select(SelectAll,
-      List(Proj(Ident("loc"), None)),
+      Row(List(Ident("loc"))),
       Some(TableRelationAST("places", None)),
       None,
       None,
@@ -305,25 +302,25 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
 
   def selectGen(depth: Int): Gen[Expr] = for {
     isDistinct <- Gen.oneOf(SelectDistinct, SelectAll)
-    projs      <- smallNonEmptyListOf(projGen)
+    projs      <- smallNonEmptyListOf(projGen).map(Row(_))
     relations  <- Gen.option(relationGen(depth-1))
     filter     <- Gen.option(exprGen(depth-1))
     groupBy    <- Gen.option(groupByGen(depth-1))
     orderBy    <- Gen.option(orderByGen(depth-1))
   } yield Select(isDistinct, projs, relations, filter, groupBy, orderBy)
 
-  def projGen: Gen[Proj[Expr]] =
+  def projGen: Gen[Expr] =
     Gen.oneOf(
-      Gen.const(Proj(Splice(None), None)),
+      Gen.const(Splice(None)),
       exprGen(1).flatMap(x =>
         Gen.oneOf(
-          Gen.const(Proj(x, None)),
+          Gen.const(x),
           for {
             n <- Gen.oneOf(
               Gen.alphaChar.map(_.toString),
               Gen.const("public enemy #1"),
               Gen.const("I quote: \"foo\""))
-          } yield Proj(x, Some(n)))))
+          } yield As(x, StringLiteral(n)))))
 
   def relationGen(depth: Int): Gen[SqlRelation[Expr]] = {
     val simple = for {

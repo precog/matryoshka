@@ -110,45 +110,56 @@ trait SemanticAnalysis {
     */
   val projectSortKeysƒ: ExprF[Expr] => Expr = {
     case SelectF(d, projections, r, f, g, Some(sql.OrderBy(keys))) => {
-      def matches(key: Expr): PartialFunction[Proj[Expr], Expr] = key match {
+      def matches(key: Expr): PartialFunction[Expr, Expr] = key match {
         case Ident(keyName) => {
-          case Proj(_, Some(alias))        if keyName == alias    => key
-          case Proj(Ident(projName), None) if keyName == projName => key
-          case Proj(Splice(_), _)                                 => key
+          case Binop(_, StringLiteral(alias), As) if keyName == alias => key
+          case Ident(name)                        if keyName == name  => key
+          case Splice(_)                                              => key
         }
         case _ => {
-          case Proj(expr2, Some(alias)) if key == expr2 => Ident(alias)
+          case Binop(expr2, StringLiteral(alias), As) if key == expr2 => Ident(alias)
         }
       }
-
+      
       // NB: order of the keys has to be preserved, so this complex fold
       //     seems to be the best way.
-      type Target = (List[Proj[Expr]], List[(OrderType, Expr)], Int)
+      type Target = (List[Expr], List[(OrderType, Expr)], Int)
+
+      val projList = projections.unFix match {
+        // TODO: handle DISTINCT and VALUE
+        case RowF(proj) => proj
+        case _          => List(projections)
+      }
 
       val (projs2, keys2, _) = keys.foldRight[Target]((Nil, Nil, 0)) {
         case ((orderType, expr), (projs, keys, index)) =>
-          projections.collectFirst(matches(expr)).fold {
+          projList.collectFirst(matches(expr)).fold {
             val name  = syntheticPrefix + index.toString()
-            val proj2 = Proj(expr, Some(name))
+            val proj2 = As(expr, StringLiteral(name))
             val key2  = (orderType, Ident(name))
             (proj2 :: projs, key2 :: keys, index + 1)
           } (
             kExpr => (projs, (orderType, kExpr) :: keys, index))
       }
-      Select(d, projections ⊹ projs2, r, f, g, Some(sql.OrderBy(keys2)))
+      val newProj = projs2 match {
+        case Nil => projections
+        case _   => Row(projList ⊹ projs2)
+      }
+      Select(d, newProj, r, f, g, Some(sql.OrderBy(keys2)))
     }
     case node => Fix(node)
   }
 
-  private val identifySyntheticsƒ:
-      ExprF[List[Option[Synthetic]]] => List[Option[Synthetic]] = {
-    case SelectF(_, projections, _, _, _, _) =>
-      projections.map(_.alias match {
-        case Some(name) if name.startsWith(syntheticPrefix) =>
-          Some(Synthetic.SortKey)
-        case _ => None
-      })
-    case _ => Nil
+  private def identifySyntheticsƒ[T[_[_]]: Recursive]:
+      ExprF[(T[ExprF], List[Option[Synthetic]])] => List[Option[Synthetic]] = {
+    case BinopF(_, alias, As) => alias._1.project match {
+      case StringLiteralF(name) if name.startsWith(syntheticPrefix) =>
+        List(Synthetic.SortKey.some)
+      case _ => List(None)
+    }
+    // TODO: Get rid of this case, and recognize per-projection in the compiler.
+    case RowF(elems) => elems.foldMap(_._2)
+    case _           => List(None)
   }
 
   case class TableScope(scope: Map[String, SqlRelation[Expr]])
@@ -318,9 +329,8 @@ trait SemanticAnalysis {
     */
   val inferProvenanceƒ:
       (TableScope, ExprF[Provenance]) => ValidSem[Provenance] = (tableScope, expr) => expr match {
-    case SelectF(_, projections, _, _, _, _) =>
-      success(Provenance.allOf(projections.map(_.expr)))
-
+    case RowF(elems) => success(Provenance.allOf(elems))
+    case SelectF(_, projections, _, _, _, _) => success(projections)
     case SetLiteralF(_)  => success(Provenance.Value)
     case ArrayLiteralF(_) => success(Provenance.Value)
     case SpliceF(expr)       => success(expr.getOrElse(Provenance.Empty))
@@ -350,12 +360,12 @@ trait SemanticAnalysis {
 
   // NB: converts identifySyntheticsƒ from a cata to a coelgotM, for zipping
   val synthCoEƒ:
-      (TableScope, ExprF[List[Option[Synthetic]]]) => ValidSem[List[Option[Synthetic]]] =
-    generalizeCoelgot(identifySyntheticsƒ)(_, _).point[ValidSem]
+      (TableScope, ExprF[(Fix[ExprF], List[Option[Synthetic]])]) => ValidSem[(Fix[ExprF], List[Option[Synthetic]])] =
+    generalizeCoelgot(paraToCata(identifySyntheticsƒ))(_, _).point[ValidSem]
 
   def projectSortKeys(expr: Expr) = expr.cata(projectSortKeysƒ)
   def scopeTables(a: (TableScope, Expr)) = (scopeTablesƒ).tupled(a).disjunction
-  def addAnnotations(a: (TableScope, Expr), node: ExprF[Cofree[ExprF, Annotations]]) =
+  def addAnnotations(a: (TableScope, Expr), node: ExprF[Cofree[ExprF, ((Fix[ExprF], List[Option[Synthetic]]), Provenance)]]) =
     attributeCoelgotM(
       zipCoelgotM(synthCoEƒ, inferProvenanceƒ)).apply(a._1, node).disjunction
 
@@ -363,7 +373,7 @@ trait SemanticAnalysis {
   def AllPhases(expr: Expr) =
     coelgotM[NonEmptyList[SemanticError] \/ ?](
       (TableScope(Map()), projectSortKeys(expr)))(
-      addAnnotations, scopeTables)
+      addAnnotations, scopeTables).map(_.map(((_: (Fix[ExprF], List[Option[Synthetic]]))._2).first))
 }
 
 object SemanticAnalysis extends SemanticAnalysis

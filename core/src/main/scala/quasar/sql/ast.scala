@@ -20,17 +20,18 @@ import quasar.Predef._
 
 import scala.Any
 
+import scalaz._, Scalaz._
+
 trait IsDistinct
 final case object SelectDistinct extends IsDistinct
 final case object SelectAll extends IsDistinct
 
-final case class Proj[A](expr: A, alias: Option[String])
-
 sealed trait ExprF[A]
 object ExprF {
+  final case class RowF[A](elems: List[A]) extends ExprF[A]
   final case class SelectF[A](
     isDistinct:  IsDistinct,
-    projections: List[Proj[A]],
+    projections: A,
     relations:   Option[SqlRelation[A]],
     filter:      Option[A],
     groupBy:     Option[GroupBy[A]],
@@ -98,6 +99,7 @@ final case object UnionAll     extends BinaryOperator("union all")
 final case object Intersect    extends BinaryOperator("intersect")
 final case object IntersectAll extends BinaryOperator("intersect all")
 final case object Except       extends BinaryOperator("except")
+final case object As           extends BinaryOperator("as")
 
 // TODO: Change to extend `A => ExprF[A]`
 sealed abstract class UnaryOperator(val sql: String) extends (Expr => Expr) {
@@ -171,10 +173,19 @@ final case class GroupBy[A](keys: List[A], having: Option[A])
 
 final case class OrderBy[A](keys: List[(OrderType, A)])
 
+object RowF {
+  def apply[A](elems: List[A]): ExprF[A] =
+    ExprF.RowF(elems)
+  def unapply[A](obj: ExprF[A]): Option[List[A]] = obj match {
+    case ExprF.RowF(elems) => elems.some
+    case _                 => None
+  }
+}
+
 object SelectF {
   def apply[A](
     isDistinct:  IsDistinct,
-    projections: List[Proj[A]],
+    projections: A,
     relations:   Option[SqlRelation[A]],
     filter:      Option[A],
     groupBy:     Option[GroupBy[A]],
@@ -184,7 +195,7 @@ object SelectF {
   def unapply[A](obj: ExprF[A]):
       Option[(
         IsDistinct,
-        List[Proj[A]],
+        A,
         Option[SqlRelation[A]],
         Option[A],
         Option[GroupBy[A]],

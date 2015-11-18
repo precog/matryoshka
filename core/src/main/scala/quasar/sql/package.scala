@@ -28,22 +28,25 @@ package object sql {
   def CrossRelation(left: SqlRelation[Expr], right: SqlRelation[Expr]) =
     JoinRelation(left, right, InnerJoin, BoolLiteral(true))
 
-  def namedProjections(e: Expr, relName: Option[String]):
-      List[(String, Expr)] = {
-    def extractName(expr: Expr): Option[String] = expr match {
-      case Ident(name) if Some(name) != relName      => Some(name)
-      case Binop(_, StringLiteral(name), FieldDeref) => Some(name)
-      case Unop(expr, ObjectFlatten)                 => extractName(expr)
-      case Unop(expr, ArrayFlatten)                  => extractName(expr)
-      case _                                         => None
+  def nameProjections[T[_[_]]: Recursive](e: T[ExprF], relName: Option[String]): List[(String, T[ExprF])] = {
+    def extractName(expr: T[ExprF]): Option[String] = expr.project match {
+      case IdentF(name) if Some(name) != relName => name.some
+      case BinopF(_, name, op)                   => (name.project, op) match {
+        case (StringLiteralF(n), As | FieldDeref) => n.some
+        case (_,                 _)               => None
+      }
+      case UnopF(expr, ObjectFlatten)            => extractName(expr)
+      case UnopF(expr, ArrayFlatten)             => extractName(expr)
+      case _                                     => None
     }
 
-    e.unFix match {
-      case SelectF(_, projections, _, _, _, _) =>
-        projections.zipWithIndex.map {
-          case (Proj(expr, alias), index) =>
-            (alias <+> extractName(expr)).getOrElse(index.toString()) -> expr
+    e.project match {
+      case RowF(elems) =>
+        elems.zipWithIndex.map {
+          case (expr, index) =>
+            (extractName(expr).getOrElse(index.toString()), expr)
         }
+      case _ => List((extractName(e).getOrElse("0"), e))
     }
   }
 
@@ -117,6 +120,7 @@ package object sql {
       List("when", c.cond._2, "then", c.expr._2) mkString " "
 
     {
+      case RowF(elems) => elems.map(_._2).mkString(", ")
       case SelectF(
         isDistinct,
         projections,
@@ -128,7 +132,7 @@ package object sql {
         List(
           Some("select"),
           isDistinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
-          Some(projections.map(p => p.alias.foldLeft(p.expr._2)(_ + " as " + _qq(_))).mkString(", ")),
+          Some(projections._2),
           relations.map(r => "from " + pprintRelationƒ(r)),
           filter.map("where " + _._2),
           groupBy.map(g =>
@@ -142,6 +146,10 @@ package object sql {
       case ArrayLiteralF(exprs) => exprs.map(_._2).mkString("[", ", ", "]")
       case SpliceF(expr) => expr.fold("*")("(" + _._2 + ").*")
       case BinopF(lhs, rhs, op) => op match {
+        case As => "(" + lhs._2 + ") as " + (rhs._1 match {
+          case StringLiteral(str) => pprintƒ(IdentF(str))
+          case _                  => rhs._2
+        })
         case FieldDeref => rhs._1 match {
           case StringLiteral(str) => "(" + lhs._2 + ")." + str
           case _ => "(" + lhs._2 + "){" + rhs._2 + "}"
@@ -215,9 +223,10 @@ package object sql {
         G.apply2(f(c.cond), f(c.expr))(Case(_, _))
 
       fa match {
+        case RowF(elems) => elems.traverse(f).map(RowF(_))
         case SelectF(dist, proj, rel, filter, group, order) =>
           G.apply5(
-            Traverse[List].sequence(proj.map(p => f(p.expr).map(Proj(_, p.alias)))),
+            f(proj),
             Traverse[Option].sequence(rel.map(traverseRelation(_, f))),
             Traverse[Option].sequence(filter.map(f)),
             Traverse[Option].sequence(group.map(g =>
@@ -285,13 +294,13 @@ package object sql {
           NonTerminal("Case" :: astType, None, ra.render(c.cond) :: ra.render(c.expr) :: Nil)
 
         def render(n: ExprF[α]) = n match {
+          case RowF(elems) =>
+            NonTerminal("Row" :: astType, None, elems.map(ra.render))
           case SelectF(isDistinct, projections, relations, filter, groupBy, orderBy) =>
             val nt = "Select" :: astType
             NonTerminal(nt,
               isDistinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
-              projections.map { p =>
-                NonTerminal("Proj" :: astType, p.alias, ra.render(p.expr) :: Nil)
-              } ⊹
+              ra.render(projections) ::
                 (relations.map(SqlRelationRenderTree(ra).render) ::
                   filter.map(ra.render) ::
                   groupBy.map {

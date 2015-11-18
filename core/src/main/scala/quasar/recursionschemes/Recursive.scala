@@ -42,7 +42,7 @@ import simulacrum.typeclass
   }
 
   def para[F[_]: Functor, A](t: T[F])(f: F[(T[F], A)] => A): A =
-    f(project(t).map(t => t -> para(t)(f)))
+    f(project(t).map(ι &&& (para(_)(f))))
 
   def paraM[F[_]: Traverse, M[_]: Monad, A](t: T[F])(f: F[(T[F], A)] => M[A]):
       M[A] =
