@@ -207,7 +207,7 @@ sealed trait Backend { self =>
     def descPaths(p: Path): ListT[PathTask, FilesystemNode] =
       ListT[PathTask, FilesystemNode](ls(dir ++ p).map(_.toList)).flatMap { n =>
           val cp = p ++ n.path
-          if (cp.pureDir) descPaths(cp) else ListT(liftP(Task.now(List(FilesystemNode(cp, n.typ)))))
+          if (cp.pureDir) descPaths(cp) else ListT(liftP(Task.now(List(FilesystemNode(cp, n.mountType)))))
       }
     descPaths(Path(".")).run.map(_.toSet)
   }
@@ -303,15 +303,26 @@ final case class ViewBackend(backend: Backend, views0: Map[Path, ViewConfig]) ex
 
   def ls0(dir: Path) = {
     val vs = views.keys.toList.foldMap(_.rebase(dir).toSet).map { rp =>
-      if (rp.pureFile) FilesystemNode(rp, Backend.Mount)
-      else FilesystemNode(rp.head, Backend.Plain)
+      if (rp.pureFile) FilesystemNode(rp, Some("view"))
+      else FilesystemNode(rp.head, None)
     }
     def orEmpty(v: PathTask[Set[FilesystemNode]]): PathTask[Set[FilesystemNode]] =
       EitherT(v.run.map {
         case -\/(NonexistentPathError(_, _)) => \/-(Set.empty)
         case v => v
       })
-    orEmpty(backend.ls0(dir)).map(_ ++ vs)
+    orEmpty(backend.ls0(dir)).map { ns =>
+      def byPath(nodes: Set[FilesystemNode]) = nodes.map(n => n.path -> n).toMap
+      // NB: actual nodes (including mount directories) take precedence over
+      // view ancestor directories, but view files take precedence over
+      // ordinary files.
+      implicit val BiasedNodeSemigroup = new Semigroup[FilesystemNode] {
+        def append(n1: FilesystemNode, n2: => FilesystemNode) =
+          if (n1.path.pureDir) n1
+          else n2
+      }
+      (byPath(ns) |+| byPath(vs)).values.toSet
+    }
   }
 
   def count0(path: Path) =
@@ -498,11 +509,7 @@ object Backend {
   case object Overwrite extends MoveSemantics
   case object FailIfExists extends MoveSemantics
 
-  trait PathNodeType
-  final case object Mount extends PathNodeType
-  final case object Plain extends PathNodeType
-
-  final case class FilesystemNode(path: Path, typ: PathNodeType)
+  final case class FilesystemNode(path: Path, mountType: Option[String])
 
   implicit val FilesystemNodeOrder: scala.Ordering[FilesystemNode] =
     scala.Ordering[Path].on(_.path)
@@ -616,8 +623,8 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
     if (dir == Path.Current)
       EitherT.right(Task.now(mounts.toSet[(DirNode, Backend)].map { case (d, b) =>
         FilesystemNode(nodePath(d), b match {
-          case NestedBackend(_) => Plain
-          case _                => Mount
+          case NestedBackend(_) => None
+          case _                => Some("mongodb")
         })
       }))
       else delegate(dir)(_.ls0(_), ι)

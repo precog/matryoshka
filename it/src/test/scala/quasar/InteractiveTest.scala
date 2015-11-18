@@ -4,7 +4,7 @@ import java.io.File
 
 import Predef._
 import org.specs2.time.NoTimeConversions
-import quasar.Backend.{FilesystemNode, Plain}
+import quasar.Backend.{FilesystemNode}
 import quasar.fs.Path
 import quasar.specs2.DisjunctionMatchers
 
@@ -15,12 +15,12 @@ class InteractiveTest extends BackendTest with NoTimeConversions with Disjunctio
 
     def assertNotThere(file: Path) = {
       val listings = interactive.ls(backend, prefix).run
-      listings must not contain (FilesystemNode(file, Plain))
+      listings must not contain (FilesystemNode(file, None))
     }
 
     def assertThere(file: Path) = {
       val listings = interactive.ls(backend, prefix).run
-      listings must contain(FilesystemNode(file, Plain))
+      listings must contain(FilesystemNode(file, None))
     }
 
     "Interactive" should {

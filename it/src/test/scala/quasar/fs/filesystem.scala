@@ -40,7 +40,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
       // Run the task to create a single FileSystem instance for each run (I guess)
 
       "list root" in {
-        fs.ls(Path(".")).map(_ must contain(FilesystemNode(relPrefix, Plain))).run.run must beRightDisjunction
+        fs.ls(Path(".")).map(_ must contain(FilesystemNode(relPrefix, None))).run.run must beRightDisjunction
       }
 
       "count" in {
@@ -68,8 +68,8 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _      <- fs.save(TestDir ++ tmp, oneDoc)
           after  <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
-          before must not(contain(FilesystemNode(tmp, Plain)))
-          after must contain(FilesystemNode(tmp, Plain))
+          before must not(contain(FilesystemNode(tmp, None)))
+          after must contain(FilesystemNode(tmp, None))
         }).fold(_ must beNull, ι).run
       }
 
@@ -81,8 +81,8 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _      <- fs.save(TestDir ++ tmp, oneDoc)
           after  <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
-          before must contain(FilesystemNode(tmp, Plain))
-          after must contain(FilesystemNode(tmp, Plain))
+          before must contain(FilesystemNode(tmp, None))
+          after must contain(FilesystemNode(tmp, None))
         }).fold(_ must beNull, ι).run
       }
 
@@ -119,8 +119,8 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _      <- fs.replace(TestDir ++ tmp, anotherDoc)
           after  <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
-          before must contain(FilesystemNode(tmp, Plain))
-          after must contain(FilesystemNode(tmp, Plain))
+          before must contain(FilesystemNode(tmp, None))
+          after must contain(FilesystemNode(tmp, None))
         }).fold(_ must beNull, ι).run
       }
 
@@ -132,8 +132,8 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _      <- fs.save(TestDir ++ tmpDir ++ tmp, oneDoc)
           after  <- fs.ls(TestDir ++ tmpDir).leftMap(PPathError(_))
         } yield {
-          before must not(contain(FilesystemNode(tmp, Plain)))
-          after must contain(FilesystemNode(tmp, Plain))
+          before must not(contain(FilesystemNode(tmp, None)))
+          after must contain(FilesystemNode(tmp, None))
         }).fold(_ must beNull, ι).run
       }
 
@@ -173,7 +173,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           after <- fs.ls(TestDir).leftMap(PPathError(_))
           _     <- fs.delete(TestDir ++ tmp).leftMap(PPathError(_)) // clean up this one eagerly, since it's a large file
         } yield {
-          after must contain(FilesystemNode(tmp, Plain))
+          after must contain(FilesystemNode(tmp, None))
         }).fold(_ must beNull, ι).run
       }
 
@@ -212,8 +212,8 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2, FailIfExists).leftMap(PPathError(_))
           after <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
-          after must not(contain(FilesystemNode(tmp1, Plain)))
-          after must contain(FilesystemNode(tmp2, Plain))
+          after must not(contain(FilesystemNode(tmp1, None)))
+          after must contain(FilesystemNode(tmp2, None))
         }).fold(_ must beNull, ι).run
       }
 
@@ -227,8 +227,8 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           after <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
           rez must beLeftDisjunction
-          after must contain(FilesystemNode(tmp1, Plain))
-          after must contain(FilesystemNode(tmp2, Plain))
+          after must contain(FilesystemNode(tmp1, None))
+          after must contain(FilesystemNode(tmp2, None))
         }).fold(_ must beNull, ι).run
       }
 
@@ -241,8 +241,8 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp2, Overwrite).leftMap(PPathError(_))
           after <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
-          after must not(contain(FilesystemNode(tmp1, Plain)))
-          after must contain(FilesystemNode(tmp2, Plain))
+          after must not(contain(FilesystemNode(tmp1, None)))
+          after must contain(FilesystemNode(tmp2, None))
         }).fold(_ must beNull, ι).run
       }
 
@@ -253,7 +253,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _     <- fs.move(TestDir ++ tmp1, TestDir ++ tmp1, FailIfExists).leftMap(PPathError(_))
           after <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
-          after must contain(FilesystemNode(tmp1, Plain))
+          after must contain(FilesystemNode(tmp1, None))
         }).fold(_ must beNull, ι).run
       }
 
@@ -268,8 +268,8 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2, FailIfExists).leftMap(PPathError(_))
           after   <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
-          after must not(contain(FilesystemNode(tmpDir1, Plain)))
-          after must contain(FilesystemNode(tmpDir2, Plain))
+          after must not(contain(FilesystemNode(tmpDir1, None)))
+          after must contain(FilesystemNode(tmpDir2, None))
         }).fold(_ must beNull, ι).run
       }
 
@@ -284,8 +284,8 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2, FailIfExists).leftMap(PPathError(_))
           after   <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
-          after must not(contain(FilesystemNode(tmpDir1, Plain)))
-          after must contain(FilesystemNode(tmpDir2.asDir, Plain))
+          after must not(contain(FilesystemNode(tmpDir1, None)))
+          after must contain(FilesystemNode(tmpDir2.asDir, None))
         }).fold(_ must beNull, ι).run
       }
 
@@ -296,8 +296,8 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _       <- fs.move(TestDir ++ tmpDir1, TestDir ++ tmpDir2, FailIfExists).leftMap(PPathError(_))
           after   <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
-          after must not(contain(FilesystemNode(tmpDir1, Plain)))
-          after must not(contain(FilesystemNode(tmpDir2, Plain)))
+          after must not(contain(FilesystemNode(tmpDir1, None)))
+          after must not(contain(FilesystemNode(tmpDir2, None)))
         }).fold(_ must beNull, ι).run
       }
 
@@ -308,7 +308,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _     <- fs.delete(TestDir ++ tmp).leftMap(PPathError(_))
           after <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
-          after must not(contain(FilesystemNode(tmp, Plain)))
+          after must not(contain(FilesystemNode(tmp, None)))
         }).fold(_ must beNull, ι).run
       }
 
@@ -323,9 +323,9 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _      <- fs.delete(TestDir ++ tmpDir ++ tmp1).leftMap(PPathError(_))
           after  <- fs.ls(TestDir ++ tmpDir).leftMap(PPathError(_))
         } yield {
-          before must contain(FilesystemNode(tmp1, Plain))
-          after must not(contain(FilesystemNode(tmp1, Plain)))
-          after must contain(FilesystemNode(tmp2, Plain))
+          before must contain(FilesystemNode(tmp1, None))
+          after must not(contain(FilesystemNode(tmp1, None)))
+          after must contain(FilesystemNode(tmp2, None))
         }).fold(_ must beNull, ι).run
       }
 
@@ -339,7 +339,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _      <- fs.delete(TestDir ++ tmpDir).leftMap(PPathError(_))
           after  <- fs.ls(TestDir).leftMap(PPathError(_))
         } yield {
-          after must not(contain(FilesystemNode(tmpDir, Plain)))
+          after must not(contain(FilesystemNode(tmpDir, None)))
         }).fold(_ must beNull, ι).run
       }
 
@@ -355,8 +355,8 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _      <- fs.delete(db).leftMap(PPathError(_))
           delete <- fs.ls(Path.Root).leftMap(PPathError(_))
         } yield {
-          before must not contain(FilesystemNode(db, Plain))
-          create must contain(FilesystemNode(db, Plain))
+          before must not contain(FilesystemNode(db, None))
+          create must contain(FilesystemNode(db, None))
           delete must_== before
         }).fold(skipUnlessAuthorized, ι).run
       }
@@ -374,8 +374,8 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           _      <- fs.delete(Path.Root).leftMap(PPathError(_))
           after  <- fs.ls(Path.Root).leftMap(PPathError(_))
         } yield {
-          before must contain(FilesystemNode(db1, Plain))
-          before must contain(FilesystemNode(db2, Plain))
+          before must contain(FilesystemNode(db1, None))
+          before must contain(FilesystemNode(db2, None))
           after must_== Set()
         }).fold(skipUnlessAuthorized, ι).run
       }.skippedOnUserEnv("This could destroy user data.")
@@ -505,7 +505,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           after  <- fs.lsAll(Path.Root).leftMap(PPathError(_))
         } yield {
           rez must_== Vector(Data.Obj(ListMap("a" -> Data.Int(1))))
-          after must contain(exactly(FilesystemNode(TestDir ++ out, Plain) :: before.toList: _*))
+          after must contain(exactly(FilesystemNode(TestDir ++ out, None) :: before.toList: _*))
         }).fold(_ must beNull, ι).run
       }
     }

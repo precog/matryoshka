@@ -345,14 +345,15 @@ SQL<sup>2</sup> supports variables inside queries (`SELECT * WHERE pop < :cutoff
 
 ### GET /metadata/fs/[path]
 
-Retrieves metadata about the files, directories, and mounts at the specified path.
+Retrieves metadata about the files, directories, and mounts which are children of the specified directory path. If the path names a file, the result is empty.
 
 ```json
 {
   "children": [
-    {"name": "test", "type": "mount"},
     {"name": "foo", "type": "directory"},
-    {"name": "bar", "type": "file"}
+    {"name": "bar", "type": "file"},
+    {"name": "test", "type": "directory", "mount": "mongodb"},
+    {"name": "baz", "type": "file", "mount": "view"}
   ]
 }
 ```

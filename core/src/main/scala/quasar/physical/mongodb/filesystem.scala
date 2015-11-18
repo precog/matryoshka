@@ -148,7 +148,7 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
   def ls0(dir: Path): PathTask[Set[FilesystemNode]] = liftP(for {
     cols <- server.collections
     allPaths = cols.map(_.asPath)
-  } yield allPaths.map(_.rebase(dir).toOption.map(p => FilesystemNode(p.head, Plain))).foldMap(_.toSet))
+  } yield allPaths.map(_.rebase(dir).toOption.map(p => FilesystemNode(p.head, None))).foldMap(_.toSet))
 }
 
 sealed trait RenameSemantics

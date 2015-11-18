@@ -184,11 +184,9 @@ final case class FileSystemApi[WC, SC](
 
   implicit def FilesystemNodeEncodeJson = EncodeJson[FilesystemNode] { fsn =>
     Json(
-      "name" := fsn.path.simplePathname,
-      "type" := (fsn.typ match {
-        case Mount => "mount"
-        case Plain => fsn.path.file.fold("directory")(κ("file"))
-      }))
+      (("name" := fsn.path.simplePathname) ::
+        ("type" := fsn.path.file.fold("directory")(κ("file"))) ::
+        fsn.mountType.toList.map("mount" := _)): _*)
   }
 
   implicit val QueryDecoder = new QueryParamDecoder[Query] {
