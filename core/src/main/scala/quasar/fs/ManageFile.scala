@@ -108,6 +108,8 @@ object ManageFile {
   final case class TempFile(nearTo: Option[AbsFile[Sandboxed]])
     extends ManageFile[AbsFile[Sandboxed]]
 
+  // TODO{scalaz}: Refactor, dropping Coyoneda and Functor constraint once we
+  //               update to scalaz-7.2
   final class Ops[S[_]](implicit S0: Functor[S], S1: ManageFileF :<: S) {
     type F[A] = Free[S, A]
     type M[A] = FileSystemErrT[F, A]

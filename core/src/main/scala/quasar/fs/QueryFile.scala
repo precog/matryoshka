@@ -81,16 +81,16 @@ object QueryFile {
       }
     }
 
-    /** Returns the path to the result of executing the given SQL^2 query. */
+    /** Returns the path to the result of executing the given SQL^2 query
+      * using the given output file if possible.
+      */
     def executeQuery(query: sql.Expr, vars: Variables, out: AbsFile[Sandboxed])
                     : CompExecM[ResultFile] = {
 
       compileAnd(query, vars)(execute(_, out))
     }
 
-    /** Returns the path to the result of executing the given SQL^2 query
-      * using the given output file if possible.
-      */
+    /** Returns the path to the result of executing the given SQL^2 query. */
     def executeQuery_(query: sql.Expr, vars: Variables)
                      (implicit M: ManageFile.Ops[S]): CompExecM[ResultFile] = {
       compileAnd(query, vars)(execute_)
