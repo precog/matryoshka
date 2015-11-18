@@ -6,10 +6,10 @@ import quasar.fp._
 
 import org.specs2.mutable.Specification
 import org.specs2.ScalaCheck
+import pathy.Path._
 import scalaz._
 import scalaz.std.vector._
 import scalaz.syntax.either._
-import pathy.Path._
 
 class ReadFileSpec extends Specification with ScalaCheck with FileSystemFixture {
   import DataGen._, PathyGen._, FileSystemError._, PathError2._
@@ -18,7 +18,7 @@ class ReadFileSpec extends Specification with ScalaCheck with FileSystemFixture 
     "scan should read data until an empty vector is received" ! prop {
       (f: AbsFile[Sandboxed], xs: Vector[Data]) =>
 
-      val p = write.appendF(f, xs).drain ++ read.scanAll(f)
+      val p = write.append(f, xs.toProcess).drain ++ read.scanAll(f)
 
       evalLogZero(p).run.toEither must beRight(xs)
     }
@@ -26,7 +26,7 @@ class ReadFileSpec extends Specification with ScalaCheck with FileSystemFixture 
     "scan should automatically close the read handle when terminated early" ! prop {
       (f: AbsFile[Sandboxed], xs: Vector[Data]) => xs.nonEmpty ==> {
         val n = xs.length / 2
-        val p = write.appendF(f, xs).drain ++ read.scanAll(f).take(n)
+        val p = write.append(f, xs.toProcess).drain ++ read.scanAll(f).take(n)
 
         p.translate[M](runT).runLog
           .run.leftMap(_.rm)

@@ -2,9 +2,9 @@ package quasar
 package fs
 
 import quasar.Predef._
+import quasar.fp._
 
 import pathy.Path._
-
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 import scalaz.stream._
@@ -30,7 +30,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
       "moving a file should make it available at the new path and not found at the old" >> {
         val f1 = managePrefix </> dir("d1") </> file("f1")
         val f2 = managePrefix </> dir("d2") </> file("f2")
-        val p = write.saveF(f1, oneDoc).drain ++
+        val p = write.save(f1, oneDoc.toProcess).drain ++
                 manage.moveFile(f1, f2, MoveSemantics.FailIfExists)
                   .liftM[Process].drain ++
                 read.scanAll(f2).map(_.left[Boolean]) ++
@@ -47,8 +47,8 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val f2 = managePrefix </> dir("failifexists") </> file("f2")
         val expectedFiles = List(Node.File(file("f1")), Node.File(file("f2")))
         val ls = query.ls(managePrefix </> dir("failifexists"))
-        val p = write.saveF(f1, oneDoc).drain ++
-                write.saveF(f2, oneDoc).drain ++
+        val p = write.save(f1, oneDoc.toProcess).drain ++
+                write.save(f2, oneDoc.toProcess).drain ++
                 manage.moveFile(f1, f2, MoveSemantics.FailIfExists).liftM[Process]
 
         (execT(run, p).runOption must beSome(PathError(FileExists(f2)))) and
@@ -58,8 +58,8 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
       "moving a file to an existing path with Overwrite semantics should make contents available at new path" >> {
         val f1 = managePrefix </> dir("overwrite") </> file("f1")
         val f2 = managePrefix </> dir("overwrite") </> file("f2")
-        val p = write.saveF(f1, oneDoc).drain ++
-                write.saveF(f2, anotherDoc).drain ++
+        val p = write.save(f1, oneDoc.toProcess).drain ++
+                write.save(f2, anotherDoc.toProcess).drain ++
                 manage.moveFile(f1, f2, MoveSemantics.Overwrite)
                   .liftM[Process].drain ++
                 read.scanAll(f2).map(_.left[Boolean]) ++
@@ -77,7 +77,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val f2 = d </> file("f2")
         val expectedFiles = List(Node.File(file("f2")))
         val ls = query.ls(d)
-        val p = write.saveF(f2, oneDoc).drain ++
+        val p = write.save(f2, oneDoc.toProcess).drain ++
                 manage.moveFile(f1, f2, MoveSemantics.Overwrite)
                   .liftM[Process]
 
@@ -96,7 +96,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
 
       "moving a file to itself with FailIfExists semantics should fail with PathExists" >> {
         val f1 = managePrefix </> dir("selftoself") </> file("f1")
-        val p  = write.saveF(f1, oneDoc).drain ++
+        val p  = write.save(f1, oneDoc.toProcess).drain ++
                  manage.moveFile(f1, f1, MoveSemantics.FailIfExists).liftM[Process]
 
         execT(run, p).runOption must beSome(PathError(FileExists(f1)))
@@ -107,7 +107,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val f1 = d </> file("f1")
         val f2 = d </> file("f2")
         val expectedFiles = List(Node.File(file("f1")))
-        val p  = write.saveF(f1, oneDoc).drain ++
+        val p  = write.save(f1, oneDoc.toProcess).drain ++
                  manage.moveFile(f1, f2, MoveSemantics.FailIfMissing).liftM[Process]
 
         (execT(run, p).runOption must beSome(PathError(FileNotFound(f2)))) and
@@ -123,8 +123,8 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
 
         val expectedFiles = List(Node.File(file("f1")), Node.File(file("f2")))
 
-        val p = write.saveF(f1, oneDoc).drain ++
-                write.saveF(f2, anotherDoc).drain ++
+        val p = write.save(f1, oneDoc.toProcess).drain ++
+                write.save(f2, anotherDoc.toProcess).drain ++
                 manage.moveDir(d1, d2, MoveSemantics.FailIfExists).liftM[Process]
 
         (execT(run, p).runOption must beNone) and
@@ -147,7 +147,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
 
       "deleting a file makes it no longer accessible" >> {
         val f1 = managePrefix </> dir("deleteone") </> file("f1")
-        val p  = write.saveF(f1, oneDoc).drain ++ manage.deleteFile(f1).liftM[Process]
+        val p  = write.save(f1, oneDoc.toProcess).drain ++ manage.deleteFile(f1).liftM[Process]
 
         (execT(run, p).runOption must beNone) and
         (runLogT(run, read.scanAll(f1)).runEither must beLeft(PathError(FileNotFound(f1))))
@@ -158,8 +158,8 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val f1 = d </> file("f1")
         val f2 = d </> file("f2")
 
-        val p = write.saveF(f1, oneDoc).drain ++
-                write.saveF(f2, anotherDoc).drain ++
+        val p = write.save(f1, oneDoc.toProcess).drain ++
+                write.save(f2, anotherDoc.toProcess).drain ++
                 manage.deleteFile(f1).liftM[Process]
 
         (execT(run, p).runOption must beNone) and
@@ -172,8 +172,8 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val f1 = d </> file("f1")
         val f2 = d </> file("f2")
 
-        val p = write.saveF(f1, oneDoc).drain ++
-                write.saveF(f2, anotherDoc).drain ++
+        val p = write.save(f1, oneDoc.toProcess).drain ++
+                write.save(f2, anotherDoc.toProcess).drain ++
                 manage.deleteDir(d).liftM[Process]
 
         (execT(run, p).runOption must beNone) and
@@ -191,10 +191,10 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val d = managePrefix </> dir("tmpnear1")
         val f = d </> file("somefile")
 
-        val p = write.saveF(f, oneDoc).drain ++
+        val p = write.save(f, oneDoc.toProcess).drain ++
                 (manage.tempFileNear(f).liftM[FileSystemErrT]: manage.M[AbsFile[Sandboxed]])
                   .liftM[Process] flatMap { tf =>
-                    write.saveF(tf, anotherDoc).drain ++
+                    write.save(tf, anotherDoc.toProcess).drain ++
                     read.scanAll(tf) ++
                     manage.deleteFile(tf).liftM[Process].drain
                   }
@@ -207,7 +207,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val f = d </> file("somefile")
         val p = (manage.tempFileNear(f).liftM[FileSystemErrT]: manage.M[AbsFile[Sandboxed]])
                   .liftM[Process] flatMap { tf =>
-                    write.saveF(tf, anotherDoc).drain ++
+                    write.save(tf, anotherDoc.toProcess).drain ++
                     read.scanAll(tf) ++
                     manage.deleteFile(tf).liftM[Process].drain
                   }
@@ -218,7 +218,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
       "write/read from arbitrary temp dir" >> {
         val p = (manage.anyTempFile.liftM[FileSystemErrT]: manage.M[AbsFile[Sandboxed]])
                   .liftM[Process] flatMap { tf =>
-                    write.saveF(tf, oneDoc).drain ++
+                    write.save(tf, oneDoc.toProcess).drain ++
                     read.scanAll(tf) ++
                     manage.deleteFile(tf).liftM[Process].drain
                   }

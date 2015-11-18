@@ -2,11 +2,10 @@ package quasar
 package fs
 
 import quasar.Predef._
+import quasar.fp._
 
 import monocle.std.{disjunction => D}
-
 import pathy.Path._
-
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 import scalaz.stream._
@@ -65,14 +64,14 @@ class WriteFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
 
       "append should write data to file" >> {
         val f = writesPrefix </> file("saveone")
-        val p = write.appendF(f, oneDoc).drain ++ read.scanAll(f)
+        val p = write.append(f, oneDoc.toProcess).drain ++ read.scanAll(f)
 
         runLogT(run, p).runEither must beRight(oneDoc)
       }
 
       "append empty input should result in a new file" >> {
         val f = writesPrefix </> file("emptyfile")
-        val p = write.appendF(f, Vector[Data]()).drain ++
+        val p = write.append(f, Process.empty).drain ++
                 (query.fileExists(f).liftM[FileSystemErrT] : query.M[Boolean]).liftM[Process]
 
         runLogT(run, p).run.run must_== \/.right(Vector(true))
@@ -84,8 +83,8 @@ class WriteFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
         val f1Node = Node.File(file("subdirfile1"))
         val f2 = d </> dir("subdir2") </> file("subdirfile2")
         val f2Node = Node.File(dir("subdir2") </> file("subdirfile2"))
-        val p = write.appendF(f1, oneDoc).drain ++
-                write.appendF(f2, oneDoc).drain ++
+        val p = write.append(f1, oneDoc.toProcess).drain ++
+                write.append(f2, oneDoc.toProcess).drain ++
                 query.lsAll(d).liftM[Process]
 
         runLogT(run, p).map(_.flatMap(_.toVector))

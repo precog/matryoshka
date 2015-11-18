@@ -6,18 +6,15 @@ import quasar.fp._
 import quasar.config.MongoDbConfig
 import quasar.physical.mongodb.{filesystems => mongofs}
 
+import scala.Either
+
 import monocle.Optional
 import monocle.function.Index
 import monocle.std.vector._
-
 import org.specs2.mutable.Specification
 import org.specs2.execute._
 import org.specs2.specification._
-
 import pathy.Path._
-
-import scala.Either
-
 import scalaz.{EphemeralStream => EStream, Optional => _, _}, Scalaz._
 import scalaz.concurrent.Task
 import scalaz.stream._

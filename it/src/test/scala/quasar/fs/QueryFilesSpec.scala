@@ -2,9 +2,9 @@ package quasar
 package fs
 
 import quasar.Predef._
+import quasar.fp._
 
 import pathy.Path._
-
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 import scalaz.stream._
@@ -32,8 +32,8 @@ class QueryFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
         val f2 = d1 </> dir("d2") </> file("f1")
         val expectedNodes = List(Node.Dir(dir("d2")), Node.File(file("f1")))
 
-        val p = write.saveF(f1, oneDoc).drain ++
-                write.saveF(f2, anotherDoc).drain ++
+        val p = write.save(f1, oneDoc.toProcess).drain ++
+                write.save(f2, anotherDoc.toProcess).drain ++
                 query.ls(d1).liftM[Process]
                   .flatMap(ns => Process.emitAll(ns.toVector))
 
@@ -50,8 +50,8 @@ class QueryFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
         val d = queryPrefix </> dir("lsdeleted")
         val f1 = d </> file("f1")
         val f2 = d </> file("f2")
-        val p  = write.saveF(f1, oneDoc).drain ++
-                 write.saveF(f2, anotherDoc).drain ++
+        val p  = write.save(f1, oneDoc.toProcess).drain ++
+                 write.save(f2, anotherDoc.toProcess).drain ++
                  query.ls(d).liftM[Process]
                    .flatMap(ns => Process.emitAll(ns.toVector))
 

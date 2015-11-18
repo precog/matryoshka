@@ -20,6 +20,7 @@ import quasar.Predef._
 import quasar.RenderTree.ops._
 
 import scalaz._, Liskov._, Scalaz._
+import scalaz.stream._
 import scalaz.concurrent.Task
 import simulacrum.{typeclass, op}
 
@@ -286,8 +287,6 @@ trait JsonOps {
 }
 
 trait ProcessOps {
-  import scalaz.stream.{Process, Cause}
-
   class PrOps[F[_], O](self: Process[F, O]) {
     def cleanUpWith(t: F[Unit]): Process[F, O] =
       self.onComplete(Process.eval(t).drain)
@@ -319,6 +318,13 @@ trait ProcessOps {
       extends PrOps[Task, O](self)
 }
 
+trait QFoldableOps {
+  final implicit class ToQFoldableOps[F[_]: Foldable, A](val self: F[A]) {
+    final def toProcess: Process0[A] =
+      self.foldRight[Process0[A]](Process.halt)((a, p) => Process.emit(a) ++ p)
+  }
+}
+
 trait SKI {
   // NB: Unicode has double-struck and bold versions of the letters, which might
   //     be more appropriate, but the code points are larger than 2 bytes, so
@@ -341,7 +347,7 @@ trait SKI {
 }
 object SKI extends SKI
 
-package object fp extends TreeInstances with ListMapInstances with EitherTInstances with OptionTInstances with StateTInstances with WriterTInstances with ToCatchableOps with PartialFunctionOps with JsonOps with ProcessOps with SKI {
+package object fp extends TreeInstances with ListMapInstances with EitherTInstances with OptionTInstances with StateTInstances with WriterTInstances with ToCatchableOps with PartialFunctionOps with JsonOps with ProcessOps with QFoldableOps with SKI {
   sealed trait Polymorphic[F[_], TC[_]] {
     def apply[A: TC]: TC[F[A]]
   }

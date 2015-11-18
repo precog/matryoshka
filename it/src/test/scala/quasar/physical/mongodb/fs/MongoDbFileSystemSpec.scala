@@ -12,18 +12,14 @@ import quasar.specs2._
 import quasar.sql
 
 import com.mongodb.MongoException
-
 import monocle.Prism
 import monocle.std.{disjunction => D}
 import monocle.function.Field1
 import monocle.std.tuple2._
-
 import org.specs2.ScalaCheck
 import org.specs2.execute.{AsResult, SkipException}
-
 import pathy.Path._
-
-import scalaz.{Optional => _, _}, Id._
+import scalaz.{Optional => _, _}
 import scalaz.stream._
 import scalaz.std.vector._
 import scalaz.syntax.monad._
@@ -64,7 +60,7 @@ class MongoDbFileSystemSpec
           (data: Data, fname: Int) => isNotObj(data) ==> {
             val path = invalidData map (_ </> file(fname.toHexString))
 
-            path.flatMap(p => runLogT(run, write.appendF[Id](p, data))).map { errs =>
+            path.flatMap(p => runLogT(run, write.append(p, Process(data)))).map { errs =>
               vectorFirst[FileSystemError]
                 .composePrism(writeFailed)
                 .composeLens(Field1.first)
@@ -91,10 +87,10 @@ class MongoDbFileSystemSpec
             val f = d </> file("deldb")
 
             (
-              query.ls(rootDir).liftM[Process]   |@|
-              write.saveF(f, oneDoc).terminated  |@|
-              query.ls(rootDir).liftM[Process]   |@|
-              manage.deleteDir(d).liftM[Process] |@|
+              query.ls(rootDir).liftM[Process]           |@|
+              write.save(f, oneDoc.toProcess).terminated |@|
+              query.ls(rootDir).liftM[Process]           |@|
+              manage.deleteDir(d).liftM[Process]         |@|
               query.ls(rootDir).liftM[Process]
             ) { (before, _, create, _, delete) =>
               val d0 = d.relativeTo(rootDir) getOrElse currentDir
@@ -120,10 +116,10 @@ class MongoDbFileSystemSpec
             val f2 = d2 </> file("delall2")
 
             (
-              write.saveF(f1, oneDoc).terminated       |@|
-              write.saveF(f2, oneDoc).terminated       |@|
-              query.ls(rootDir).liftM[Process]         |@|
-              manage.deleteDir(rootDir).liftM[Process] |@|
+              write.save(f1, oneDoc.toProcess).terminated |@|
+              write.save(f2, oneDoc.toProcess).terminated |@|
+              query.ls(rootDir).liftM[Process]            |@|
+              manage.deleteDir(rootDir).liftM[Process]    |@|
               query.ls(rootDir).liftM[Process]
             ) { (_, _, before, _, after) =>
               val dA = d1.relativeTo(rootDir) getOrElse currentDir
