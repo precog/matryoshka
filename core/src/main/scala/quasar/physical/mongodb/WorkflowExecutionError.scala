@@ -7,47 +7,48 @@ import quasar.fp._
 import quasar.physical.mongodb.workflowtask._
 
 import monocle.Prism
-
 import scalaz._
 import scalaz.syntax.show._
-import scalaz.syntax.std.option._
-import scalaz.std.option._
 
 /** Error conditions possible during `Workflow` execution. */
-sealed trait WorkflowExecutionError {
-  import WorkflowExecutionError._
-
-  def fold[X](
-    invalidTask: (WorkflowTask, String) => X,
-    insertFailed: (Bson, String) => X
-  ): X =
-    this match {
-      case InvalidTask0(t, r)  => invalidTask(t, r)
-      case InsertFailed0(b, r) => insertFailed(b, r)
-    }
-}
+sealed trait WorkflowExecutionError
 
 object WorkflowExecutionError {
-  private final case class InvalidTask0(task: WorkflowTask, reason: String)
-    extends WorkflowExecutionError
+  object Case {
+    final case class InvalidTask(task: WorkflowTask, reason: String)
+      extends WorkflowExecutionError
 
-  private final case class InsertFailed0(bson: Bson, reason: String)
-    extends WorkflowExecutionError
+    final case class InsertFailed(bson: Bson, reason: String)
+      extends WorkflowExecutionError
+  }
 
   val InvalidTask: (WorkflowTask, String) => WorkflowExecutionError =
-    InvalidTask0(_, _)
+    Case.InvalidTask(_, _)
 
   val InsertFailed: (Bson, String) => WorkflowExecutionError =
-    InsertFailed0(_, _)
+    Case.InsertFailed(_, _)
 
   val invalidTask: Prism[WorkflowExecutionError, (WorkflowTask, String)] =
-    Prism((_: WorkflowExecutionError).fold((t, r) => (t, r).some, κ(none)))(InvalidTask.tupled)
+    Prism[WorkflowExecutionError, (WorkflowTask, String)] {
+      case Case.InvalidTask(t, r) => Some((t, r))
+      case _ => None
+    } (InvalidTask.tupled)
 
   val insertFailed: Prism[WorkflowExecutionError, (Bson, String)] =
-    Prism((_: WorkflowExecutionError).fold(κ(none), (b, r) => (b, r).some))(InsertFailed.tupled)
+    Prism[WorkflowExecutionError, (Bson, String)] {
+      case Case.InsertFailed(b, r) => Some((b, r))
+      case _ => None
+    } (InsertFailed.tupled)
 
   implicit val workflowExecutionErrorShow: Show[WorkflowExecutionError] =
-    Show.shows(err => "Error executing Workflow: " + err.fold(
-      (t, r) => s"Invalid task, $r\n\n" + RenderTree[WorkflowTask].render(t).shows,
-      (b, r) => s"Failed to insert BSON, `$b`, $r"))
+    Show.shows { err =>
+      val msg = err match {
+        case Case.InvalidTask(t, r) =>
+          s"Invalid task, $r\n\n" + RenderTree[WorkflowTask].render(t).shows
+        case Case.InsertFailed(b, r) =>
+          s"Failed to insert BSON, `$b`, $r"
+      }
+
+      s"Error executing workflow: $msg"
+    }
 }

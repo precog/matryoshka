@@ -156,6 +156,7 @@ object WorkflowExecutor {
   /** A `WorkflowExecutor` that executes a `Workflow` in the `MongoDb` monad. */
   val mongoDb: EnvErr2T[MongoDb, WorkflowExecutor[MongoDb]] = {
     import MongoDbWorkflowExecutor._
+    import EnvironmentError2._
 
     type E[A, B] = EitherT[MongoDb, A, B]
     type M[A]    = EnvErr2T[MongoDb, A]
@@ -164,7 +165,7 @@ object WorkflowExecutor {
       if (v >= MinMongoDbVersion)
         (new MongoDbWorkflowExecutor: WorkflowExecutor[MongoDb]).point[M]
       else
-        UnsupportedVersion2("MongoDB", v).raiseError[E, WorkflowExecutor[MongoDb]]
+        UnsupportedVersion("MongoDB", v).raiseError[E, WorkflowExecutor[MongoDb]]
     }
   }
 

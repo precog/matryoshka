@@ -8,9 +8,7 @@ import LogicalPlan.ReadF
 import monocle.Optional
 import monocle.function.Field1
 import monocle.std.tuple2._
-
 import pathy.{Path => PPath}, PPath._
-
 import scalaz._
 import scalaz.std.tuple._
 import scalaz.syntax.functor._

@@ -7,9 +7,7 @@ import quasar.fp._
 import quasar.fs.{Path => _, _}
 
 import com.mongodb.async.client.MongoClient
-
 import pathy._, Path._
-
 import scalaz.~>
 import scalaz.std.option._
 import scalaz.syntax.std.option._
@@ -19,7 +17,7 @@ import scalaz.concurrent.Task
 package object fs {
   type WFTask[A] = WorkflowExecErrT[Task, A]
 
-  final case class DefaultDb(run: String) extends AnyVal
+  final case class DefaultDb(run: String) extends scala.AnyVal
 
   object DefaultDb {
     def fromPath[T](path: Path[Abs, T, Sandboxed]): Option[DefaultDb] =
@@ -27,7 +25,7 @@ package object fs {
         .unite.headOption map (DefaultDb(_))
   }
 
-  final case class TmpPrefix(run: String) extends AnyVal
+  final case class TmpPrefix(run: String) extends scala.AnyVal
 
   def mongoDbFileSystem(
     client: MongoClient,

@@ -6,23 +6,14 @@ import quasar.fp._
 
 import scala.Ordering
 
+import monocle.Prism
 import pathy.{Path => PPath}, PPath._
-
 import scalaz._, Scalaz._
 
 sealed trait ManageFile[A]
 
 object ManageFile {
-  sealed trait MoveSemantics {
-    import MoveSemantics._
-
-    def fold[X](overwrite: => X, failIfExists: => X, failIfMissing: => X): X =
-      this match {
-        case Overwrite0     => overwrite
-        case FailIfExists0  => failIfExists
-        case FailIfMissing0 => failIfMissing
-      }
-  }
+  sealed trait MoveSemantics
 
   /** NB: Certain write operations' consistency is affected by faithful support
     *     of these semantics, thus their consistency/atomicity is as good as the
@@ -34,24 +25,44 @@ object ManageFile {
     *     additional primitive operations for the conditional write operations.
     */
   object MoveSemantics {
-    private case object Overwrite0 extends MoveSemantics
-    private case object FailIfExists0 extends MoveSemantics
-    private case object FailIfMissing0 extends MoveSemantics
+    object Case {
+      case object Overwrite extends MoveSemantics
+      case object FailIfExists extends MoveSemantics
+      case object FailIfMissing extends MoveSemantics
+    }
 
     /** Indicates the move operation should overwrite anything at the
       * destination, creating it if it doesn't exist.
       */
-    val Overwrite: MoveSemantics = Overwrite0
+    val Overwrite: MoveSemantics = Case.Overwrite
 
     /** Indicates the move should (atomically, if possible) fail if the
       * destination exists.
       */
-    val FailIfExists: MoveSemantics = FailIfExists0
+    val FailIfExists: MoveSemantics = Case.FailIfExists
 
     /** Indicates the move should (atomically, if possible) fail unless
       * the destination exists, overwriting it otherwise.
       */
-    val FailIfMissing: MoveSemantics = FailIfMissing0
+    val FailIfMissing: MoveSemantics = Case.FailIfMissing
+
+    val overwrite: Prism[MoveSemantics, Unit] =
+      Prism[MoveSemantics, Unit] {
+        case Case.Overwrite => Some(())
+        case _ => None
+      } (κ(Overwrite))
+
+    val failIfExists: Prism[MoveSemantics, Unit] =
+      Prism[MoveSemantics, Unit] {
+        case Case.FailIfExists => Some(())
+        case _ => None
+      } (κ(FailIfExists))
+
+    val failIfMissing: Prism[MoveSemantics, Unit] =
+      Prism[MoveSemantics, Unit] {
+        case Case.FailIfMissing => Some(())
+        case _ => None
+      } (κ(FailIfMissing))
   }
 
   sealed trait MoveScenario {
@@ -62,22 +73,30 @@ object ManageFile {
       f2f: (AbsFile[Sandboxed], AbsFile[Sandboxed]) => X
     ): X =
       this match {
-        case DirToDir0(sd, dd)   => d2d(sd, dd)
-        case FileToFile0(sf, df) => f2f(sf, df)
+        case Case.DirToDir(sd, dd)   => d2d(sd, dd)
+        case Case.FileToFile(sf, df) => f2f(sf, df)
       }
   }
 
   object MoveScenario {
-    private final case class DirToDir0(src: AbsDir[Sandboxed], dst: AbsDir[Sandboxed])
-      extends MoveScenario
-    private final case class FileToFile0(src: AbsFile[Sandboxed], dst: AbsFile[Sandboxed])
-      extends MoveScenario
+    object Case {
+      final case class DirToDir(src: AbsDir[Sandboxed], dst: AbsDir[Sandboxed])
+        extends MoveScenario
+      final case class FileToFile(src: AbsFile[Sandboxed], dst: AbsFile[Sandboxed])
+        extends MoveScenario
+    }
 
     val DirToDir: (AbsDir[Sandboxed], AbsDir[Sandboxed]) => MoveScenario =
-      DirToDir0(_, _)
+      Case.DirToDir(_, _)
 
     val FileToFile: (AbsFile[Sandboxed], AbsFile[Sandboxed]) => MoveScenario =
-      FileToFile0(_, _)
+      Case.FileToFile(_, _)
+
+    val dirToDir: Prism[MoveScenario, (AbsDir[Sandboxed], AbsDir[Sandboxed])] =
+      Prism((_: MoveScenario).fold((s, d) => (s, d).some, κ(none)))(DirToDir.tupled)
+
+    val fileToFile: Prism[MoveScenario, (AbsFile[Sandboxed], AbsFile[Sandboxed])] =
+      Prism((_: MoveScenario).fold(κ(none), (s, d) => (s, d).some))(FileToFile.tupled)
   }
 
   final case class Move(scenario: MoveScenario, semantics: MoveSemantics)

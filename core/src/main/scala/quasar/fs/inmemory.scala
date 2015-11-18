@@ -212,15 +212,21 @@ object inmemory {
     } yield r1
 
   private def moveFile(src: AbsFile[Sandboxed], dst: AbsFile[Sandboxed], s: MoveSemantics): InMemoryFs[FileSystemError \/ Unit] = {
+    import MoveSemantics.Case._
+
     val move0: InMemoryFs[FileSystemError \/ Unit] = for {
       v <- fileL(src) <:= None
       r <- v.cata(xs => (fileL(dst) := Some(xs)) as ().right, fsFileNotFound(src))
     } yield r
 
-    s.fold(
-      move0,
-      fileL(dst).st flatMap (_ ? fsFileExists[Unit](dst) | move0),
-      fileL(dst).st flatMap (_ ? move0 | fsFileNotFound(dst)))
+    s match {
+      case Overwrite =>
+        move0
+      case FailIfExists =>
+        fileL(dst).st flatMap (_ ? fsFileExists[Unit](dst) | move0)
+      case FailIfMissing =>
+        fileL(dst).st flatMap (_ ? move0 | fsFileNotFound(dst))
+    }
   }
 
   private def deleteDir(d: AbsDir[Sandboxed]): InMemoryFs[FileSystemError \/ Unit] =

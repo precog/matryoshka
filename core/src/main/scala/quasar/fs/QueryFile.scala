@@ -7,7 +7,6 @@ import quasar.fs.{Path => QPath}
 import quasar.recursionschemes._, Recursive.ops._
 
 import pathy.Path._
-
 import scalaz._, Scalaz._
 import scalaz.stream.Process
 
@@ -51,7 +50,9 @@ object QueryFile {
       for {
         out <- toExec(outFile)
         rf0 <- execute(plan, out)
-        rf1 =  rf0.fold(Temp, usr => if (usr == out) Temp(usr) else User(usr))
+        rf1 =  user.getOrModify(rf0)
+                 .map(usr => if (usr == out) Temp(usr) else User(usr))
+                 .merge
       } yield rf1
     }
 
@@ -74,7 +75,10 @@ object QueryFile {
         values(tmp) onComplete cleanup
       }
 
-      execute_(plan).liftM[Process] flatMap (_.fold(values, handleTemp))
+      execute_(plan).liftM[Process] flatMap {
+        case Case.User(f) => values(f)
+        case Case.Temp(f) => handleTemp(f)
+      }
     }
 
     /** Returns the path to the result of executing the given SQL^2 query. */

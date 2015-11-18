@@ -9,9 +9,7 @@ import quasar.fs._
 
 import com.mongodb.{MongoCommandException, MongoServerException}
 import com.mongodb.async.client.MongoClient
-
 import pathy.Path._
-
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 
@@ -68,9 +66,10 @@ object managefile {
 
   private type R[S, A] = Kleisli[MongoDb, S, A]
 
-  private def moveToRename(sem: MoveSemantics): RenameSemantics = {
-    import RenameSemantics._
-    sem.fold(Overwrite, FailIfExists, Overwrite)
+  private val moveToRename: MoveSemantics => RenameSemantics = {
+    case MoveSemantics.Case.Overwrite     => RenameSemantics.Overwrite
+    case MoveSemantics.Case.FailIfExists  => RenameSemantics.FailIfExists
+    case MoveSemantics.Case.FailIfMissing => RenameSemantics.Overwrite
   }
 
   private def moveDir(src: AbsDir[Sandboxed], dst: AbsDir[Sandboxed], sem: MoveSemantics)
@@ -126,17 +125,21 @@ object managefile {
     if (src == dst)
       collFromFileM(src) flatMap (srcColl =>
         collectionExists(srcColl).liftM[FileSystemErrT].ifM(
-          sem.fold(
-            ().point[MongoFsM],
-            MonadError[MongoE, FileSystemError].raiseError(PathError(FileExists(src))),
-            ().point[MongoFsM]),
+          if (MoveSemantics.failIfExists isMatching sem)
+            MonadError[MongoE, FileSystemError].raiseError(PathError(FileExists(src)))
+          else
+            ().point[MongoFsM]
+          ,
           MonadError[MongoE, FileSystemError].raiseError(PathError(FileNotFound(src)))))
     else
       for {
         srcColl <- collFromFileM(src)
         dstColl <- collFromFileM(dst)
         rSem    =  moveToRename(sem)
-        _       <- sem.fold(().point[MongoFsM], ().point[MongoFsM], ensureDstExists(dstColl))
+        _       <- if (MoveSemantics.failIfMissing isMatching sem)
+                     ensureDstExists(dstColl)
+                   else
+                     ().point[MongoFsM]
         _       <- reifyMongoErr(rename(srcColl, dstColl, rSem))
       } yield ()
   }

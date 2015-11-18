@@ -7,9 +7,8 @@ import quasar.fp._
 import scala.math.Ordering
 
 import argonaut._, Argonaut._
-
+import monocle.Prism
 import pathy.Path._
-
 import scalaz._, Scalaz._
 
 sealed trait Node {
@@ -20,8 +19,8 @@ sealed trait Node {
     pln: RelPath[Sandboxed] => X
   ): X =
     this match {
-      case Mount0(d) => mnt(d)
-      case Plain0(p) => pln(p)
+      case Case.Mount(d) => mnt(d)
+      case Case.Plain(p) => pln(p)
     }
 
   def dir: Option[RelDir[Sandboxed]] =
@@ -35,20 +34,28 @@ sealed trait Node {
 }
 
 object Node {
-  private final case class Mount0(d: RelDir[Sandboxed]) extends Node
-  private final case class Plain0(p: RelPath[Sandboxed]) extends Node
+  object Case {
+    final case class Mount(d: RelDir[Sandboxed]) extends Node
+    final case class Plain(p: RelPath[Sandboxed]) extends Node
+  }
 
   val Mount: RelDir[Sandboxed] => Node =
-    Mount0(_)
+    Case.Mount(_)
 
   val Plain: RelPath[Sandboxed] => Node =
-    Plain0(_)
+    Case.Plain(_)
 
   val Dir: RelDir[Sandboxed] => Node =
     Plain compose \/.left
 
   val File: RelFile[Sandboxed] => Node =
     Plain compose \/.right
+
+  val mount: Prism[Node, RelDir[Sandboxed]] =
+    Prism((_: Node).fold(_.some, κ(none)))(Mount)
+
+  val plain: Prism[Node, RelPath[Sandboxed]] =
+    Prism((_: Node).fold(κ(none), _.some))(Plain)
 
   def fromFirstSegmentOf(f: RelFile[Sandboxed]): Option[Node] =
     flatten(none, none, none,

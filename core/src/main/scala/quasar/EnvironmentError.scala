@@ -13,68 +13,88 @@ import scalaz.syntax.show._
 sealed trait EnvironmentError2
 
 object EnvironmentError2 {
-  final case class ConnectionFailed(message: String)
-    extends EnvironmentError2
-  final case class EnvPathError(error: PathError2)
-    extends EnvironmentError2
-  final case class InsufficientPermissions(message: String)
-    extends EnvironmentError2
-  final case class InvalidConfig(message: String)
-    extends EnvironmentError2
-  final case class InvalidCredentials(message: String)
-    extends EnvironmentError2
-  final case class UnsupportedVersion(backendName: String, version: List[Int])
-    extends EnvironmentError2
+  object Case {
+    final case class ConnectionFailed(message: String)
+      extends EnvironmentError2
+    final case class PathError(error: PathError2)
+      extends EnvironmentError2
+    final case class InsufficientPermissions(message: String)
+      extends EnvironmentError2
+    final case class InvalidConfig(message: String)
+      extends EnvironmentError2
+    final case class InvalidCredentials(message: String)
+      extends EnvironmentError2
+    final case class UnsupportedVersion(backendName: String, version: List[Int])
+      extends EnvironmentError2
+  }
+
+  val ConnectionFailed: String => EnvironmentError2 =
+    Case.ConnectionFailed(_)
+
+  val PathError: PathError2 => EnvironmentError2 =
+    Case.PathError(_)
+
+  val InsufficientPermissions: String => EnvironmentError2 =
+    Case.InsufficientPermissions(_)
+
+  val InvalidConfig: String => EnvironmentError2 =
+    Case.InvalidConfig(_)
+
+  val InvalidCredentials: String => EnvironmentError2 =
+    Case.InvalidCredentials(_)
+
+  val UnsupportedVersion: (String, List[Int]) => EnvironmentError2 =
+    Case.UnsupportedVersion(_, _)
 
   val connectionFailed: Prism[EnvironmentError2, String] =
     Prism[EnvironmentError2, String] {
-      case ConnectionFailed2(msg) => Some(msg)
+      case Case.ConnectionFailed(msg) => Some(msg)
       case _ => None
-    } (ConnectionFailed2(_))
+    } (ConnectionFailed)
 
-  val envPathError: Prism[EnvironmentError2, PathError2] =
+  val pathError: Prism[EnvironmentError2, PathError2] =
     Prism[EnvironmentError2, PathError2] {
-      case EnvPathError2(err) => Some(err)
+      case Case.PathError(err) => Some(err)
       case _ => None
-    } (EnvPathError2(_))
+    } (PathError)
 
   val insufficientPermissions: Prism[EnvironmentError2, String] =
     Prism[EnvironmentError2, String] {
-      case InsufficientPermissions2(msg) => Some(msg)
+      case Case.InsufficientPermissions(msg) => Some(msg)
       case _ => None
-    } (InsufficientPermissions2(_))
+    } (InsufficientPermissions)
 
   val invalidConfig: Prism[EnvironmentError2, String] =
     Prism[EnvironmentError2, String] {
-      case InvalidConfig2(msg) => Some(msg)
+      case Case.InvalidConfig(msg) => Some(msg)
       case _ => None
-    } (InvalidConfig2(_))
+    } (InvalidConfig)
 
   val invalidCredentials: Prism[EnvironmentError2, String] =
     Prism[EnvironmentError2, String] {
-      case InvalidCredentials2(msg) => Some(msg)
+      case Case.InvalidCredentials(msg) => Some(msg)
       case _ => None
-    } (InvalidCredentials2(_))
+    } (InvalidCredentials)
 
   val unsupportedVersion: Prism[EnvironmentError2, (String, List[Int])] =
     Prism[EnvironmentError2, (String, List[Int])] {
-      case UnsupportedVersion2(name, version) => Some((name, version))
+      case Case.UnsupportedVersion(name, version) => Some((name, version))
       case _ => None
-    } ((UnsupportedVersion2(_, _)).tupled)
+    } (UnsupportedVersion.tupled)
 
   implicit val environmentErrorShow: Show[EnvironmentError2] =
     Show.shows {
-      case ConnectionFailed2(msg) =>
+      case Case.ConnectionFailed(msg) =>
         s"Connection failed: $msg"
-      case EnvPathError2(error) =>
+      case Case.PathError(error) =>
         error.shows
-      case InsufficientPermissions2(msg) =>
+      case Case.InsufficientPermissions(msg) =>
         s"Insufficient permissions: $msg"
-      case InvalidConfig2(msg) =>
+      case Case.InvalidConfig(msg) =>
         s"Invalid configuration: $msg"
-      case InvalidCredentials2(msg) =>
+      case Case.InvalidCredentials(msg) =>
         s"Invalid credentials: $msg"
-      case UnsupportedVersion2(name, version) =>
+      case Case.UnsupportedVersion(name, version) =>
         s"Unsupported $name version: ${version.mkString(".")}"
     }
 
@@ -83,56 +103,14 @@ object EnvironmentError2 {
       Json(("error" := message) :: detail.toList.map("errorDetail" := _): _*)
 
     EncodeJson[EnvironmentError2] {
-      case ConnectionFailed2(msg) =>
+      case Case.ConnectionFailed(msg) =>
         format("Connection failed.", Some(msg))
-      case InsufficientPermissions2(msg) =>
+      case Case.InsufficientPermissions(msg) =>
         format("Database user does not have permissions on database.", Some(msg))
-      case InvalidCredentials2(msg) =>
+      case Case.InvalidCredentials(msg) =>
         format("Invalid username and/or password specified.", Some(msg))
       case err =>
         format(err.shows, None)
     }
   }
-}
-
-object ConnectionFailed2 {
-  def apply(message: String): EnvironmentError2 =
-    EnvironmentError2.ConnectionFailed(message)
-  def unapply(obj: EnvironmentError2): Option[String] =
-    EnvironmentError2.connectionFailed.getOption(obj)
-}
-
-object EnvPathError2 {
-  def apply(pathError: PathError2): EnvironmentError2 =
-    EnvironmentError2.EnvPathError(pathError)
-  def unapply(obj: EnvironmentError2): Option[PathError2] =
-    EnvironmentError2.envPathError.getOption(obj)
-}
-
-object InsufficientPermissions2 {
-  def apply(message: String): EnvironmentError2 =
-    EnvironmentError2.InsufficientPermissions(message)
-  def unapply(obj: EnvironmentError2): Option[String] =
-    EnvironmentError2.insufficientPermissions.getOption(obj)
-}
-
-object InvalidConfig2 {
-  def apply(message: String): EnvironmentError2 =
-    EnvironmentError2.InvalidConfig(message)
-  def unapply(obj: EnvironmentError2): Option[String] =
-    EnvironmentError2.invalidConfig.getOption(obj)
-}
-
-object InvalidCredentials2 {
-  def apply(message: String): EnvironmentError2 =
-    EnvironmentError2.InvalidCredentials(message)
-  def unapply(obj: EnvironmentError2): Option[String] =
-    EnvironmentError2.invalidCredentials.getOption(obj)
-}
-
-object UnsupportedVersion2 {
-  def apply(name: String, version: List[Int]): EnvironmentError2 =
-    EnvironmentError2.UnsupportedVersion(name, version)
-  def unapply(obj: EnvironmentError2): Option[(String, List[Int])] =
-    EnvironmentError2.unsupportedVersion.getOption(obj)
 }

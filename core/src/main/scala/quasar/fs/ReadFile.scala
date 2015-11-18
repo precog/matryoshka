@@ -3,16 +3,16 @@ package fs
 
 import quasar.Predef._
 
+import pathy.Path._
 import scalaz._
 import scalaz.std.anyVal._
 import scalaz.syntax.monad._
 import scalaz.stream._
-import pathy.Path._
 
 sealed trait ReadFile[A]
 
 object ReadFile {
-  final case class ReadHandle(run: Long) extends AnyVal
+  final case class ReadHandle(run: Long) extends scala.AnyVal
 
   object ReadHandle {
     implicit val readHandleShow: Show[ReadHandle] =

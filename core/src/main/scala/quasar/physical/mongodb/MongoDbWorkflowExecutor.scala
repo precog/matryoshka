@@ -81,6 +81,7 @@ private[mongodb] final class MongoDbWorkflowExecutor
 }
 
 private[mongodb] object MongoDbWorkflowExecutor {
+  import EnvironmentError2._
 
   /** The minimum MongoDb version required to be able to execute `Workflow`s. */
   val MinMongoDbVersion = List(2, 6, 0)
@@ -90,13 +91,13 @@ private[mongodb] object MongoDbWorkflowExecutor {
     new (MongoDb ~> EnvErr2T[MongoDb, ?]) {
       def apply[A](m: MongoDb[A]) = EitherT(m.attemptMongo.run flatMap {
         case -\/(ex: MongoSocketOpenException) =>
-          ConnectionFailed2(ex.getMessage).left.point[MongoDb]
+          ConnectionFailed(ex.getMessage).left.point[MongoDb]
 
         case -\/(ex: MongoSocketException) =>
-          ConnectionFailed2(ex.getMessage).left.point[MongoDb]
+          ConnectionFailed(ex.getMessage).left.point[MongoDb]
 
         case -\/(ex) if ex.getMessage contains "Command failed with error 18: 'auth failed'" =>
-          InvalidCredentials2(ex.getMessage).left.point[MongoDb]
+          InvalidCredentials(ex.getMessage).left.point[MongoDb]
 
         case -\/(ex) =>
           MongoDb.fail(ex)

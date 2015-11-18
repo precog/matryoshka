@@ -5,15 +5,14 @@ import quasar.Predef._
 import quasar.fp._
 
 import monocle.std.{disjunction => D}
-
+import pathy.Path._
 import scalaz._, Scalaz._
 import scalaz.stream._
-import pathy.Path._
 
 sealed trait WriteFile[A]
 
 object WriteFile {
-  final case class WriteHandle(run: Long) extends AnyVal
+  final case class WriteHandle(run: Long) extends scala.AnyVal
 
   object WriteHandle {
     implicit val writeHandleShow: Show[WriteHandle] =

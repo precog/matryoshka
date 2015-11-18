@@ -6,7 +6,7 @@ import quasar.Predef._
 import scalaz._
 import scalaz.Tags.{Multiplication => Mult}
 
-final class Positive private (val run: Long) {
+final class Positive private (val run: Long) extends scala.AnyVal {
   def plus(other: Positive): Positive =
     new Positive(run + other.run)
 
