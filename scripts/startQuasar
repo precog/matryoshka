@@ -18,7 +18,7 @@ CONFIG_FILE="$2"
 CONTENT_DIR="$3"
 CONTENT_LOC="$4"
 
-pid=$(ps -ewwo pid,args | egrep 'java .*-jar .*web_.*one-jar\.jar' | egrep -v egrep | awk '{print $1}')
+pid=$(ps -ewwo pid,args | egrep 'java .*quasar-config.json.*' | egrep -v egrep | awk '{print $1}')
 if [ "$pid" != "" ]; then
   echo "Quasar is running; killing process $pid"
   kill -9 $pid
