@@ -19,7 +19,6 @@ package quasar
 import quasar.Predef._
 import quasar.fp._
 import quasar.recursionschemes.Recursive.ops._
-import quasar.recursionschemes.cofree._
 
 import scala.Function0
 
@@ -27,7 +26,7 @@ import scalaz.{Tree => ZTree, Node => _, _}, Id.Id, Scalaz._
 import simulacrum.typeclass
 
 /** Generalized folds, unfolds, and refolds. */
-package object recursionschemes {
+package object recursionschemes extends CofreeInstances with FreeInstances {
 
   def cofCataM[S[_]: Traverse, M[_]: Monad, A, B](t: Cofree[S, A])(f: (A, S[B]) => M[B]): M[B] =
     t.tail.traverse(cofCataM(_)(f)).flatMap(f(t.head, _))
