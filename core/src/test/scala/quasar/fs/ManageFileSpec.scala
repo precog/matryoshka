@@ -13,7 +13,7 @@ import scalaz._, Scalaz._
 import scalaz.stream._
 
 class ManageFileSpec extends Specification with ScalaCheck with FileSystemFixture {
-  import inmemory._, DataGen._, PathyGen._
+  import InMemory._, DataGen._, PathyGen._
 
   "ManageFile" should {
     "renameFile" >> {

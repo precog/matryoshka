@@ -8,13 +8,13 @@ import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 import pathy.Path._
 
-/** In-Memory Read/Write/ManageFile interpreters, useful for testing/stubbing
+/** In-Memory FileSystem interpreters, useful for testing/stubbing
   * when a "real" interpreter isn't needed or desired.
   *
   * NB: Since this is in-memory, careful with writing large amounts of data to
   *     the file system.
   */
-object inmemory {
+object InMemory {
   import ReadFile._, WriteFile._, ManageFile._, QueryFile._
   import FileSystemError._, PathError2._
 

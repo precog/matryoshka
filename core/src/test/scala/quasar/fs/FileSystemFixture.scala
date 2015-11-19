@@ -14,7 +14,7 @@ import scalaz.stream._
 import scalaz.concurrent.Task
 
 trait FileSystemFixture {
-  import FileSystemFixture._, inmemory._
+  import FileSystemFixture._, InMemory._
 
   // NB: These are mostly to make composition/implicit search nicer
   type F[A]   = Free[FileSystem, A]

@@ -102,8 +102,8 @@ object FileSystemTest {
   }
 
   val inMemUT: Task[FileSystemUT[FileSystem]] = {
-    lazy val f = inmemory.runStatefully(inmemory.InMemState.empty)
-                   .map(_ compose inmemory.fileSystem)
+    lazy val f = InMemory.runStatefully(InMemory.InMemState.empty)
+                   .map(_ compose InMemory.fileSystem)
                    .run
 
     Task.delay(FileSystemUT("in-memory", f, rootDir))

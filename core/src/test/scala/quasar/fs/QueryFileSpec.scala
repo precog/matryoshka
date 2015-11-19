@@ -9,7 +9,7 @@ import org.specs2.ScalaCheck
 import pathy.Path._
 
 class QueryFileSpec extends Specification with ScalaCheck with FileSystemFixture {
-  import inmemory._, PathyGen._, FileSystemError._, PathError2._
+  import InMemory._, PathyGen._, FileSystemError._, PathError2._
 
   "QueryFile" should {
     "lsAll" >> {
