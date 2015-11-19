@@ -14,11 +14,11 @@ import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 
 object managefile {
-  import ManageFile._, FileSystemError._, PathError2._, MongoDb._, fsops._
+  import ManageFile._, FileSystemError._, PathError2._, MongoDbIO._, fsops._
 
   type ManageIn           = (DefaultDb, TmpPrefix, TaskRef[Long])
   type ManageInT[F[_], A] = ReaderT[F, ManageIn, A]
-  type MongoManage[A]     = ManageInT[MongoDb, A]
+  type MongoManage[A]     = ManageInT[MongoDbIO, A]
 
   /** TODO: There are still some questions regarding Path
     *   1) We should assume all paths will be canonicalized and can do so
@@ -64,7 +64,7 @@ object managefile {
 
   ////
 
-  private type R[S, A] = Kleisli[MongoDb, S, A]
+  private type R[S, A] = Kleisli[MongoDbIO, S, A]
 
   private val moveToRename: MoveSemantics => RenameSemantics = {
     case MoveSemantics.Case.Overwrite     => RenameSemantics.Overwrite
@@ -95,25 +95,25 @@ object managefile {
     /** Error codes obtained from MongoDB `renameCollection` docs:
       * See http://docs.mongodb.org/manual/reference/command/renameCollection/
       */
-    def reifyMongoErr(m: MongoDb[Unit]): MongoFsM[Unit] =
+    def reifyMongoErr(m: MongoDbIO[Unit]): MongoFsM[Unit] =
       EitherT(m.attempt flatMap {
         case -\/(e: MongoServerException) if e.getCode == 10026 =>
-          PathError(FileNotFound(src)).left.point[MongoDb]
+          PathError(FileNotFound(src)).left.point[MongoDbIO]
 
         case -\/(e: MongoServerException) if e.getCode == 10027 =>
-          PathError(FileExists(dst)).left.point[MongoDb]
+          PathError(FileExists(dst)).left.point[MongoDbIO]
 
         case -\/(e: MongoCommandException) if e.getErrorMessage == srcNotFoundErr =>
-          PathError(FileNotFound(src)).left.point[MongoDb]
+          PathError(FileNotFound(src)).left.point[MongoDbIO]
 
         case -\/(e: MongoCommandException) if e.getErrorMessage == dstExistsErr =>
-          PathError(FileExists(dst)).left.point[MongoDb]
+          PathError(FileExists(dst)).left.point[MongoDbIO]
 
         case -\/(t) =>
           fail(t)
 
         case \/-(_) =>
-          ().right.point[MongoDb]
+          ().right.point[MongoDbIO]
       })
 
     def ensureDstExists(dstColl: Collection): MongoFsM[Unit] =

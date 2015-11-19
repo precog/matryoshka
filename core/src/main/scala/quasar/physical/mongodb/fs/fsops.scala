@@ -14,8 +14,8 @@ import scalaz.syntax.monad._
 import scalaz.syntax.monadError._
 
 object fsops {
-  type MongoFsM[A]  = FileSystemErrT[MongoDb, A]
-  type MongoE[A, B] = EitherT[MongoDb, A, B]
+  type MongoFsM[A]  = FileSystemErrT[MongoDbIO, A]
+  type MongoE[A, B] = EitherT[MongoDbIO, A, B]
 
   import FileSystemError._, PathError2._
 
@@ -23,7 +23,7 @@ object fsops {
   def collectionsInDir(dir: AbsDir[Sandboxed]): MongoFsM[Vector[Collection]] =
     for {
       c  <- collFromDirM(dir)
-      cs <- MongoDb.collectionsIn(c.databaseName)
+      cs <- MongoDbIO.collectionsIn(c.databaseName)
               .filter(_.collectionName startsWith c.collectionName)
               .runLog.map(_.toVector).liftM[FileSystemErrT]
       _  <- if (cs.isEmpty) PathError(DirNotFound(dir)).raiseError[MongoE, Unit]
@@ -38,11 +38,11 @@ object fsops {
 
   /** The collection represented by the given directory. */
   def collFromDirM(dir: AbsDir[Sandboxed]): MongoFsM[Collection] =
-    EitherT(Collection.fromDir(dir).leftMap(PathError).point[MongoDb])
+    EitherT(Collection.fromDir(dir).leftMap(PathError).point[MongoDbIO])
 
   /** The collection represented by the given file. */
   def collFromFileM(file: AbsFile[Sandboxed]): MongoFsM[Collection] =
-    EitherT(Collection.fromFile(file).leftMap(PathError).point[MongoDb])
+    EitherT(Collection.fromFile(file).leftMap(PathError).point[MongoDbIO])
 
   /** An error indicating that the directory refers to an ancestor of `/`.
     *

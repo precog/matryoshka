@@ -153,19 +153,19 @@ trait WorkflowExecutor[F[_]] {
 object WorkflowExecutor {
   import Workflow.Crystallized
 
-  /** A `WorkflowExecutor` that executes a `Workflow` in the `MongoDb` monad. */
-  val mongoDb: EnvErr2T[MongoDb, WorkflowExecutor[MongoDb]] = {
+  /** A `WorkflowExecutor` that executes a `Workflow` in the `MongoDbIO` monad. */
+  val mongoDb: EnvErr2T[MongoDbIO, WorkflowExecutor[MongoDbIO]] = {
     import MongoDbWorkflowExecutor._
     import EnvironmentError2._
 
-    type E[A, B] = EitherT[MongoDb, A, B]
-    type M[A]    = EnvErr2T[MongoDb, A]
+    type E[A, B] = EitherT[MongoDbIO, A, B]
+    type M[A]    = EnvErr2T[MongoDbIO, A]
 
-    liftEnvErr(MongoDb.serverVersion) flatMap { v =>
+    liftEnvErr(MongoDbIO.serverVersion) flatMap { v =>
       if (v >= MinMongoDbVersion)
-        (new MongoDbWorkflowExecutor: WorkflowExecutor[MongoDb]).point[M]
+        (new MongoDbWorkflowExecutor: WorkflowExecutor[MongoDbIO]).point[M]
       else
-        UnsupportedVersion("MongoDB", v).raiseError[E, WorkflowExecutor[MongoDb]]
+        UnsupportedVersion("MongoDB", v).raiseError[E, WorkflowExecutor[MongoDbIO]]
     }
   }
 

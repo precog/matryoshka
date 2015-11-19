@@ -21,7 +21,6 @@ import quasar.javascript.Js
 import quasar.namegen._
 
 import com.mongodb.MongoException
-
 import scalaz._
 
 package object mongodb {

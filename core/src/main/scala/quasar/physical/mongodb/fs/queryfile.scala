@@ -10,9 +10,7 @@ import quasar.javascript._
 import quasar.recursionschemes.{Fix, Recursive}
 
 import com.mongodb.async.client.MongoClient
-
 import pathy.Path._
-
 import scalaz.{Node => _, _}, Scalaz._
 import scalaz.stream._
 import scalaz.concurrent.Task
@@ -25,9 +23,9 @@ object queryfile {
   import LogicalPlan.ReadF
   import Recursive.ops._
 
-  type MongoQuery[A] = WorkflowExecErrT[MongoDb, A]
+  type MongoQuery[A] = WorkflowExecErrT[MongoDbIO, A]
 
-  val interpret: EnvErr2T[MongoDb, QueryFile ~> MongoQuery] =
+  val interpret: EnvErr2T[MongoDbIO, QueryFile ~> MongoQuery] =
     WorkflowExecutor.mongoDb map { execMongo =>
       val execJs = WorkflowExecutor.javaScript
 
@@ -40,7 +38,7 @@ object queryfile {
               dst    <- EitherT(Collection.fromFile(out)
                                   .leftMap(PathError)
                                   .point[F])
-              salt   <- liftG(MongoDb.liftTask(NameGenerator.salt)
+              salt   <- liftG(MongoDbIO.liftTask(NameGenerator.salt)
                                 .liftM[WorkflowExecErrT])
               prefix =  s"tmp.gen_${salt}"
               _      <- writeJsLog(wf, dst, execJs) run prefix
@@ -55,7 +53,7 @@ object queryfile {
                   .run
 
               case None if depth(dir) == 0 =>
-                MongoDb.collections
+                MongoDbIO.collections
                   .map(collectionToNode(dir))
                   .pipe(process1.stripNone)
                   .runLog
@@ -68,9 +66,9 @@ object queryfile {
       }
     }
 
-  def run(client: MongoClient): EnvErr2T[MongoDb, QueryFile ~> MongoQuery] => EnvErr2T[Task, QueryFile ~> WFTask] = {
-    val f = Hoist[EnvErr2T].hoist(MongoDb.runNT(client))
-    val g = Hoist[WorkflowExecErrT].hoist(MongoDb.runNT(client))
+  def run(client: MongoClient): EnvErr2T[MongoDbIO, QueryFile ~> MongoQuery] => EnvErr2T[Task, QueryFile ~> WFTask] = {
+    val f = Hoist[EnvErr2T].hoist(MongoDbIO.runNT(client))
+    val g = Hoist[WorkflowExecErrT].hoist(MongoDbIO.runNT(client))
 
     interp => f(interp map (g compose _))
   }
@@ -116,7 +114,7 @@ object queryfile {
   private def execWorkflow(
     wf: Crystallized,
     dst: Collection,
-    execMongo: WorkflowExecutor[MongoDb]
+    execMongo: WorkflowExecutor[MongoDbIO]
   ) = ReaderT[G, String, Collection] { tmpPrefix =>
     liftG(EitherT(execMongo.execute(wf, dst).run.run(tmpPrefix).eval(0)))
   }
@@ -125,8 +123,8 @@ object queryfile {
     def checkPathExists(p: QPath): MongoFsM[Unit] = for {
       coll <- EitherT(Collection.fromPath(p)
                 .leftMap(e => PathError(InvalidPath(qPathToPathy(p), e.message)))
-                .point[MongoDb])
-      _    <- EitherT(MongoDb.collectionExists(coll)
+                .point[MongoDbIO])
+      _    <- EitherT(MongoDbIO.collectionExists(coll)
                 .map(_ either (()) or PathError(PathNotFound(qPathToPathy(p)))))
     } yield ()
 

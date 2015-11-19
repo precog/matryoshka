@@ -9,19 +9,19 @@ import quasar.fs._
 
 import scala.collection.JavaConverters._
 
-import org.bson.Document
 import com.mongodb.async.AsyncBatchCursor
 import com.mongodb.async.client.MongoClient
+import org.bson.Document
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 
 object readfile {
-  import ReadFile._, FileSystemError._, PathError2._, MongoDb._
+  import ReadFile._, FileSystemError._, PathError2._, MongoDbIO._
 
   type BsonCursor          = AsyncBatchCursor[Document]
   type ReadState           = (Long, Map[ReadHandle, BsonCursor])
   type ReadStateT[F[_], A] = ReaderT[F, TaskRef[ReadState], A]
-  type MongoRead[A]        = ReadStateT[MongoDb, A]
+  type MongoRead[A]        = ReadStateT[MongoDbIO, A]
 
   /** Interpret the `ReadFile` algebra using MongoDB */
   val interpret: ReadFile ~> MongoRead = new (ReadFile ~> MongoRead) {

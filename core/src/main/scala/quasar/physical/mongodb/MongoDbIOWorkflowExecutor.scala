@@ -13,27 +13,27 @@ import org.bson.Document
 
 import scalaz._, Scalaz._
 
-/** Implementation class for a WorkflowExecutor in the `MongoDb` monad. */
+/** Implementation class for a WorkflowExecutor in the `MongoDbIO` monad. */
 private[mongodb] final class MongoDbWorkflowExecutor
-  extends WorkflowExecutor[MongoDb] {
+  extends WorkflowExecutor[MongoDbIO] {
 
   def aggregate(src: Collection, pipeline: Pipeline) =
-    MongoDb.aggregate_(src, pipeline map (_.bson.repr), true)
+    MongoDbIO.aggregate_(src, pipeline map (_.bson.repr), true)
 
   def drop(c: Collection) =
-    MongoDb.dropCollection(c)
+    MongoDbIO.dropCollection(c)
 
   def insert(dst: Collection, values: List[Bson.Doc]) =
-    MongoDb.insert(dst, values map (_.repr))
+    MongoDbIO.insert(dst, values map (_.repr))
 
   def mapReduce(src: Collection, dstCollectionName: String, mr: MapReduce) = {
     val lim =
       mr.limit.cata(
         l => Positive(l).cata(
-          _.some.point[MongoDb],
-          MongoDb.fail(new IllegalArgumentException(
+          _.some.point[MongoDbIO],
+          MongoDbIO.fail(new IllegalArgumentException(
             s"limit must be a positive number: $l"))),
-        none[Positive].point[MongoDb])
+        none[Positive].point[MongoDbIO])
 
     val maybeScope =
       if (mr.scope.isEmpty)
@@ -63,47 +63,47 @@ private[mongodb] final class MongoDbWorkflowExecutor
         MapReduce.OutputCollection(
           dstCollectionName,
           Some(MapReduce.ActionedOutput(act, db, sharded))
-        ).point[MongoDb]
+        ).point[MongoDbIO]
 
       case Some(MapReduce.Inline) =>
-        MongoDb.fail(new IllegalArgumentException(
+        MongoDbIO.fail(new IllegalArgumentException(
           s"Destination collection, `$dstCollectionName`, given but MapReduce specified inline output."))
 
       case None =>
-        MapReduce.OutputCollection(dstCollectionName, None).point[MongoDb]
+        MapReduce.OutputCollection(dstCollectionName, None).point[MongoDbIO]
     }
 
-    (outColl |@| cfg)(MongoDb.mapReduce_(src, _, _)).join
+    (outColl |@| cfg)(MongoDbIO.mapReduce_(src, _, _)).join
   }
 
   def rename(src: Collection, dst: Collection) =
-    MongoDb.rename(src, dst, RenameSemantics.Overwrite)
+    MongoDbIO.rename(src, dst, RenameSemantics.Overwrite)
 }
 
 private[mongodb] object MongoDbWorkflowExecutor {
   import EnvironmentError2._
 
-  /** The minimum MongoDb version required to be able to execute `Workflow`s. */
+  /** The minimum MongoDbIO version required to be able to execute `Workflow`s. */
   val MinMongoDbVersion = List(2, 6, 0)
 
   /** Catch MongoExceptions and attempt to convert to EnvironmentError2. */
-  val liftEnvErr: MongoDb ~> EnvErr2T[MongoDb, ?] =
-    new (MongoDb ~> EnvErr2T[MongoDb, ?]) {
-      def apply[A](m: MongoDb[A]) = EitherT(m.attemptMongo.run flatMap {
+  val liftEnvErr: MongoDbIO ~> EnvErr2T[MongoDbIO, ?] =
+    new (MongoDbIO ~> EnvErr2T[MongoDbIO, ?]) {
+      def apply[A](m: MongoDbIO[A]) = EitherT(m.attemptMongo.run flatMap {
         case -\/(ex: MongoSocketOpenException) =>
-          ConnectionFailed(ex.getMessage).left.point[MongoDb]
+          ConnectionFailed(ex.getMessage).left.point[MongoDbIO]
 
         case -\/(ex: MongoSocketException) =>
-          ConnectionFailed(ex.getMessage).left.point[MongoDb]
+          ConnectionFailed(ex.getMessage).left.point[MongoDbIO]
 
         case -\/(ex) if ex.getMessage contains "Command failed with error 18: 'auth failed'" =>
-          InvalidCredentials(ex.getMessage).left.point[MongoDb]
+          InvalidCredentials(ex.getMessage).left.point[MongoDbIO]
 
         case -\/(ex) =>
-          MongoDb.fail(ex)
+          MongoDbIO.fail(ex)
 
         case \/-(a) =>
-          a.right.point[MongoDb]
+          a.right.point[MongoDbIO]
       })
     }
 }

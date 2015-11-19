@@ -13,11 +13,11 @@ import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 
 object writefile {
-  import WriteFile._, FileSystemError._, MongoDb._
+  import WriteFile._, FileSystemError._, MongoDbIO._
 
   type WriteState           = (Long, Map[WriteHandle, Collection])
   type WriteStateT[F[_], A] = ReaderT[F, TaskRef[WriteState], A]
-  type MongoWrite[A]        = WriteStateT[MongoDb, A]
+  type MongoWrite[A]        = WriteStateT[MongoDbIO, A]
 
   /** Interpret the `WriteFile` algebra using MongoDB. */
   val interpret: WriteFile ~> MongoWrite = new (WriteFile ~> MongoWrite) {
