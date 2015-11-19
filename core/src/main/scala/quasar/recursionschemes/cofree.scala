@@ -23,7 +23,7 @@ import RenderTree.ops._
 import scalaz._
 import scalaz.syntax.functor._
 
-object cofree {
+trait CofreeInstances {
   implicit def cofreeRecursive[A]: Recursive[Cofree[?[_], A]] =
     new Recursive[Cofree[?[_], A]] {
       def project[F[_]](t: Cofree[F, A]) = t.tail
@@ -43,3 +43,5 @@ object cofree {
       }
     }
 }
+
+object cofree extends CofreeInstances

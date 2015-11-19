@@ -1,6 +1,6 @@
 import quasar.Predef.{Long, String, Vector}
 import quasar.fp._
-import quasar.recursionschemes._, cofree._, Fix._, Recursive.ops._, FunctorT.ops._
+import quasar.recursionschemes._, Fix._, Recursive.ops._, FunctorT.ops._
 import quasar.sql._
 
 import scalaz._

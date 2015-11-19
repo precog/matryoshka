@@ -19,7 +19,7 @@ package quasar
 import quasar.Predef._
 import quasar.fp._
 import quasar.fs.Path._
-import quasar.recursionschemes._, cofree._, Fix._, Recursive.ops._, FunctorT.ops._
+import quasar.recursionschemes._, Fix._, Recursive.ops._, FunctorT.ops._
 import quasar.sql._
 
 import scalaz._, Scalaz._

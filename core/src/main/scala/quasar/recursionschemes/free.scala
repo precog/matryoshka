@@ -17,7 +17,7 @@
 package quasar
 package recursionschemes
 
-object free {
+trait FreeInstances {
   // TODO[scalaz-7.2]: Enable these once the `Functor` constraint is gone from `Free`
 
   // implicit def FreeTraverseT[A]: TraverseT[Free[?[_], A]] =
@@ -32,3 +32,5 @@ object free {
   //     def embed[F[_]: Functor](t: F[Free[F, A]]) = Free.liftF(t).join
   //   }
 }
+
+object free extends FreeInstances
