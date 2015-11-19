@@ -13,7 +13,7 @@ import Errors._
 
 class ErrorConditions extends BackendTest with NoTimeConversions with DisjunctionMatchers {
 
-  backendShould { (prefix, backend, backendName) =>
+  backendShould { (prefix, _, backend, backendName) =>
     "Backend" should {
       "error out consistently" in {
         def testQueryOnMissingCollection(produceQueryFromCollectionPath: String => String) = {

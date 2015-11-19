@@ -1,6 +1,6 @@
 {
     "name": "servlets with and without init-param (pending #465, #467)",
-    "backends": { "mongodb_2_6": "pending", "mongodb_3_0": "pending" },
+    "backends": { "mongodb_2_6": "pending", "mongodb_3_0": "pending", "mongodb_read_only": "pending" },
     "data": "webapp.data",
     "query": "select \"servlet-name\", \"init-param\" is not null from webapp where \"init-param\" is null or \"init-param\".\"betaServer\"",
     "predicate": "containsExactly",

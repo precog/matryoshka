@@ -1,7 +1,7 @@
 {
   "name": "simple $project with one renamed field and one unchanged (see #598)",
 
-  "backends": { "mongodb_2_6": "pending", "mongodb_3_0": "pending" },
+  "backends": { "mongodb_2_6": "pending", "mongodb_3_0": "pending", "mongodb_read_only": "pending" },
 
   "data": "zips.data",
 

@@ -5,7 +5,7 @@ jdk: oraclejdk8
 sudo: false
 before_install:
 - "./scripts/installMongo mongodb-linux-x86_64-2.6.9 mongo2.6 27018"
-- "./scripts/installMongo mongodb-linux-x86_64-3.0.4 mongo3.0 27019"
+- "./scripts/installMongo mongodb-linux-x86_64-3.0.4 mongo3.0 27019 --auth"
 script: "./scripts/build"
 after_success:
 - "./scripts/publishJarIfMaster"

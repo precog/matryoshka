@@ -11,7 +11,7 @@ import quasar.specs2.DisjunctionMatchers
 
 class InteractiveTest extends BackendTest with NoTimeConversions with DisjunctionMatchers {
 
-  backendShould { (prefix, backend, name) =>
+  backendShould { (prefix, _, backend, name) =>
 
     def assertNotThere(file: Path) = {
       val listings = interactive.ls(backend, prefix).run

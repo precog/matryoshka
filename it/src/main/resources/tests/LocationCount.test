@@ -1,6 +1,6 @@
 {
     "name": "job postings by city ",
-    "backends": { "mongodb_2_6": "pending", "mongodb_3_0": "pending" },
+    "backends": { "mongodb_2_6": "pending", "mongodb_3_0": "pending", "mongodb_read_only": "pending" },
     "data": "jobs_jobinfo.data",
     "query": "select count(PositionHeader.PositionLocation.LocationCity) as counter,
               PositionHeader.PositionLocation.LocationCity as location
