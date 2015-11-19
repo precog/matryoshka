@@ -60,11 +60,14 @@ object Utils {
                             restartServer = unexpectedRestart,
                             configChanged = recordConfigChange,
                             webConfigLens = Server.webConfigLens)
-    val srv = Server.createServer(
+    val srv = Server.createServers(
       Server.webConfigLens.wcPort.set(port)(config),
       5.seconds,
-      api.AllServices).run.run
-    try { body(client, () => reloads.toList) } finally { srv.traverse_(_.shutdown.void).run }
+      api.AllServices.map(_.toList)).run.run
+    try { body(client, () => reloads.toList) } finally {
+      Traverse[EnvironmentError \/ ?].compose[List].compose[(Int, ?)].compose[Throwable \/ ?]
+        .traverse(srv)(_.shutdown).void.run
+    }
   }
 
   /** Handler for response bodies containing newline-separated JSON documents, for use with Dispatch. */
@@ -1825,7 +1828,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   "/server" should {
     def withServerExpectingRestart[A, B](backend: Backend, config: WebConfig, timeoutMillis: Long = 10000, port: Int = 8888)
                                         (causeRestart: Req => A)(afterRestart: => B): B = {
-      type S = (Int, org.http4s.server.Server)
+      type S = ServerOps.Servers
 
       val client = dispatch.host("localhost", port)
 
