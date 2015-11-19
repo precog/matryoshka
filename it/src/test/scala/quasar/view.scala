@@ -37,20 +37,31 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
       Path("/view/smallCities") -> config.ViewConfig(parse("select city as City, state as St, sum(pop) as Size from \"/" + ZipsPath.simplePathname + "\" group by city, state having sum(pop) <= 1000 order by city, state")),
       // NB: this view refers to the previous view using a relative path
       Path("/view/smallCityCounts") -> config.ViewConfig(parse("select St, count(*) from smallCities group by St order by count(*) desc, St")),
-      Path("/view/badRef") -> config.ViewConfig(parse("""select foo from "/mnt/test/nonexistent"""")))
+      Path("/view/badRef") -> config.ViewConfig(parse("""select foo from "/mnt/test/nonexistent"""")),
+      Path("/mnt/overlayed") -> config.ViewConfig(parse("select * from \"/" + ZipsPath.simplePathname + "\"")))
 
     val root = ViewBackend(nested, views)
 
     "identify view as a mount" in {
       root.ls(Path("/view/")).run.run.fold[Result](
         e => failure(e.toString),
-        _ must contain(FilesystemNode(Path("smallCities"), Mount)))
+        _ must contain(FilesystemNode(Path("smallCities"), Some("view"))))
     }
 
     "include view ancestors as plain directories" in {
       root.ls(Path.Root).run.run.fold[Result](
         e => failure(e.toString),
-        _ must contain(FilesystemNode(Path("view/"), Plain)))
+        _ must contain(FilesystemNode(Path("view/"), None)))
+    }
+
+    "handle a view overlayed on a mounted directory" in {
+      root.ls(Path.Root).run.run.fold[Result](
+        e => failure(e.toString),
+        { ns =>
+          // NB: the view's parent is hidden by the mount:
+          ns must contain(FilesystemNode(Path("mnt/"), Some("mongodb")))
+          ns must not(contain(FilesystemNode(Path("mnt/"), None)))
+        })
     }
 
     "count non-view" in {

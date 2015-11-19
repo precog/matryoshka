@@ -168,7 +168,7 @@ object Mock {
     def move0(src: Path, dst: Path, semantics: Backend.MoveSemantics) = ().point[Backend.PathTask]
 
     def ls0(dir: Path): Backend.PathTask[Set[Backend.FilesystemNode]] = {
-      val children = files.keys.toList.map(_.rebase(dir).toOption.map(p => Backend.FilesystemNode(p.head, Backend.Plain))).flatten
+      val children = files.keys.toList.map(_.rebase(dir).toOption.map(p => Backend.FilesystemNode(p.head, None))).flatten
       children.toSet.point[Backend.PathTask]
     }
 
@@ -372,11 +372,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           jsonContentType,
           List(
             Json("children" := List(
-              Json("name" := "badPath1", "type" := "mount"),
-              Json("name" := "badPath2", "type" := "mount"),
-              Json("name" := "empty",    "type" := "mount"),
-              Json("name" := "foo",      "type" := "mount"),
-              Json("name" := "large",    "type" := "mount"),
+              Json("name" := "badPath1", "type" := "directory", "mount" := "mongodb"),
+              Json("name" := "badPath2", "type" := "directory", "mount" := "mongodb"),
+              Json("name" := "empty",    "type" := "directory", "mount" := "mongodb"),
+              Json("name" := "foo",      "type" := "directory", "mount" := "mongodb"),
+              Json("name" := "large",    "type" := "directory", "mount" := "mongodb"),
               Json("name" := "non",      "type" := "directory"))))))
       }
     }
@@ -421,7 +421,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           jsonContentType,
           List(
             Json("children" := List(
-              Json("name" := "mounting", "type" := "mount"))))))
+              Json("name" := "mounting", "type" := "directory", "mount" := "mongodb"))))))
       }
     }
 
@@ -1490,9 +1490,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           configs()(0).mountings.get(Path("/local/view1")) must beSome(
             ViewConfig(expr))
 
-          // TODO: metadata not available for views yet (see SD-978)
-          // val metadataExists = Http(viewMetadata)
-          // metadataExists().getStatusCode must_== 200
+          val metadataExists = Http(viewMetadata)
+          metadataExists().getStatusCode must_== 200
         }
       }
 
@@ -1663,9 +1662,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           configs()(0).mountings.get(Path("/local/view1")) must beSome
 
-          // TODO: metadata not available for views yet (see SD-978)
-          // val metadataExists = Http(localMetadata)
-          // metadataExists().getStatusCode must_== 200
+          val metadataExists = Http(localMetadata)
+          metadataExists().getStatusCode must_== 200
         }
       }
 

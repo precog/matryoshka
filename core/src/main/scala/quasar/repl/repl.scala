@@ -305,7 +305,7 @@ object Repl {
 
   def ls(state: RunState, path: Option[Path]): PathTask[Unit] = {
     def suffix(node: FilesystemNode) = node match {
-      case FilesystemNode(_, Mount)   => "@"
+      case FilesystemNode(_, Some(typ))            => "@ (" + typ + ")"
       case FilesystemNode(path, _) if path.pureDir => "/"
       case _ => ""
     }
