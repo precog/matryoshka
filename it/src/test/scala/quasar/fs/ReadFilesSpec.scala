@@ -84,6 +84,22 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
         r.runEither must beRight(smallFile.data.toIndexedSeq)
       }
 
+      "scan with offset = |file| and no limit yields no data" >> {
+        val off = Natural._5 * Natural._5 * Natural._4
+        val r = runLogT(run, read.scan(smallFile.file, off, None))
+        r.runEither must beRight((xs: scala.collection.IndexedSeq[Data]) => xs must beEmpty)
+      }
+
+      /** TODO: This just specifies the default MongoDB behavior as that was
+        *       the easiest to implement, however an argument could be made
+        *       for erroring instead of returning nothing.
+        */
+      "scan with offset k, where k > |file|, and no limit succeeds with empty result" >> {
+        val off = (Natural._5 * Natural._5 * Natural._4) + Natural._1
+        val r = runLogT(run, read.scan(smallFile.file, off, None))
+        r.runEither must beRight((xs: scala.collection.IndexedSeq[Data]) => xs must beEmpty)
+      }
+
       "scan with offset k > 0 and no limit skips first k data" >> {
         val k = Natural._9 * Natural._2
         val r = runLogT(run, read.scan(smallFile.file, k, None))
@@ -117,9 +133,6 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
         (j.run.toInt must beGreaterThan(smallFile.data.length)) and
         (r.runEither must beRight(smallFile.data.toIndexedSeq))
       }
-
-      // TODO: What is the expected behavior here?
-      "scan with offset k, where k > |file|, and no limit ???" >> todo
 
       "scan very long file is stack-safe" >> {
         runLogT(run, read.scanAll(veryLongFile.file).foldMap(_ => 1))
