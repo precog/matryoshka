@@ -22,7 +22,7 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
 
       val p = write.append(f, xs.toProcess).drain ++ read.scanAll(f)
 
-      p.translate[M](runT).runLog.run
+      p.translate[InMemResult](runResult).runLog.run
         .leftMap(_.wm)
         .run(emptyMem)
         .run must_== ((Map.empty, \/.right(xs)))

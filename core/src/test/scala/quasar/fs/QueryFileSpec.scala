@@ -24,13 +24,13 @@ class QueryFileSpec extends Specification with ScalaCheck with FileSystemFixture
           val mem = InMemState fromFiles (f1s ::: f2s ::: fds).toMap
           val expectedNodes = (fs.map(dc1 </> _) ::: fs.map(dc2 </> _)).map(Node.File).distinct
 
-          runT(query.lsAll(dp)).run.eval(mem)
+          runResult(query.lsAll(dp)).run.eval(mem)
             .run.toEither must beRight(containTheSameElementsAs(expectedNodes))
         }
       }
 
       "returns not found when dir does not exist" ! prop { d: AbsDir[Sandboxed] =>
-        runT(query.lsAll(d)).run.eval(emptyMem)
+        runResult(query.lsAll(d)).run.eval(emptyMem)
           .run.toEither must beLeft(PathError(DirNotFound(d)))
       }
     }

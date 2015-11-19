@@ -16,14 +16,12 @@ import scalaz.concurrent.Task
 trait FileSystemFixture {
   import FileSystemFixture._, InMemory._
 
-  // NB: These are mostly to make composition/implicit search nicer
-  type F[A]   = Free[FileSystem, A]
-  type RW[A]  = ReadWriteT[InMemoryFs, A]
-  type G[A]   = StateT[Task, InMemState, A]
-  type RWG[A] = ReadWriteT[G, A]
-  // NB: These two are the only ones that appear in return types
-  type M[A]   = FileSystemErrT[G, A]
-  type RWM[A] = FileSystemErrT[RWG, A]
+  type F[A]              = Free[FileSystem, A]
+  type InMemFix[A]       = ReadWriteT[InMemoryFs, A]
+  type InMemIO[A]        = StateT[Task, InMemState, A]
+  type InMemResult[A]    = FileSystemErrT[InMemIO, A]
+  type InMemFixIO[A]     = ReadWriteT[InMemIO, A]
+  type InMemFixResult[A] = FileSystemErrT[InMemFixIO, A]
 
   val query  = QueryFile.Ops[FileSystem]
   val read   = ReadFile.Ops[FileSystem]
@@ -32,46 +30,50 @@ trait FileSystemFixture {
 
   val emptyMem = InMemState.empty
 
-  val hoistFs: InMemoryFs ~> G =
+  val hoistInMem: InMemoryFs ~> InMemIO =
     Hoist[StateT[?[_], InMemState, ?]].hoist(pointNT[Task])
 
-  val hoistRW: RW ~> RWG =
-    Hoist[StateT[?[_], ReadWrites, ?]].hoist(hoistFs)
+  val hoistFix: InMemFix ~> InMemFixIO =
+    Hoist[StateT[?[_], ReadWrites, ?]].hoist(hoistInMem)
 
-  val run: F ~> G =
-    hoistFs compose[F]
-    hoistFree(interpretFileSystem(queryFile, readFile, writeFile, manageFile))
+  val interpretInMem: FileSystem ~> InMemoryFs =
+    interpretFileSystem(queryFile, readFile, writeFile, manageFile)
 
-  val runRW: F ~> RWG =
-    hoistRW compose[F]
-    hoistFree(interpretFileSystem[RW](
+  val run: F ~> InMemIO =
+    hoistInMem compose[F] hoistFree(interpretInMem)
+
+  val interpretInMemFix: FileSystem ~> InMemFix =
+    interpretFileSystem[InMemFix](
       liftMT[InMemoryFs, ReadWriteT] compose queryFile,
       interceptReads(readFile),
       amendWrites(writeFile),
-      liftMT[InMemoryFs, ReadWriteT] compose manageFile))
+      liftMT[InMemoryFs, ReadWriteT] compose manageFile)
 
-  val runT: FileSystemErrT[F, ?] ~> M =
+  val runFixIO: F ~> InMemFixIO =
+    hoistFix compose[F] hoistFree(interpretInMemFix)
+
+  val runResult: FileSystemErrT[F, ?] ~> InMemResult =
     Hoist[FileSystemErrT].hoist(run)
 
-  val runRWT: FileSystemErrT[F, ?] ~> RWM =
-    Hoist[FileSystemErrT].hoist(runRW)
+  val runFixResult: FileSystemErrT[F, ?] ~> InMemFixResult =
+    Hoist[FileSystemErrT].hoist(runFixIO)
 
-  def runLog[A](p: Process[FileSystemErrT[F, ?], A]): M[IndexedSeq[A]] =
-    p.translate[M](runT).runLog
+  def runLog[A](p: Process[FileSystemErrT[F, ?], A]): InMemResult[IndexedSeq[A]] =
+    p.translate[InMemResult](runResult).runLog
 
   def evalLogZero[A](p: Process[FileSystemErrT[F, ?], A]): Task[FileSystemError \/ IndexedSeq[A]] =
     runLog(p).run.eval(emptyMem)
 
-  def runLogRW[A](p: Process[FileSystemErrT[F, ?], A]): RWM[IndexedSeq[A]] =
-    p.translate[RWM](runRWT).runLog
+  def runLogFix[A](p: Process[FileSystemErrT[F, ?], A]): InMemFixResult[IndexedSeq[A]] =
+    p.translate[InMemFixResult](runFixResult).runLog
 
-  def runLogWithRW[A](rs: Reads, ws: Writes, p: Process[FileSystemErrT[F, ?], A]): M[IndexedSeq[A]] =
-    EitherT(runLogRW(p).run.eval((rs, ws)))
+  def runLogWithRW[A](rs: Reads, ws: Writes, p: Process[FileSystemErrT[F, ?], A]): InMemResult[IndexedSeq[A]] =
+    EitherT(runLogFix(p).run.eval((rs, ws)))
 
-  def runLogWithReads[A](rs: Reads, p: Process[FileSystemErrT[F, ?], A]): M[IndexedSeq[A]] =
+  def runLogWithReads[A](rs: Reads, p: Process[FileSystemErrT[F, ?], A]): InMemResult[IndexedSeq[A]] =
     runLogWithRW(rs, List(), p)
 
-  def runLogWithWrites[A](ws: Writes, p: Process[FileSystemErrT[F, ?], A]): M[IndexedSeq[A]] =
+  def runLogWithWrites[A](ws: Writes, p: Process[FileSystemErrT[F, ?], A]): InMemResult[IndexedSeq[A]] =
     runLogWithRW(List(), ws, p)
 }
 

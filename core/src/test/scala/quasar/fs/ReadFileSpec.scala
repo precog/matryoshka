@@ -28,7 +28,7 @@ class ReadFileSpec extends Specification with ScalaCheck with FileSystemFixture 
         val n = xs.length / 2
         val p = write.append(f, xs.toProcess).drain ++ read.scanAll(f).take(n)
 
-        p.translate[M](runT).runLog
+        p.translate[InMemResult](runResult).runLog
           .run.leftMap(_.rm)
           .run(emptyMem)
           .run must_== ((Map.empty, \/.right(xs take n)))
