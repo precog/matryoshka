@@ -35,16 +35,11 @@ object cofree {
         f(t.tail).map(Cofree(t.head, _))
     }
 
-  implicit def cofreeRenderTree[F[_]: Foldable, A: RenderTree](implicit RF: RenderTree[F[_]]) =
+  implicit def cofreeRenderTree[F[_], A: RenderTree](implicit RF: RenderTree ~> λ[α => RenderTree[F[α]]]):
+      RenderTree[Cofree[F, A]] =
     new RenderTree[Cofree[F, A]] {
-      def render(attr: Cofree[F, A]) = {
-        val term = RF.render(attr.tail)
-        val ann = attr.head.render
-        NonTerminal(term.nodeType, term.label,
-          (if (ann.children.isEmpty)
-            NonTerminal(List("Annotation"), None, ann :: Nil)
-          else ann.copy(label=None, nodeType=List("Annotation"))) ::
-            Recursive[Cofree[?[_], A]].children(attr).map(render(_)))
+      def render(t: Cofree[F, A]) = {
+        NonTerminal(List("Cofree"), None, List(t.head.render, RF(cofreeRenderTree[F, A]).render(t.tail)))
       }
     }
 }

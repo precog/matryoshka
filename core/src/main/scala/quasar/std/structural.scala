@@ -20,6 +20,7 @@ import quasar.Predef._
 import quasar._, LogicalPlan._, SemanticError._
 import quasar.recursionschemes._, cofree._, Recursive.ops._
 import quasar.fp._
+import quasar.recursionschemes._, Recursive.ops._
 
 import scalaz._, Scalaz._, NonEmptyList.nel, Validation.{success, failure}
 
@@ -71,9 +72,10 @@ trait StructuralLib extends Library {
     noSimplification,
     partialTyperV {
       case List(Const(Data.Obj(map1)), Const(Data.Obj(map2))) =>
-        success(Const(Data.Obj(map1 ++ map2)))
-      case List(Const(Data.Obj(map1)), o2) if map1.isEmpty => success(o2)
-      case List(o1, Const(Data.Obj(map2))) if map2.isEmpty => success(o1)
+        success(Const(Data.Obj(
+          if (map1.isEmpty)      map2
+          else if (map2.isEmpty) map1
+          else                   map1 ++ map2)))
       case List(Const(o1 @ Data.Obj(_)), o2) => ObjectConcat(o1.dataType, o2)
       case List(o1, Const(o2 @ Data.Obj(_))) => ObjectConcat(o1, o2.dataType)
       case List(Obj(map1, uk1), Obj(map2, None)) =>
@@ -160,8 +162,8 @@ trait StructuralLib extends Library {
     Top, AnyObject :: Str :: Nil,
     new Func.Simplifier {
       def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) = orig match {
-        case InvokeF(_, List(MakeObjectN(obj), field)) =>
-          obj.toListMap.get(field).map(_.project)
+        case IsInvoke(_, List(MakeObjectN(obj), field)) =>
+          obj.map(_.leftMap(_.project)).toListMap.get(field).map(_.project)
         case _ => None
       }
     },
@@ -229,30 +231,33 @@ trait StructuralLib extends Library {
   // val MakeObjectN = new VirtualFunc {
   object MakeObjectN {
     // Note: signature does not match VirtualFunc
-    def apply[T[_[_]]: Corecursive](args: (T[LogicalPlan], T[LogicalPlan])*): T[LogicalPlan] =
+    def apply[T[_[_]]: Corecursive](args: (T[LogicalPlan], T[LogicalPlan])*): LogicalPlan[T[LogicalPlan]] =
       args.toList match {
-        case Nil     => Corecursive[T].embed(ConstantF(Data.Obj(Map())))
-        case x :: xs =>
-          xs.foldLeft(MakeObject(x._1, x._2))((acc, x) =>
-            ObjectConcat(acc, MakeObject(x._1, x._2)))
+        case Nil      => ConstantF(Data.Obj(Map()))
+        case x :: xs  =>
+          xs.foldLeft(MakeObject(x._1, x._2))((a, b) =>
+            ObjectConcat(
+              Corecursive[T].embed(a),
+              Corecursive[T].embed(MakeObject(b._1, b._2))))
       }
 
     // Note: signature does not match VirtualFunc
-    def unapply[T[_[_]]: Recursive](t: T[LogicalPlan]):
+    def unapply[T[_[_]]: Recursive](t: LogicalPlan[T[LogicalPlan]]):
         Option[List[(T[LogicalPlan], T[LogicalPlan])]] =
-      t.project match {
+      t match {
         case MakeObject(List(name, expr)) => Some(List((name, expr)))
-        case ObjectConcat(List(a, b))     => (unapply(a) |@| unapply(b))(_ ::: _)
+        case ObjectConcat(List(a, b))     => (unapply(a.project) ⊛ unapply(b.project))(_ ::: _)
         case _                            => None
       }
   }
 
   object MakeArrayN {
-    def apply[T[_[_]]: Corecursive](args: T[LogicalPlan]*): T[LogicalPlan] =
+    def apply[T[_[_]]: Corecursive](args: T[LogicalPlan]*): LogicalPlan[T[LogicalPlan]] =
       args.map(MakeArray(_)) match {
-        case Nil      => Corecursive[T].embed(ConstantF(Data.Arr(Nil)))
+        case Nil      => ConstantF(Data.Arr(Nil))
         case t :: Nil => t
-        case mas      => mas.reduce((t, ma) => ArrayConcat(t, ma))
+        case mas      => mas.reduce((t, ma) =>
+          ArrayConcat(Corecursive[T].embed(t), Corecursive[T].embed(ma)))
       }
 
     def unapply[T[_[_]]: Recursive](t: T[LogicalPlan]): Option[List[T[LogicalPlan]]] =

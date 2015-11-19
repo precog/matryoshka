@@ -19,12 +19,14 @@ package quasar
 import quasar.Predef._
 import quasar.fp._
 import quasar.fs.Path._
-import quasar.recursionschemes._, Fix._, FunctorT.ops._
+import quasar.recursionschemes._, cofree._, Fix._, Recursive.ops._, FunctorT.ops._
+import quasar.sql._
 
-import scalaz.{Tree => _, _}, Scalaz._
+import scalaz._, Scalaz._
 
 trait Planner[PhysicalPlan] {
   import Planner._
+  import SemanticAnalysis._
 
   def plan(logical: Fix[LogicalPlan]): EitherWriter[PlannerError, PhysicalPlan]
 
@@ -35,14 +37,12 @@ trait Planner[PhysicalPlan] {
 
   def queryPlanner(showNative: PhysicalPlan => (String, Cord))(implicit RA: RenderTree[PhysicalPlan]):
       QueryRequest => EitherT[(Vector[quasar.PhaseResult], ?), CompilationError, PhysicalPlan] = { req =>
-    import SemanticAnalysis._
 
     // TODO: Factor these things out as individual WriterT functions that can be composed.
-
     for {
       select     <- withTree("SQL AST")(\/-(req.query))
-      tree       <- withTree("Variables Substituted")(Variables.substVars[Unit](tree(select), req.variables).leftMap(CSemanticError(_)))
-      tree       <- withTree("Annotated Tree")(AllPhases(tree).disjunction.leftMap(ManyErrors(_)))
+      tree       <- withTree("Variables Substituted")(select.cataM[SemanticError \/ ?, Expr](Variables.substVarsƒ(req.variables)).leftMap(CSemanticError(_)))
+      tree       <- withTree("Annotated Tree")(AllPhases(tree).leftMap(ManyErrors(_)))
       logical    <- withTree("Logical Plan")(Compiler.compile(tree).leftMap(CSemanticError(_)))
       simplified <- withTree("Simplified")(\/-(logical.transCata(repeatedly(Optimizer.simplifyƒ))))
       checked    <- withTree("Typechecked")(LogicalPlan.ensureCorrectTypes(simplified).disjunction.leftMap(ManyErrors(_)))

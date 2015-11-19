@@ -89,9 +89,9 @@ class OptimizerSpec extends Specification with CompilerHelpers with TreeMatchers
           makeObj(
             "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name")))),
           Let('tmp2,
-            OrderBy(
+            OrderBy[FLP](
               Free('tmp1),
-              MakeArray(
+              MakeArray[FLP](
                 ObjectProject(Free('tmp1), Constant(Data.Str("name"))))),
             Free('tmp2))))
         .transCata(repeatedly(Optimizer.simplifyƒ)) must
@@ -100,9 +100,9 @@ class OptimizerSpec extends Specification with CompilerHelpers with TreeMatchers
             makeObj(
               "name" ->
                 ObjectProject(read("person"), Constant(Data.Str("name")))),
-            OrderBy(
+            OrderBy[FLP](
               Free('tmp1),
-              MakeArray(ObjectProject(Free('tmp1), Constant(Data.Str("name")))))))
+              MakeArray[FLP](ObjectProject(Free('tmp1), Constant(Data.Str("name")))))))
     }
   }
 
@@ -111,7 +111,7 @@ class OptimizerSpec extends Specification with CompilerHelpers with TreeMatchers
       Optimizer.preferProjections(
         DeleteField(Read(Path.fileRel("zips")),
           Constant(Data.Str("pop")))) must
-        beTree(
+        beTree[Fix[LogicalPlan]](
           DeleteField(Read(Path.fileRel("zips")),
             Constant(Data.Str("pop"))))
     }
@@ -119,22 +119,21 @@ class OptimizerSpec extends Specification with CompilerHelpers with TreeMatchers
     "convert a delete after a projection" in {
       Optimizer.preferProjections(
         Let('meh, Read(Path.fileRel("zips")),
-          DeleteField(
-            MakeObjectN(
-              Constant(Data.Str("city")) ->
-                ObjectProject(Free('meh), Constant(Data.Str("city"))),
-              Constant(Data.Str("pop")) ->
-                ObjectProject(Free('meh), Constant(Data.Str("pop")))),
+          DeleteField[FLP](
+            makeObj(
+              "city" -> ObjectProject(Free('meh), Constant(Data.Str("city"))),
+              "pop"  -> ObjectProject(Free('meh), Constant(Data.Str("pop")))),
             Constant(Data.Str("pop"))))) must
       beTree(
         Let('meh, Read(Path.fileRel("zips")),
-          MakeObjectN(
-            Constant(Data.Str("city")) ->
-              ObjectProject(MakeObjectN(
-                Constant(Data.Str("city")) ->
-                  ObjectProject(Free('meh), Constant(Data.Str("city"))),
-                Constant(Data.Str("pop")) ->
-                  ObjectProject(Free('meh), Constant(Data.Str("pop")))),
+          makeObj(
+            "city" ->
+              ObjectProject(
+                makeObj(
+                  "city" ->
+                    ObjectProject(Free('meh), Constant(Data.Str("city"))),
+                  "pop" ->
+                    ObjectProject(Free('meh), Constant(Data.Str("pop")))),
                 Constant(Data.Str("city"))))))
     }
 
@@ -142,28 +141,24 @@ class OptimizerSpec extends Specification with CompilerHelpers with TreeMatchers
       Optimizer.preferProjections(
         Let('meh, Read(Path.fileRel("zips")),
           Let('meh2,
-            MakeObjectN(
-              Constant(Data.Str("city")) ->
-                ObjectProject(Free('meh), Constant(Data.Str("city"))),
-              Constant(Data.Str("pop")) ->
-                ObjectProject(Free('meh), Constant(Data.Str("pop")))),
-            MakeObjectN(
-              Constant(Data.Str("orig")) -> Free('meh2),
-              Constant(Data.Str("cleaned")) ->
+            makeObj(
+              "city" -> ObjectProject(Free('meh), Constant(Data.Str("city"))),
+              "pop"  -> ObjectProject(Free('meh), Constant(Data.Str("pop")))),
+            makeObj(
+              "orig" -> Free('meh2),
+              "cleaned" ->
                 DeleteField(Free('meh2), Constant(Data.Str("pop"))))))) must
       beTree(
         Let('meh, Read(Path.fileRel("zips")),
           Let('meh2,
-            MakeObjectN(
-              Constant(Data.Str("city")) ->
-                ObjectProject(Free('meh), Constant(Data.Str("city"))),
-              Constant(Data.Str("pop")) ->
-                ObjectProject(Free('meh), Constant(Data.Str("pop")))),
-            MakeObjectN(
-              Constant(Data.Str("orig")) -> Free('meh2),
-              Constant(Data.Str("cleaned")) ->
-                MakeObjectN(
-                  Constant(Data.Str("city")) ->
+            makeObj(
+              "city" -> ObjectProject(Free('meh), Constant(Data.Str("city"))),
+              "pop"  -> ObjectProject(Free('meh), Constant(Data.Str("pop")))),
+            makeObj(
+              "orig" -> Free('meh2),
+              "cleaned" ->
+                makeObj(
+                  "city" ->
                     ObjectProject(Free('meh2), Constant(Data.Str("city"))))))))
     }
   }

@@ -702,7 +702,7 @@ object MongoDbPlanner extends Planner[Crystallized] with JsConversions {
           args match {
             case List(left, right, comp) =>
               splitConditions(comp).fold[M[WorkflowBuilder]](
-                fail(UnsupportedJoinCondition(Recursive[Cofree[?[_], (Input, OutputM[WorkflowBuilder])]].forget(comp))))(
+                fail(UnsupportedJoinCondition(Recursive[Cofree[?[_], (Input, OutputM[WorkflowBuilder])]].convertTo(comp))))(
                 c => {
                   val (leftKeys, rightKeys) = c.unzip
                   lift((HasWorkflow(left) |@|
@@ -1009,9 +1009,9 @@ object MongoDbPlanner extends Planner[Crystallized] with JsConversions {
 
   import Planner._
 
-  val annotateƒ = zipPara[Fix, LogicalPlan](
+  val annotateƒ = zipAlgebras[LogicalPlan, (Fix[LogicalPlan], ?)](
     selectorƒ[OutputM[WorkflowBuilder]],
-    liftPara(jsExprƒ[OutputM[WorkflowBuilder]]))
+    generalizeAlgebra[(Fix[LogicalPlan], ?)](jsExprƒ[OutputM[WorkflowBuilder]]))
 
   // FIXME: This removes all type checks from join conditions. Shouldn’t do
   //        this, but currently need it in order to align the joins.

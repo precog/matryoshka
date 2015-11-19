@@ -18,7 +18,7 @@ package quasar.sql
 
 import quasar.Predef._
 import quasar.fp._
-import quasar.recursionschemes.Fix
+import quasar.recursionschemes._, FunctorT.ops._
 import quasar.fs._, Path._
 import quasar.std._
 
@@ -367,5 +367,8 @@ class SQLParser extends StandardTokenParsers {
 object SQLParser {
   def parseInContext(sql: Query, basePath: Path):
       ParsingError \/ Expr =
-    new SQLParser().parse(sql).flatMap(relativizePaths(_, basePath).leftMap(ParsingPathError))
+    new SQLParser().parse(sql)
+      .flatMap(relativizePaths(_, basePath).bimap(
+        ParsingPathError,
+        _.transAna(repeatedly(normalizeƒ))))
 }

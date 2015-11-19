@@ -18,12 +18,11 @@ package quasar
 
 import quasar.Predef._
 import quasar.recursionschemes._, Recursive.ops._
-import quasar.analysis._
 import quasar.sql._
 
 import scala.AnyRef
 
-import scalaz.{Tree => _, _}, Scalaz._
+import scalaz._, Scalaz._, Validation.{success, failure}
 import shapeless.contrib.scalaz._
 
 sealed trait SemanticError {
@@ -50,6 +49,9 @@ object SemanticError {
   }
   final case class VariableParseError(vari: VarName, value: VarValue, cause: quasar.sql.ParsingError) extends SemanticError {
     def message = "The variable " + vari + " should contain a SQL expression but was `" + value.value + "` (" + cause.message + ")"
+  }
+  final case class UnboundVariable(vari: VarName) extends SemanticError {
+    def message = "There is no binding for the variable " + vari
   }
   final case class DuplicateRelationName(defined: String) extends SemanticError {
     def message = "Found relation with duplicate name '" + defined + "'"
@@ -91,8 +93,6 @@ trait SemanticAnalysis {
   private def fail[A](e: SemanticError) = Validation.failure[Failure, A](NonEmptyList(e))
   private def succeed[A](s: A) = Validation.success[Failure, A](s)
 
-  def tree(root: Expr): AnnotatedTree[Expr, Unit] = AnnotatedTree.unit(root, _.children)
-
   sealed trait Synthetic
   object Synthetic {
     final case object SortKey extends Synthetic
@@ -101,58 +101,54 @@ trait SemanticAnalysis {
       RenderTree.fromToString[Synthetic]("Synthetic")
   }
 
+  private val syntheticPrefix = "__sd__"
+
   /** Inserts synthetic fields into the projections of each `select` stmt to
     * hold the values that will be used in sorting, and annotates each new
     * projection with Synthetic.SortKey. The compiler will generate a step to
     * remove these fields after the sort operation.
     */
-  def TransformSelect[A]: Analysis[Expr, A, List[Option[Synthetic]], Failure] = {
-    val prefix = "__sd__"
-
-    val transformƒ: ExprF[Expr] => Expr = {
-      case SelectF(d, projections, r, f, g, Some(sql.OrderBy(keys))) => {
-        def matches(key: Expr): PartialFunction[Proj[Expr], Expr] = key match {
-          case Ident(keyName) => {
-            case Proj(_, Some(alias))        if keyName == alias    => key
-            case Proj(Ident(projName), None) if keyName == projName => key
-            case Proj(Splice(_), _)                                 => key
-          }
-          case _ => {
-            case Proj(expr2, Some(alias)) if key == expr2 => Ident(alias)
-          }
+  val projectSortKeysƒ: ExprF[Expr] => Expr = {
+    case SelectF(d, projections, r, f, g, Some(sql.OrderBy(keys))) => {
+      def matches(key: Expr): PartialFunction[Proj[Expr], Expr] = key match {
+        case Ident(keyName) => {
+          case Proj(_, Some(alias))        if keyName == alias    => key
+          case Proj(Ident(projName), None) if keyName == projName => key
+          case Proj(Splice(_), _)                                 => key
         }
-
-        // NB: order of the keys has to be preserved, so this complex fold
-        //     seems to be the best way.
-        type Target = (List[Proj[Expr]], List[(OrderType, Expr)], Int)
-
-        val (projs2, keys2, _) = keys.foldRight[Target]((Nil, Nil, 0)) {
-          case ((orderType, expr), (projs, keys, index)) =>
-            projections.collectFirst(matches(expr)).fold {
-              val name  = prefix + index.toString()
-              val proj2 = Proj(expr, Some(name))
-              val key2  = (orderType, Ident(name))
-              (proj2 :: projs, key2 :: keys, index + 1)
-            } (
-              kExpr => (projs, (orderType, kExpr) :: keys, index))
+        case _ => {
+          case Proj(expr2, Some(alias)) if key == expr2 => Ident(alias)
         }
-
-        Select(d, projections ⊹ projs2, r, f, g, Some(sql.OrderBy(keys2)))
       }
 
-      case node => Fix(node)
-    }
+      // NB: order of the keys has to be preserved, so this complex fold
+      //     seems to be the best way.
+      type Target = (List[Proj[Expr]], List[(OrderType, Expr)], Int)
 
-    val ann = Analysis.annotate[Expr, Unit, List[Option[Synthetic]], Failure] {
-      case Select(_, projections, _, _, _, _) =>
-        projections.map(_.alias match {
-          case Some(name) if name.startsWith(prefix) => Some(Synthetic.SortKey)
-          case _                                     => None
-        }).success
-      case _ => Nil.success
+      val (projs2, keys2, _) = keys.foldRight[Target]((Nil, Nil, 0)) {
+        case ((orderType, expr), (projs, keys, index)) =>
+          projections.collectFirst(matches(expr)).fold {
+            val name  = syntheticPrefix + index.toString()
+            val proj2 = Proj(expr, Some(name))
+            val key2  = (orderType, Ident(name))
+            (proj2 :: projs, key2 :: keys, index + 1)
+          } (
+            kExpr => (projs, (orderType, kExpr) :: keys, index))
+      }
+      Select(d, projections ⊹ projs2, r, f, g, Some(sql.OrderBy(keys2)))
     }
+    case node => Fix(node)
+  }
 
-    tree1 => ann(tree(tree1.root.cata(transformƒ)))
+  private val identifySyntheticsƒ:
+      ExprF[List[Option[Synthetic]]] => List[Option[Synthetic]] = {
+    case SelectF(_, projections, _, _, _, _) =>
+      projections.map(_.alias match {
+        case Some(name) if name.startsWith(syntheticPrefix) =>
+          Some(Synthetic.SortKey)
+        case _ => None
+      })
+    case _ => Nil
   }
 
   case class TableScope(scope: Map[String, SqlRelation[Expr]])
@@ -161,44 +157,40 @@ trait SemanticAnalysis {
     override def show(v: TableScope) = v.scope.toString
   }
 
+  import Validation.FlatMap._
+
+  type ValidSem[A] = ValidationNel[SemanticError, A]
+
   /** This analysis identifies all the named tables within scope at each node in
     * the tree. If two tables are given the same name within the same scope,
     * then because this leads to an ambiguity, an error is produced containing
     * details on the duplicate name.
     */
-  def ScopeTables[A] = Analysis.readTree[Expr, A, TableScope, Failure] { tree =>
-    import Validation.{success, failure}
-    import Validation.FlatMap._
+  val scopeTablesƒ: (TableScope, Expr) => ValidSem[ExprF[(TableScope, Expr)]] =
+    (parentScope, expr) => expr.unFix match {
+      case sel @ SelectF(_, _, relations, _, _, _) =>
+        def findRelations(r: SqlRelation[Expr]): ValidSem[Map[String, SqlRelation[Expr]]] =
+          r match {
+            case TableRelationAST(name, aliasOpt) =>
+              success(Map(aliasOpt.getOrElse(name) -> r))
+            case ExprRelationAST(_, alias) => success(Map(alias -> r))
+            case JoinRelation(l, r, _, _) => for {
+              rels <- findRelations(l) tuple findRelations(r)
+              (left, right) = rels
+              rez <- (left.keySet intersect right.keySet).toList match {
+                case Nil           => success(left ++ right)
+                case con :: flicts =>
+                  failure(NonEmptyList.nel(con, flicts).map(DuplicateRelationName(_)))
+              }
+            } yield rez
+          }
 
-    Analysis.fork[Expr, A, TableScope, Failure]((scopeOf, node) => {
-      def parentScope(node: Expr) = tree.parent(node).map(scopeOf).getOrElse(TableScope(Map()))
-
-      def findRelations(r: SqlRelation[Expr]): ValidationNel[SemanticError, Map[String, SqlRelation[Expr]]] =
-        r match {
-          case TableRelationAST(name, aliasOpt) =>
-            success(Map(aliasOpt.getOrElse(name) -> r))
-          case ExprRelationAST(_, alias) => success(Map(alias -> r))
-          case JoinRelation(l, r, _, _) => for {
-            rels <- findRelations(l) tuple findRelations(r)
-            (left, right) = rels
-            rez <- (left.keySet intersect right.keySet).toList match {
-              case Nil           => success(left ++ right)
-              case con :: flicts =>
-                failure(NonEmptyList.nel(con, flicts).map(DuplicateRelationName(_)))
-            }
-          } yield rez
-        }
-
-      node match {
-        case Select(_, projections, relations, filter, groupBy, orderBy) =>
-          relations.fold[ValidationNel[SemanticError, Map[String, SqlRelation[Expr]]]] (
-            success(Map[String, SqlRelation[Expr]]()))(
-            findRelations).map(TableScope(_))
-
-        case _ => success(parentScope(node))
-      }
-    })
-  }
+        relations.fold[ValidSem[Map[String, SqlRelation[Expr]]]](
+          success(Map[String, SqlRelation[Expr]]()))(
+          findRelations)
+          .map(m => sel.map((TableScope(m), _)))
+      case x => success(x.map((parentScope, _)))
+    }
 
   sealed trait Provenance {
     import Provenance._
@@ -213,7 +205,8 @@ trait SemanticAnalysis {
       case _ => this
     }
 
-    def namedRelations: Map[String, List[NamedRelation[Expr]]] = Foldable[List].foldMap(relations)(_.namedRelations)
+    def namedRelations: Map[String, List[NamedRelation[Expr]]] =
+      relations.foldMap(_.namedRelations)
 
     def relations: List[SqlRelation[Expr]] = this match {
       case Empty => Nil
@@ -256,7 +249,7 @@ trait SemanticAnalysis {
           v match {
             case Empty               => Terminal(ProvenanceNodeType, Some("Empty"))
             case Value               => Terminal(ProvenanceNodeType, Some("Value"))
-            case Relation(value)     => Terminal(ProvenanceNodeType, Some(pprintRelation(value)))
+            case Relation(value)     => SqlRelationRenderTree(implicitly[RenderTree[Expr]]).render(value).copy(nodeType = ProvenanceNodeType)
             case Either(left, right) => nest(self.render(left), self.render(right), "|")
             case Both(left, right)   => nest(self.render(left), self.render(right), "&")
         }
@@ -319,67 +312,58 @@ trait SemanticAnalysis {
       xs.concatenate(ProvenanceOrMonoid)
   }
 
-  /**
-   * This phase infers the provenance of every expression, issuing errors
-   * if identifiers are used with unknown provenance. The phase requires
-   * TableScope annotations on the tree.
-   */
-  def ProvenanceInfer = Analysis.readTree[Expr, TableScope, Provenance, Failure] { tree =>
-    Analysis.join[Expr, TableScope, Provenance, Failure]((provOf, node) => {
-      import Validation.{success, failure}
+  /** This phase infers the provenance of every expression, issuing errors
+    * if identifiers are used with unknown provenance. The phase requires
+    * TableScope annotations on the tree.
+    */
+  val inferProvenanceƒ:
+      (TableScope, ExprF[Provenance]) => ValidSem[Provenance] = (tableScope, expr) => expr match {
+    case SelectF(_, projections, _, _, _, _) =>
+      success(Provenance.allOf(projections.map(_.expr)))
 
-      def propagate(child: Expr) = success(provOf(child))
-
-      def NA: Validation[Nothing, Provenance] = success(Provenance.Empty)
-
-      (node match {
-        case Select(_, projections, relations, filter, groupBy, orderBy) =>
-          success(Provenance.allOf(projections.map(p => provOf(p.expr))))
-
-        case SetLiteral(exprs)  => success(Provenance.Value)
-        case ArrayLiteral(exprs) => success(Provenance.Value)
-          // FIXME: NA case
-        case Splice(expr)       => expr.fold(NA)(x => success(provOf(x)))
-        case v @ Vari(_)        => success(Provenance.Value)
-        case Binop(left, right, op) =>
-          success(provOf(left) & provOf(right))
-        case Unop(expr, op) => success(provOf(expr))
-        case ident @ Ident(name) =>
-          val tableScope = tree.attr(node).scope
-
-          (tableScope.get(name).map((Provenance.Relation(_)) andThen success)).getOrElse {
-            Provenance.anyOf[Map[String, ?]](tableScope ∘ (Provenance.Relation(_))) match {
-              case Provenance.Empty => fail(NoTableDefined(ident))
-              case x                => success(x)
-            }
-          }
-
-        case InvokeFunction(name, args) =>
-          success(Provenance.allOf(args.map(provOf)))
-        case Match(expr, cases, default) =>
-          success(cases.map(c => provOf(c.expr)).concatenate(Provenance.ProvenanceAndMonoid))
-        case Switch(cases, default) =>
-          success(cases.map(c => provOf(c.expr)).concatenate(Provenance.ProvenanceAndMonoid))
-
-        case IntLiteral(value) => success(Provenance.Value)
-
-        case FloatLiteral(value) => success(Provenance.Value)
-
-        case StringLiteral(value) => success(Provenance.Value)
-
-        case BoolLiteral(value) => success(Provenance.Value)
-
-        case NullLiteral() => success(Provenance.Value)
-      }).map(_.simplify)
-    })
+    case SetLiteralF(_)  => success(Provenance.Value)
+    case ArrayLiteralF(_) => success(Provenance.Value)
+    case SpliceF(expr)       => success(expr.getOrElse(Provenance.Empty))
+    case VariF(_)        => success(Provenance.Value)
+    case BinopF(left, right, _) => success(left & right)
+    case UnopF(expr, _) => success(expr)
+    case IdentF(name) =>
+      tableScope.scope.get(name).fold(
+        Provenance.anyOf[Map[String, ?]](tableScope.scope ∘ (Provenance.Relation(_))) match {
+          case Provenance.Empty => fail(NoTableDefined(Ident(name)))
+          case x                => success(x)
+        })(
+        (Provenance.Relation(_)) ⋙ success)
+    case InvokeFunctionF(_, args) => success(Provenance.allOf(args))
+    case MatchF(_, cases, _)      =>
+      success(cases.map(_.expr).concatenate(Provenance.ProvenanceAndMonoid))
+    case SwitchF(cases, _)        =>
+      success(cases.map(_.expr).concatenate(Provenance.ProvenanceAndMonoid))
+    case IntLiteralF(_)           => success(Provenance.Value)
+    case FloatLiteralF(_)         => success(Provenance.Value)
+    case StringLiteralF(_)        => success(Provenance.Value)
+    case BoolLiteralF(_)          => success(Provenance.Value)
+    case NullLiteralF()           => success(Provenance.Value)
   }
 
   type Annotations = (List[Option[Synthetic]], Provenance)
 
-  val AllPhases: Analysis[Expr, Unit, Annotations, Failure] =
-    TransformSelect[Unit].push(()) >>>
-      ScopeTables.second >>>
-      ProvenanceInfer.second
+  // NB: converts identifySyntheticsƒ from a cata to a coelgotM, for zipping
+  val synthCoEƒ:
+      (TableScope, ExprF[List[Option[Synthetic]]]) => ValidSem[List[Option[Synthetic]]] =
+    generalizeCoelgot(identifySyntheticsƒ)(_, _).point[ValidSem]
+
+  def projectSortKeys(expr: Expr) = expr.cata(projectSortKeysƒ)
+  def scopeTables(a: (TableScope, Expr)) = (scopeTablesƒ).tupled(a).disjunction
+  def addAnnotations(a: (TableScope, Expr), node: ExprF[Cofree[ExprF, Annotations]]) =
+    attributeCoelgotM(
+      zipCoelgotM(synthCoEƒ, inferProvenanceƒ)).apply(a._1, node).disjunction
+
+  // NB: projectSortKeys >>> (identifySynthetics &&& (scopeTables >>> inferProvenance))
+  def AllPhases(expr: Expr) =
+    coelgotM[NonEmptyList[SemanticError] \/ ?](
+      (TableScope(Map()), projectSortKeys(expr)))(
+      addAnnotations, scopeTables)
 }
 
 object SemanticAnalysis extends SemanticAnalysis

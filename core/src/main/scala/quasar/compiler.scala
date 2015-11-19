@@ -17,12 +17,12 @@
 package quasar
 
 import quasar.Predef._
-import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
+import quasar.recursionschemes._, cofree._, Recursive.ops._, FunctorT.ops._
 import quasar.fp._
-import quasar.analysis._, SemanticAnalysis._, SemanticError._
 import quasar.fs.Path
 import quasar.sql._
 import quasar.std.StdLib._
+import quasar.SemanticAnalysis._, quasar.SemanticError._
 
 import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
 import scalaz.{Tree => _, _}, Scalaz._
@@ -34,20 +34,16 @@ trait Compiler[F[_]] {
   import string._
   import structural._
 
-  import SemanticAnalysis.Annotations
-
   // HELPERS
   private type M[A] = EitherT[F, SemanticError, A]
 
   private type CompilerM[A] = StateT[M, CompilerState, A]
 
-  private def syntheticOf(node: Expr)(implicit m: Monad[F]):
-      CompilerM[List[Option[Synthetic]]] =
-    attr(node).map(_._1)
+  private def syntheticOf(node: CoExpr): List[Option[Synthetic]] =
+    node.head._1
 
-  private def provenanceOf(node: Expr)(implicit m: Monad[F]):
-      CompilerM[Provenance] =
-    attr(node).map(_._2)
+  private def provenanceOf(node: CoExpr): Provenance =
+    node.head._2
 
   private final case class TableContext(
     root: Option[Fix[LogicalPlan]],
@@ -56,12 +52,11 @@ trait Compiler[F[_]] {
     def ++(that: TableContext): TableContext =
       TableContext(
         None,
-        () => ObjectConcat(this.full(), that.full()),
+        () => Fix(ObjectConcat(this.full(), that.full())),
         this.subtables ++ that.subtables)
   }
 
   private final case class CompilerState(
-    tree:         AnnotatedTree[Expr, Annotations],
     fields:       List[String],
     tableContext: List[TableContext],
     nameGen:      Int)
@@ -123,13 +118,6 @@ trait Compiler[F[_]] {
       StateT[M, A, B] =
     StateT((s: A) => (s, f(s)).point[M])
 
-  private def attr(node: Expr)(implicit m: Monad[F]): CompilerM[Annotations] =
-    read(_.tree.attr(node))
-
-  private def tree(implicit m: Monad[F]):
-      CompilerM[AnnotatedTree[Expr, Annotations]] =
-    read(_.tree)
-
   private def fail[A](error: SemanticError)(implicit m: Applicative[F]):
       CompilerM[A] =
     lift(error.left)
@@ -153,17 +141,20 @@ trait Compiler[F[_]] {
   // TODO: parameterize this
   val library = std.StdLib
 
+  type CoAnn[F[_]] = Cofree[F, Annotations]
+  type CoExpr = CoAnn[ExprF]
+
   // CORE COMPILER
-  private def compile0(node: Expr)(implicit M: Monad[F]):
+  private def compile0(node: CoExpr)(implicit M: Monad[F]):
       CompilerM[Fix[LogicalPlan]] = {
     def findFunction(name: String) =
       library.functions.find(f => f.name.toLowerCase == name.toLowerCase).fold[CompilerM[Func]](
         fail(FunctionNotFound(name)))(
         emit(_))
 
-    def compileCases(cases: List[Case[Expr]], default: Fix[LogicalPlan])(f: Case[Expr] => CompilerM[(Fix[LogicalPlan], Fix[LogicalPlan])]) =
+    def compileCases(cases: List[Case[CoExpr]], default: Fix[LogicalPlan])(f: Case[CoExpr] => CompilerM[(Fix[LogicalPlan], Fix[LogicalPlan])]) =
       cases.traverseU(f).map(_.foldRight(default) {
-        case ((cond, expr), default) => relations.Cond(cond, expr, default)
+        case ((cond, expr), default) => Fix(relations.Cond(cond, expr, default))
       })
 
     def regexForLikePattern(pattern: String, escapeChar: Option[Char]):
@@ -195,18 +186,18 @@ trait Compiler[F[_]] {
       "^" + escape(pattern.toList).mkString + "$"
     }
 
-    def flattenJoins(term: Fix[LogicalPlan], relations: SqlRelation[Expr]):
+    def flattenJoins(term: Fix[LogicalPlan], relations: SqlRelation[CoExpr]):
         Fix[LogicalPlan] = relations match {
       case _: NamedRelation[_] => term
       case JoinRelation(left, right, _, _) =>
-        ObjectConcat(
-          flattenJoins(ObjectProject(term, LogicalPlan.Constant(Data.Str("left"))), left),
-          flattenJoins(ObjectProject(term, LogicalPlan.Constant(Data.Str("right"))), right))
+        Fix(ObjectConcat(
+          flattenJoins(Fix(ObjectProject(term, LogicalPlan.Constant(Data.Str("left")))), left),
+          flattenJoins(Fix(ObjectProject(term, LogicalPlan.Constant(Data.Str("right")))), right)))
     }
 
-    def buildJoinDirectionMap(relations: SqlRelation[Expr]):
+    def buildJoinDirectionMap(relations: SqlRelation[CoExpr]):
         Map[String, List[JoinDir]] = {
-      def loop(rel: SqlRelation[Expr], acc: List[JoinDir]):
+      def loop(rel: SqlRelation[CoExpr], acc: List[JoinDir]):
           Map[String, List[JoinDir]] = rel match {
         case t: NamedRelation[_] => Map(t.aliasName -> acc)
         case JoinRelation(left, right, tpe, clause) =>
@@ -216,26 +207,26 @@ trait Compiler[F[_]] {
       loop(relations, Nil)
     }
 
-    def compileTableRefs(joined: Fix[LogicalPlan], relations: SqlRelation[Expr]):
+    def compileTableRefs(joined: Fix[LogicalPlan], relations: SqlRelation[CoExpr]):
         Map[String, Fix[LogicalPlan]] =
       buildJoinDirectionMap(relations).map {
         case (name, dirs) =>
           name -> dirs.foldRight(
             joined)(
             (dir, acc) =>
-              ObjectProject(
-                acc,
-                LogicalPlan.Constant(Data.Str(dir.toString))))
+            Fix(ObjectProject(
+              acc,
+              LogicalPlan.Constant(Data.Str(dir.toString)))))
       }
 
-    def tableContext(joined: Fix[LogicalPlan], relations: SqlRelation[Expr]):
+    def tableContext(joined: Fix[LogicalPlan], relations: SqlRelation[CoExpr]):
         TableContext =
       TableContext(
         Some(joined),
         () => flattenJoins(joined, relations),
         compileTableRefs(joined, relations))
 
-    def step(relations: SqlRelation[Expr]):
+    def step(relations: SqlRelation[CoExpr]):
         (Option[CompilerM[Fix[LogicalPlan]]] =>
           CompilerM[Fix[LogicalPlan]] =>
           CompilerM[Fix[LogicalPlan]]) = {
@@ -250,31 +241,30 @@ trait Compiler[F[_]] {
       }.getOrElse(next)
     }
 
-    def relationName(node: Expr): CompilerM[SemanticError \/ String] =
-      provenanceOf(node).map(prov => {
-        val namedRel = prov.namedRelations
-        val relations =
-          if (namedRel.size <= 1) namedRel
-          else {
-            val filtered = namedRel.filter(x => Path(x._1).filename ≟ pprint(node))
-            if (filtered.isEmpty) namedRel else filtered
-          }
-        relations.toList match {
-          case Nil             => -\/ (NoTableDefined(node))
-          case List((name, _)) =>  \/-(name)
-          case x               => -\/ (AmbiguousReference(node, x.map(_._2).join))
+    def relationName(node: CoExpr): SemanticError \/ String = {
+      val namedRel = provenanceOf(node).namedRelations
+      val relations =
+        if (namedRel.size <= 1) namedRel
+        else {
+          val filtered = namedRel.filter(x => Path(x._1).filename ≟ pprint(node.convertTo[Fix]))
+          if (filtered.isEmpty) namedRel else filtered
         }
-      })
+      relations.toList match {
+        case Nil             => -\/ (NoTableDefined(node.convertTo[Fix]))
+        case List((name, _)) =>  \/-(name)
+        case x               => -\/ (AmbiguousReference(node.convertTo[Fix], x.map(_._2).join))
+      }
+    }
 
-    def compileFunction(func: Func, args: List[Expr]):
+    def compileFunction(func: Func, args: List[CoExpr]):
         CompilerM[Fix[LogicalPlan]] =
-      args.traverseU(compile0).map(func.apply(_: _*))
+      args.traverseU(compile0).map(args => Fix(func.apply(args: _*)))
 
     def buildRecord(names: List[Option[String]], values: List[Fix[LogicalPlan]]):
         Fix[LogicalPlan] = {
       val fields = names.zip(values).map {
         case (Some(name), value) =>
-          MakeObject(LogicalPlan.Constant(Data.Str(name)), value)
+          Fix(MakeObject(LogicalPlan.Constant(Data.Str(name)), value))
         case (None, value) => value
       }
 
@@ -282,14 +272,12 @@ trait Compiler[F[_]] {
       //       ObjectConcat with an empty map on one side, this could be done
       //       in a single foldLeft.
       fields match {
-        case Nil => LogicalPlan.Constant(Data.Obj(Map()))
-        case x :: xs =>
-          xs.foldLeft(x)((a, b) =>
-            LogicalPlan.Invoke(ObjectConcat, a :: b :: Nil))
+        case Nil     => LogicalPlan.Constant(Data.Obj(Map()))
+        case x :: xs => xs.foldLeft(x)((a, b) => Fix(ObjectConcat(a, b)))
       }
     }
 
-    def compileRelation(r: SqlRelation[Expr]): CompilerM[Fix[LogicalPlan]] =
+    def compileRelation(r: SqlRelation[CoExpr]): CompilerM[Fix[LogicalPlan]] =
       r match {
         case TableRelationAST(name, _) => emit(LogicalPlan.Read(Path(name)))
         case ExprRelationAST(expr, _) => compile0(expr)
@@ -316,8 +304,8 @@ trait Compiler[F[_]] {
             LogicalPlan.Let(rightName, right0, join))
       }
 
-    node match {
-      case s @ Select(isDistinct, projections, relations, filter, groupBy, orderBy) =>
+    node.tail match {
+      case s @ SelectF(isDistinct, projections, relations, filter, groupBy, orderBy) =>
         /* 1. Joins, crosses, subselects (FROM)
          * 2. Filter (WHERE)
          * 3. Group by (GROUP BY)
@@ -331,81 +319,78 @@ trait Compiler[F[_]] {
 
         // Selection of wildcards aren't named, we merge them into any other
         // objects created from other columns:
-        val names: CompilerM[List[Option[String]]] =
-          relationName(node).map(x =>
-            namedProjections(s, x.toOption.map(Path(_).filename)).map {
-              case (_,    Splice(_)) => None
-              case (name, _)         => Some(name)
-            })
+        val names: List[Option[String]] =
+          namedProjections(node.convertTo[Fix], relationName(node).toOption.map(Path(_).filename)).map {
+            case (_,    Splice(_)) => None
+            case (name, _)         => Some(name)
+          }
+        
         val projs = projections.map(_.expr)
 
-        val syntheticNames: CompilerM[List[String]] =
-          (names ⊛ syntheticOf(s))(
-            _.zip(_).flatMap {
-              case (Some(name), Some(_)) => List(name)
-              case (_,          _)       => Nil
-            })
+        val syntheticNames: List[String] =
+          names.zip(syntheticOf(node)).flatMap {
+            case (Some(name), Some(_)) => List(name)
+            case (_,          _)       => Nil
+          }
 
         relations.fold(
-          (names ⊛ projs.traverseU(compile0))(buildRecord))(
+          projs.traverseU(compile0).map(buildRecord(names, _)))(
           relations => {
             val stepBuilder = step(relations)
             stepBuilder(compileRelation(relations).some) {
               val filtered = filter.map(filter =>
-                (CompilerState.rootTableReq ⊛ compile0(filter))(Filter(_, _)))
+                (CompilerState.rootTableReq ⊛ compile0(filter))((set, filt) =>
+                  Fix(Filter(set, filt))))
 
               stepBuilder(filtered) {
                 val grouped = groupBy.map(groupBy =>
                   (CompilerState.rootTableReq ⊛
                     groupBy.keys.traverseU(compile0))((src, keys) =>
-                    GroupBy(src, MakeArrayN(keys: _*))))
+                    Fix(GroupBy(src, Fix(MakeArrayN(keys: _*))))))
 
                 stepBuilder(grouped) {
                   val having = groupBy.flatMap(_.having).map(having =>
-                    (CompilerState.rootTableReq ⊛ compile0(having))(
-                      Filter(_, _)))
+                    (CompilerState.rootTableReq ⊛ compile0(having))((set, filt) =>
+                      Fix(Filter(set, filt))))
 
                   stepBuilder(having) {
                     val select =
-                      (names ⊛ CompilerState.rootTableReq ⊛ projs.traverseU(compile0))((names, t, projs) =>
+                      (CompilerState.rootTableReq ⊛ projs.traverseU(compile0))((t, projs) =>
                         buildRecord(
                           names,
                           projs.map(p => p.unFix match {
-                            case LogicalPlan.ConstantF(_) => Constantly(p, t)
+                            case LogicalPlan.ConstantF(_) => Fix(Constantly(p, t))
                             case _                        => p
                           })))
 
-                    val squashed = select.map(Squash(_))
+                    val squashed = select.map(set => Fix(Squash(set)))
 
                     stepBuilder(squashed.some) {
                       val sort = orderBy.map(orderBy =>
                         for {
                           t <- CompilerState.rootTableReq
-                          names <- names
                           flat = names.foldMap(_.toList)
                           keys <- CompilerState.addFields(flat)(orderBy.keys.traverseU { case (_, key) => compile0(key) })
                           orders = orderBy.keys.map { case (order, _) => LogicalPlan.Constant(Data.Str(order.toString)) }
-                        } yield OrderBy(t, MakeArrayN(keys: _*), MakeArrayN(orders: _*)))
+                        } yield Fix(OrderBy(t, Fix(MakeArrayN(keys: _*)), Fix(MakeArrayN(orders: _*)))))
 
                       stepBuilder(sort) {
                         val distincted = isDistinct match {
                           case SelectDistinct =>
-                            (syntheticNames ⊛ CompilerState.rootTableReq)(
-                              (ns, t) =>
-                              if (ns.nonEmpty)
-                                DistinctBy(t, ns.foldLeft(t)((acc, field) =>
-                                  DeleteField(acc, LogicalPlan.Constant(Data.Str(field)))))
-                              else Distinct(t)).some
+                            CompilerState.rootTableReq.map(t =>
+                              if (syntheticNames.nonEmpty)
+                                Fix(DistinctBy(t, syntheticNames.foldLeft(t)((acc, field) =>
+                                  Fix(DeleteField(acc, LogicalPlan.Constant(Data.Str(field)))))))
+                              else Fix(Distinct(t))).some
                           case _ => None
                         }
 
                         stepBuilder(distincted) {
                           val pruned =
-                            syntheticNames.flatMap(ns =>
-                              CompilerState.rootTableReq.map(
-                                ns.foldLeft(_)((acc, field) =>
-                                  DeleteField(acc,
-                                    LogicalPlan.Constant(Data.Str(field))))))
+                            CompilerState.rootTableReq.map(
+                              syntheticNames.foldLeft(_)((acc, field) =>
+                                Fix(DeleteField(acc,
+                                  LogicalPlan.Constant(Data.Str(field))))))
 
                           pruned
                         }
@@ -417,99 +402,89 @@ trait Compiler[F[_]] {
             }
           })
 
-      case SetLiteral(values0) =>
-        val values = values0.traverseU {
-          case IntLiteral(v) => emit[Data](Data.Int(v))
-          case FloatLiteral(v) => emit[Data](Data.Dec(v))
-          case StringLiteral(v) => emit[Data](Data.Str(v))
-          case x => fail[Data](ExpectedLiteral(x))
+      case SetLiteralF(values0) =>
+        val values = values0.map(_.tail).traverseU {
+          case IntLiteralF(v) => emit[Data](Data.Int(v))
+          case FloatLiteralF(v) => emit[Data](Data.Dec(v))
+          case StringLiteralF(v) => emit[Data](Data.Str(v))
+          case x => fail[Data](ExpectedLiteral(Fix(x.map((x: CoExpr) => x.convertTo[Fix]))))
         }
 
         values.map(arr => LogicalPlan.Constant(Data.Set(arr)))
 
-      case ArrayLiteral(exprs) =>
-        exprs.traverseU(compile0).map(MakeArrayN(_: _*))
+      case ArrayLiteralF(exprs) =>
+        exprs.traverseU(compile0).map(elems => Fix(MakeArrayN(elems: _*)))
 
-      case Splice(expr) =>
+      case SpliceF(expr) =>
         expr.fold(
           CompilerState.fullTable.flatMap(_.map(emit _).getOrElse(fail(GenericError("Not within a table context so could not find table expression for wildcard")))))(
           compile0)
 
-      case Binop(left, right, op) => op match {
-        case sql.Union =>
-          compile0(sql.Distinct(sql.UnionAll(left, right)))
-        case sql.Intersect =>
-          compile0(sql.Distinct(sql.IntersectAll(left, right)))
-        case _ =>
-          findFunction(op.name).flatMap(compileFunction(_, left :: right :: Nil))
-      }
+      case BinopF(left, right, op) =>
+        findFunction(op.name).flatMap(compileFunction(_, left :: right :: Nil))
 
-      case Unop(expr, op) =>
+      case UnopF(expr, op) =>
         findFunction(op.name).flatMap(compileFunction(_, expr :: Nil))
 
-      case Ident(name) =>
+      case IdentF(name) =>
         CompilerState.fields.flatMap(fields =>
           if (fields.any(_ == name))
-            CompilerState.rootTableReq.map(
-              ObjectProject(_, LogicalPlan.Constant(Data.Str(name))))
+            CompilerState.rootTableReq.map(obj =>
+              Fix(ObjectProject(obj, LogicalPlan.Constant(Data.Str(name)))))
           else
             for {
-              relName <- relationName(node)
-              rName   <- relName.fold(fail, emit)
+              rName   <- relationName(node).fold(fail, emit)
               table   <- CompilerState.subtableReq(rName)
             } yield
               if (Path(rName).filename ≟ name) table
-              else ObjectProject(table, LogicalPlan.Constant(Data.Str(name))))
+              else Fix(ObjectProject(table, LogicalPlan.Constant(Data.Str(name)))))
 
-      case InvokeFunction(Like.name, List(expr, pattern, escape)) =>
-        pattern match {
-          case StringLiteral(str) =>
-            escape match {
-              case StringLiteral(esc) =>
-                if (esc.length > 1)
-                  fail(GenericError("escape character is not a single character"))
-                else
-                  compile0(expr).map(
-                    Search(_,
-                      LogicalPlan.Constant(Data.Str(regexForLikePattern(str, esc.headOption))),
-                      LogicalPlan.Constant(Data.Bool(false))))
-              case x => fail(ExpectedLiteral(x))
-            }
-          case x => fail(ExpectedLiteral(x))
+      case InvokeFunctionF(Like.name, List(expr, pattern, escape)) =>
+        (pattern.tail, escape.tail) match {
+          case (StringLiteralF(str), StringLiteralF(esc)) =>
+            if (esc.length > 1)
+              fail(GenericError("escape character is not a single character"))
+            else
+              compile0(expr).map(exp =>
+                Fix(Search(exp,
+                  LogicalPlan.Constant(Data.Str(regexForLikePattern(str, esc.headOption))),
+                  LogicalPlan.Constant(Data.Bool(false)))))
+          case (x, StringLiteralF(_)) => fail(ExpectedLiteral(Fix(x.map((x: CoExpr) => x.convertTo[Fix]))))
+          case (_, x)                 => fail(ExpectedLiteral(Fix(x.map((x: CoExpr) => x.convertTo[Fix]))))
         }
 
-      case InvokeFunction(name, args) =>
+      case InvokeFunctionF(name, args) =>
         findFunction(name).flatMap(compileFunction(_, args))
 
-      case Match(expr, cases, default0) =>
+      case MatchF(expr, cases, default0) =>
         for {
           expr    <- compile0(expr)
           default <- default0.fold(emit(LogicalPlan.Constant(Data.Null)))(compile0)
           cases   <- compileCases(cases, default) {
             case Case(cse, expr2) =>
               (compile0(cse) ⊛ compile0(expr2))((cse, expr2) =>
-                (relations.Eq(expr, cse), expr2))
+                (Fix(relations.Eq(expr, cse)), expr2))
           }
         } yield cases
 
-      case Switch(cases, default0) =>
+      case SwitchF(cases, default0) =>
         default0.fold(emit(LogicalPlan.Constant(Data.Null)))(compile0).flatMap(
           compileCases(cases, _) {
             case Case(cond, expr2) =>
               (compile0(cond) ⊛ compile0(expr2))((_, _))
           })
 
-      case IntLiteral(value) => emit(LogicalPlan.Constant(Data.Int(value)))
-      case FloatLiteral(value) => emit(LogicalPlan.Constant(Data.Dec(value)))
-      case StringLiteral(value) => emit(LogicalPlan.Constant(Data.Str(value)))
-      case BoolLiteral(value) => emit(LogicalPlan.Constant(Data.Bool(value)))
-      case NullLiteral() => emit(LogicalPlan.Constant(Data.Null))
-      case Vari(name) => emit(LogicalPlan.Free(Symbol(name)))
+      case IntLiteralF(value) => emit(LogicalPlan.Constant(Data.Int(value)))
+      case FloatLiteralF(value) => emit(LogicalPlan.Constant(Data.Dec(value)))
+      case StringLiteralF(value) => emit(LogicalPlan.Constant(Data.Str(value)))
+      case BoolLiteralF(value) => emit(LogicalPlan.Constant(Data.Bool(value)))
+      case NullLiteralF() => emit(LogicalPlan.Constant(Data.Null))
+      case VariF(name) => emit(LogicalPlan.Free(Symbol(name)))
     }
   }
 
-  def compile(tree: AnnotatedTree[Expr, Annotations])(implicit F: Monad[F]): F[SemanticError \/ Fix[LogicalPlan]] = {
-    compile0(tree.root).eval(CompilerState(tree, Nil, Nil, 0)).run.map(_.map(Compiler.reduceGroupKeys))
+  def compile(tree: Cofree[ExprF, Annotations])(implicit F: Monad[F]): F[SemanticError \/ Fix[LogicalPlan]] = {
+    compile0(tree).eval(CompilerState(Nil, Nil, 0)).run.map(_.map(Compiler.reduceGroupKeys))
   }
 }
 
@@ -520,7 +495,7 @@ object Compiler {
 
   def trampoline = apply[scalaz.Free.Trampoline]
 
-  def compile(tree: AnnotatedTree[Expr, Annotations]):
+  def compile(tree: Cofree[ExprF, Annotations]):
       SemanticError \/ Fix[LogicalPlan] =
     trampoline.compile(tree).run
 

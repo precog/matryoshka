@@ -136,12 +136,12 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
       val query = """select zip from "/view/simpleZips" where city = 'BOULDER' and state = 'CO' order by zip"""
       root.evalResults(QueryRequest(parse(query), None, Variables(Map.empty))).fold[Result](
         e => failure(e.toString),
-        _.runLog.run.run must beRightDisjunction(Vector(Data.Obj(ListMap(
-          "zip" -> Data.Str("80301"),
-          "zip" -> Data.Str("80302"),
-          "zip" -> Data.Str("80303"),
-          "zip" -> Data.Str("80304"))))))
-    }.pendingUntilFixed("SD-1101")
+        _.runLog.run.run must beRightDisjunction(Vector(
+          Data.Obj(ListMap("zip" -> Data.Str("80301"))),
+          Data.Obj(ListMap("zip" -> Data.Str("80302"))),
+          Data.Obj(ListMap("zip" -> Data.Str("80303"))),
+          Data.Obj(ListMap("zip" -> Data.Str("80304"))))))
+    }
 
     "query with view with bad reference" in {
       val query = """select * from "/view/badRef""""

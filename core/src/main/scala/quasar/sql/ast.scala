@@ -57,6 +57,7 @@ object ExprF {
   final case class BoolLiteralF[A](value: Boolean) extends ExprF[A]
 }
 
+// TODO: Change to extend `(A, A) => ExprF[A]`
 sealed abstract class BinaryOperator(val sql: String)
     extends ((Expr, Expr) => Expr) {
   def apply(lhs: Expr, rhs: Expr): Expr = Binop(lhs, rhs, this)
@@ -98,6 +99,7 @@ final case object Intersect    extends BinaryOperator("intersect")
 final case object IntersectAll extends BinaryOperator("intersect all")
 final case object Except       extends BinaryOperator("except")
 
+// TODO: Change to extend `A => ExprF[A]`
 sealed abstract class UnaryOperator(val sql: String) extends (Expr => Expr) {
   def apply(expr: Expr): Expr = Unop(expr, this)
 

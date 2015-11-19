@@ -354,7 +354,13 @@ object Repl {
           Task.now)))
 
     def eval(s: RunState, t: EngineTask[Unit]): Process[Task, Unit] =
-      Process.eval[Task, Unit](handle(s, t))
+      // NB: running the task here seems to force it to block the
+      // enqueuing thread, which ensures that the next prompt won't
+      // be printed until after the task completes, even if the
+      // task is forked on to a thread pool (as the mongodb backend
+      // does.) The right way to fix this would probably involve
+      // actually driving task execution from the prompt callback.
+      Process.eval[Task, Unit](Task.delay { handle(s, t).run })
 
     def backendFromArgs: Task[Backend] = {
       def printErrorAndFail(e: String): Task[Backend] =

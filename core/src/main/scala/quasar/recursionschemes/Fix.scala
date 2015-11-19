@@ -17,8 +17,6 @@
 package quasar
 package recursionschemes
 
-import quasar.Predef._
-
 import scalaz._
 
 final case class Fix[F[_]](unFix: F[Fix[F]]) {
@@ -26,8 +24,6 @@ final case class Fix[F[_]](unFix: F[Fix[F]]) {
 }
 
 object Fix {
-  import Recursive.ops._
-
   implicit val fixRecursive: Recursive[Fix] = new Recursive[Fix] {
     def project[F[_]](t: Fix[F]) = t.unFix
   }
@@ -36,12 +32,11 @@ object Fix {
     def embed[F[_]](t: F[Fix[F]]) = Fix(t)
   }
 
-  implicit def fixRenderTree[F[_]: Foldable](implicit RF: RenderTree[F[_]]) =
+  implicit def fixRenderTree[F[_]](implicit RF: RenderTree ~> λ[α => RenderTree[F[α]]]):
+      RenderTree[Fix[F]] =
     new RenderTree[Fix[F]] {
-      def render(v: Fix[F]) = {
-        val t = RF.render(v.unFix)
-          NonTerminal(t.nodeType, t.label, v.children.map(render(_)))
-      }
+      def render(v: Fix[F]) =
+        RF(fixRenderTree[F]).render(v.unFix).relabel("Fix(" + _ + ")")
     }
 
   implicit def fixShow[F[_]](implicit F: Show ~> λ[α => Show[F[α]]]):

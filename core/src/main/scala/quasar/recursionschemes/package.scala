@@ -19,6 +19,7 @@ package quasar
 import quasar.Predef._
 import quasar.fp._
 import quasar.recursionschemes.Recursive.ops._
+import quasar.recursionschemes.cofree._
 
 import scala.Function0
 
@@ -29,7 +30,13 @@ import simulacrum.typeclass
 package object recursionschemes {
 
   def cofCataM[S[_]: Traverse, M[_]: Monad, A, B](t: Cofree[S, A])(f: (A, S[B]) => M[B]): M[B] =
-    t.tail.map(cofCataM(_)(f)).sequence.flatMap(f(t.head, _))
+    t.tail.traverse(cofCataM(_)(f)).flatMap(f(t.head, _))
+
+  def cofParaM[M[_]] = new CofParaMPartiallyApplied[M]
+  final class CofParaMPartiallyApplied[M[_]] { self =>
+    def apply[T[_[_]]: Corecursive, S[_]: Traverse, A, B](t: Cofree[S, A])(f: (A, S[(T[S], B)]) => M[B])(implicit M: Monad[M]): M[B] =
+      t.tail.traverseU(cs => self(cs)(f).map((Recursive[Cofree[?[_], A]].convertTo[S, T](cs), _))).flatMap(f(t.head, _))
+  }
 
   // refolds
 
@@ -38,7 +45,7 @@ package object recursionschemes {
 
   def hyloM[M[_]: Monad, F[_]: Traverse, A, B](a: A)(f: F[B] => M[B], g: A => M[F[A]]):
       M[B] =
-    g(a).flatMap(_.map(hyloM(_)(f, g)).sequence.flatMap(f))
+    g(a).flatMap(_.traverse(hyloM(_)(f, g)).flatMap(f))
 
   def ghylo[F[_]: Functor, W[_]: Comonad, M[_], A, B](
     a: A)(
@@ -48,9 +55,7 @@ package object recursionschemes {
     g: A => F[M[A]])(
     implicit M: Monad[M]):
       B = {
-    def h(x: M[A]): W[B] =
-      w(m(M.lift(g)(x)).map(y => h(y.join).cojoin)).map(f)
-
+    def h(x: M[A]): W[B] = w(m(M.lift(g)(x)).map(y => h(y.join).cojoin)).map(f)
     h(a.point[M]).copoint
   }
 
@@ -60,6 +65,26 @@ package object recursionschemes {
     f: A => F[Free[F, A]]):
       B =
     ghylo[F, Cofree[F, ?], Free[F, ?], A, B](a)(distHisto, distFutu, g, f)
+
+  def elgot[F[_]: Functor, A, B](a: A)(φ: F[B] => B, ψ: A => B \/ F[A]): B = {
+    def h: A => B = (ι ||| ((x: F[A]) => φ(x.map(h)))) ⋘ ψ
+    h(a)
+  }
+
+  def coelgot[F[_]: Functor, A, B](a: A)(φ: (A, F[B]) => B, ψ: A => F[A]):
+      B = {
+    def h: A => B = φ.tupled ⋘ (ι &&& (((x: F[A]) => x.map(h)) ⋘ ψ))
+    h(a)
+  }
+
+  def coelgotM[M[_]] = new CoelgotMPartiallyApplied[M]
+  final class CoelgotMPartiallyApplied[M[_]] {
+    def apply[F[_]: Traverse, A, B](a: A)(φ: (A, F[B]) => M[B], ψ: A => M[F[A]])(implicit M: Monad[M]):
+        M[B] = {
+      def h(a: A): M[B] = ψ(a).flatMap(_.traverse(h)).flatMap(φ(a, _))
+      h(a)
+    }
+  }
 
   // distributive algebras
 
@@ -122,9 +147,9 @@ package object recursionschemes {
       (λ[α => Free[H, F[α]]] ~> λ[α => F[Free[H, α]]]) =
     new (λ[α => Free[H, F[α]]] ~> λ[α => F[Free[H, α]]]) {
       def apply[α](m: Free[H, F[α]]) =
-        m.resume.fold(
-          as => F.lift(Free.liftF(_: H[Free[H, α]]).join)(k(H.lift(distGFutu(k)(H, F)(_: Free[H, F[α]]))(as))),
-          F.lift(Free.point[H, α](_)))
+        m.fold(
+          F.lift(Free.point[H, α](_)),
+          as => F.lift(Free.liftF(_: H[Free[H, α]]).join)(k(H.lift(distGFutu(k)(H, F)(_: Free[H, F[α]]))(as))))
     }
 
   sealed trait Hole
@@ -158,50 +183,73 @@ package object recursionschemes {
 
   def sizeF[F[_]: Foldable, A](fa: F[A]): Int = fa.foldLeft(0)((a, _) => a + 1)
 
-  def attrUnit[T[_[_]]: Recursive, F[_]: Functor](term: T[F]): Cofree[F, Unit] =
-    attrK(term, ())
+  /** Turns any F-algebra, into an identical one that attributes the tree with
+    * the results for each node. */
+  def attributeM[F[_]: Functor, M[_]: Functor, A](f: F[A] => M[A]):
+      F[Cofree[F, A]] => M[Cofree[F, A]] =
+    fa => f(fa.map(_.head)).map(Cofree(_, fa))
 
-  def cataAttribute[T[_[_]]: Recursive, F[_]: Functor, A](term: T[F])(f: F[A] => A): Cofree[F, A] =
-    term.cata[Cofree[F, A]](fa => Cofree(f(fa.map(_.head)), fa))
+  def attribute[F[_]: Functor, A](f: F[A] => A) = attributeM[F, Id, A](f)
 
-  def attrK[T[_[_]]: Recursive, F[_]: Functor, A](term: T[F], k: A):
-      Cofree[F, A] =
-    Cofree(k, term.project.map(attrK(_, k)))
+  def attrK[F[_]: Functor, A](k: A) = attribute[F, A](κ(k))
 
-  def attrSelf[T[_[_]]: Recursive, F[_]: Functor](term: T[F]): Cofree[F, T[F]] =
-    Cofree(term, term.project.map(attrSelf(_)))
+  def attrSelf[T[_[_]]: Corecursive, F[_]: Functor] =
+    attribute[F, T[F]](Corecursive[T].embed)
+
+  /** NB: Since Cofree carries the functor, the resulting algebra is a cata, not
+    *     a para. */
+  def attributePara[T[_[_]]: Corecursive, F[_]: Functor, A](f: F[(T[F], A)] => A):
+      F[Cofree[F, A]] => Cofree[F, A] =
+    fa => Cofree(f(fa.map(x => (Recursive[Cofree[?[_], A]].convertTo[F, T](x), x.head))), fa)
+
+  def attributeCoelgotM[M[_]] = new AttributeCoelgotMPartiallyApplied[M]
+  final class AttributeCoelgotMPartiallyApplied[M[_]] {
+    def apply[F[_]: Functor, A, B](f: (A, F[B]) => M[B])(implicit M: Functor[M]):
+        (A, F[Cofree[F, B]]) => M[Cofree[F, B]] =
+      (a, node) => f(a, node.map(_.head)).map(Cofree(_, node))
+  }
 
   // These lifts are largely useful when you want to zip a cata (or ana) with
   // some more complicated algebra.
 
-  def liftPara[T[_[_]], F[_]: Functor, A](f: F[A] => A): F[(T[F], A)] => A =
-    node => f(node.map(_._2))
-
-  def liftHisto[F[_]: Functor, A](f: F[A] => A): F[Cofree[F, A]] => A =
-    node => f(node.map(_.head))
-
-  final class LiftApoPAT[T[_[_]]] {
-    def apply[F[_]: Functor, A](f: A => F[A]): A => F[T[F] \/ A] =
-      f(_).map(\/-(_))
+  def generalizeAlgebra[W[_]] = new GeneralizeAlgebraPartiallyApplied[W]
+  final class GeneralizeAlgebraPartiallyApplied[W[_]] {
+    def apply[F[_]: Functor, A](f: F[A] => A)(implicit W: Comonad[W]):
+        F[W[A]] => A =
+      node => f(node.map(_.copoint))
   }
 
-  def liftApo[T[_[_]]] = new LiftApoPAT[T]
-
-  def liftFutu[F[_]: Functor, A](f: A => F[A]): A => F[Free[F, A]] =
-    f(_).map(Free.pure(_))
-
-  // roughly DownStar(f) *** DownStar(g)
-  def zipCata[F[_]: Unzip, A, B](f: F[A] => A, g: F[B] => B):
-      F[(A, B)] => (A, B) =
-    _.unfzip.bimap(f, g)
-
-  final class ZipParaPAT[T[_[_]], F[_]] {
-    def apply[A, B](f: F[(T[F], A)] => A, g: F[(T[F], B)] => B)(implicit ev: Functor[F]):
-        F[(T[F], (A, B))] => (A, B) =
-      node => (f(node.map(({ (x: (A, B)) => x._1 }).second)), g(node.map(({ (x: (A, B)) => x._2 }).second)))
+  def generalizeCoelgot[A] = new GeneralizeCoelgotPartiallyApplied[A]
+  final class GeneralizeCoelgotPartiallyApplied[A] {
+    def apply[F[_], B](f: F[B] => B): (A, F[B]) => B = (a, node) => f(node)
   }
 
-  def zipPara[T[_[_]], F[_]] = new ZipParaPAT[T, F]
+  def generalizeCoalgebra[M[_]] = new GeneralizeCoalgebraPartiallyApplied[M]
+  final class GeneralizeCoalgebraPartiallyApplied[M[_]] {
+    def apply[F[_]: Functor, A](f: A => F[A])(implicit M: Monad[M]):
+        A => F[M[A]] =
+      f(_).map(_.point[M])
+  }
+
+  def zipAlgebras[F[_], W[_]] = new ZipAlgebrasPartiallyApplied[F, W]
+  final class ZipAlgebrasPartiallyApplied[F[_], W[_]] {
+    def apply[A, B](f: F[W[A]] => A, g: F[W[B]] => B)(implicit F: Functor[F], W: Functor[W]):
+        F[W[(A, B)]] => (A, B) =
+      node => (f(node.map(_.map(_._1))), g(node.map(_.map(_._2))))
+  }
+
+  // NB: There are potentially two versions of this function – one as below, and
+  //     one where the annotation parameter should become a tuple, too.
+  def zipCoelgot[F[_]: Unzip, A, B, C](f: (A, F[B]) => B, g: (A, F[C]) => C):
+      (A, F[(B, C)]) => (B, C) =
+    (ann, node) => node.unfzip.bimap(f(ann, _), g(ann, _))
+
+  def zipCoelgotM[M[_]] = new ZipCoelgotMPartiallyApplied[M]
+  final class ZipCoelgotMPartiallyApplied[M[_]] {
+    def apply[F[_]: Functor, A, B, C](f: (A, F[B]) => M[B], g: (A, F[C]) => M[C])(implicit M: Applicative[M]):
+      (A, F[(B, C)]) => M[(B, C)] =
+    (ann, node) => Bitraverse[(?, ?)].bisequence((f(ann, node.map(_._1)), g(ann, node.map(_._2))))
+  }
 
   /** Repeatedly applies the function to the result as long as it returns Some.
     * Finally returns the last non-None value (which may be the initial input).
@@ -295,9 +343,7 @@ package object recursionschemes {
         val m: F[(Fix[F], Cofree[F, A])] = t.map(x => loop(x.unFix, newB))
         val t1 = Fix(m.map(_._1))
         (t1, Cofree(f(t1), m.map(_._2)))
-      } { case (x, _) =>
-        (x, attrK(Fix(t), f(x)))
-      }
+      } { case (x, _) => (x, Fix(t).cata(attrK(f(x)))) }
     }
     loop(t.unFix, B.initial)._2
   }

@@ -80,49 +80,54 @@ object WorkflowTaskF {
         }
     }
 
-  implicit def WorkflowTaskRenderTree: RenderTree[WorkflowTaskF[_]] =
-    new RenderTree[WorkflowTaskF[_]] {
-      val RC = RenderTree[Collection]
-      val RO = RenderTree[WorkflowF[Unit]]
-      val RJ = RenderTree[Js]
-      val RS = RenderTree[Selector]
+  implicit def WorkflowTaskRenderTree: RenderTree ~> λ[α => RenderTree[WorkflowTaskF[α]]] =
+    new (RenderTree ~> λ[α => RenderTree[WorkflowTaskF[α]]]) {
+      def apply[α](ra: RenderTree[α]) = new RenderTree[WorkflowTaskF[α]] {
+        val RC = RenderTree[Collection]
+        val RO = RenderTree[WorkflowF[Unit]]
+        val RJ = RenderTree[Js]
+        val RS = RenderTree[Selector]
 
-      val WorkflowTaskNodeType = "WorkflowTask" :: "Workflow" :: Nil
+        val WorkflowTaskNodeType = "WorkflowTask" :: "Workflow" :: Nil
 
-      def render(task: WorkflowTaskF[_]) = task match {
-        case PureTaskF(bson) => Terminal("PureTask" :: WorkflowTaskNodeType,
-          Some(bson.toString))
-        case ReadTaskF(value) => RC.render(value).copy(nodeType = "ReadTask" :: WorkflowTaskNodeType)
+        def render(task: WorkflowTaskF[α]) = task match {
+          case PureTaskF(bson) => Terminal("PureTask" :: WorkflowTaskNodeType,
+            Some(bson.toString))
+          case ReadTaskF(value) => RC.render(value).copy(nodeType = "ReadTask" :: WorkflowTaskNodeType)
 
-        case QueryTaskF(source, query, skip, limit) =>
-          val nt = "PipelineTask" :: WorkflowTaskNodeType
-          NonTerminal(nt, (skip.shows + ", " + limit.shows).some,
-            Terminal("Query" :: nt, query.toString.some) ::
-              Nil)
+          case QueryTaskF(source, query, skip, limit) =>
+            val nt = "PipelineTask" :: WorkflowTaskNodeType
+            NonTerminal(nt, (skip.shows + ", " + limit.shows).some,
+              ra.render(source) ::
+                Terminal("Query" :: nt, query.toString.some) ::
+                Nil)
 
-        case PipelineTaskF(source, pipeline) =>
-          val nt = "PipelineTask" :: WorkflowTaskNodeType
-          NonTerminal(nt, None,
-            NonTerminal("Pipeline" :: nt, None, pipeline.map(RO.render(_))) ::
-              Nil)
+          case PipelineTaskF(source, pipeline) =>
+            val nt = "PipelineTask" :: WorkflowTaskNodeType
+            NonTerminal(nt, None,
+              ra.render(source) ::
+              NonTerminal("Pipeline" :: nt, None, pipeline.map(RO.render(_))) ::
+                Nil)
 
-        case MapReduceTaskF(source, MapReduce(map, reduce, outOpt, selectorOpt, sortOpt, limitOpt, finalizerOpt, scopeOpt, jsModeOpt, verboseOpt)) =>
-          val nt = "MapReduceTask" :: WorkflowTaskNodeType
-          NonTerminal(nt, None,
-            RJ.render(map) ::
-              RJ.render(reduce) ::
-              Terminal("Out" :: nt, Some(outOpt.toString)) ::
-              selectorOpt.map(RS.render(_)).getOrElse(Terminal("None" :: Nil, None)) ::
-              sortOpt.map(keys => NonTerminal("Sort" :: nt, None,
-                (keys.map { case (expr, ot) => Terminal("Key" :: "Sort" :: nt, Some(expr.toString + " -> " + ot)) } ).toList)).getOrElse(Terminal("None" :: Nil, None)) ::
-              Terminal("Limit" :: nt, Some(limitOpt.toString)) ::
-              finalizerOpt.map(RJ.render(_)).getOrElse(Terminal("None" :: Nil, None)) ::
-              Terminal("Scope" :: nt, Some(scopeOpt.toString)) ::
-              Terminal("JsMode" :: nt, Some(jsModeOpt.toString)) ::
-              Nil)
+          case MapReduceTaskF(source, MapReduce(map, reduce, outOpt, selectorOpt, sortOpt, limitOpt, finalizerOpt, scopeOpt, jsModeOpt, verboseOpt)) =>
+            val nt = "MapReduceTask" :: WorkflowTaskNodeType
+            NonTerminal(nt, None,
+              ra.render(source) ::
+                RJ.render(map) ::
+                RJ.render(reduce) ::
+                Terminal("Out" :: nt, Some(outOpt.toString)) ::
+                selectorOpt.map(RS.render(_)).getOrElse(Terminal("None" :: Nil, None)) ::
+                sortOpt.map(keys => NonTerminal("Sort" :: nt, None,
+                  (keys.map { case (expr, ot) => Terminal("Key" :: "Sort" :: nt, Some(expr.toString + " -> " + ot)) } ).toList)).getOrElse(Terminal("None" :: Nil, None)) ::
+                Terminal("Limit" :: nt, Some(limitOpt.toString)) ::
+                finalizerOpt.map(RJ.render(_)).getOrElse(Terminal("None" :: Nil, None)) ::
+                Terminal("Scope" :: nt, Some(scopeOpt.toString)) ::
+                Terminal("JsMode" :: nt, Some(jsModeOpt.toString)) ::
+                Nil)
 
-        case FoldLeftTaskF(head, tail) =>
-          NonTerminal("FoldLeftTask" :: WorkflowTaskNodeType, None, Nil)
+          case FoldLeftTaskF(head, tail) =>
+            NonTerminal("FoldLeftTask" :: WorkflowTaskNodeType, None, ra.render(head) :: tail.toList.map(ra.render))
+        }
       }
     }
 }
