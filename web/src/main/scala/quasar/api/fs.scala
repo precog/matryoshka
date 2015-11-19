@@ -384,14 +384,16 @@ final case class FileSystemApi[WC, SC](
 
   def metadataService(backend: Task[Backend]) = HttpService {
     case GET -> AsPath(path) => backend flatMap { bknd =>
-      path.file.fold(
-        bknd.ls(path).fold(
-          handlePathError,
-          // NB: we sort only for deterministic results, since JSON lacks `Set`
-          paths => Ok(Json.obj("children" := paths.toList.sorted))))(
-        κ(bknd.exists(path).fold(
-          handlePathError,
-          x => if (x) Ok(Json.obj()) else NotFound()))).join
+      bknd.exists(path).fold(
+        handlePathError,
+        x =>
+          if (!x) NotFound()
+          else if (path.pureDir)
+            bknd.ls(path).fold(
+              handlePathError,
+              // NB: we sort only for deterministic results, since JSON lacks `Set`
+              paths => Ok(Json("children" := paths.toList.sorted))).join
+          else Ok(Json.obj())).join
     }
   }
 
