@@ -1,5 +1,6 @@
 {
     "name": "project index from group with filter",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "slamengine_commits.data",
     "query": "select parents[0].sha, count(*) as count from slamengine_commits where parents[0].sha like '5%' group by parents[0].sha",
     "predicate": "containsExactly",

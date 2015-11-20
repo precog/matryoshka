@@ -1,5 +1,6 @@
 {
     "name": "project index with object flatten",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "slamengine_commits.data",
     "query": "select parents[0], commit{*} from slamengine_commits",
     "predicate": "containsAtLeast",
