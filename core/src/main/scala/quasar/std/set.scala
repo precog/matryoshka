@@ -197,6 +197,21 @@ trait SetLib extends Library {
     setTyper(partialTyper { case List(s1, _) => s1 }),
     setUntyper(t => success(t :: Type.Top :: Nil)))
 
+  val In = Mapping(
+    "(in)",
+    "Determines whether a value is in a given set.",
+    Type.Bool, Type.Top :: Type.AnySet :: Nil,
+    noSimplification,
+    partialTyper {
+      case List(_,             Type.Const(Data.Set(Nil))) =>
+        Type.Const(Data.Bool(false))
+      case List(Type.Const(x), Type.Const(Data.Set(set))) =>
+        Type.Const(Data.Bool(set.contains(x)))
+      case List(_,             Type.Const(Data.Set(_)))   => Type.Bool
+      case List(_,             _)                         => Type.Bool
+    },
+    basicUntyper)
+
   val Constantly = Mapping("CONSTANTLY", "Always return the same value",
     Type.Bottom, Type.Top :: Type.Top :: Nil,
     noSimplification,
@@ -210,6 +225,10 @@ trait SetLib extends Library {
     },
     setUntyper(t => success(t :: Type.Top :: Nil)))
 
-  def functions = Take :: Drop :: OrderBy :: Filter :: InnerJoin :: LeftOuterJoin :: RightOuterJoin :: FullOuterJoin :: GroupBy :: Distinct :: DistinctBy :: Union :: Intersect :: Except :: Constantly :: Nil
+  def functions =
+    Take :: Drop :: OrderBy :: Filter ::
+      InnerJoin :: LeftOuterJoin :: RightOuterJoin :: FullOuterJoin ::
+      GroupBy :: Distinct :: DistinctBy :: Union :: Intersect :: Except ::
+      In :: Constantly :: Nil
 }
 object SetLib extends SetLib

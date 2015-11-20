@@ -184,6 +184,7 @@ class SQLParser extends StandardTokenParsers {
     p ~ rep1(s ~> p) ^^ { case x ~ y => x :: y }
 
   def set_literal: Parser[Expr] =
+    op("(") ~ op(")") ^^^ SetLiteral(Nil) |
     (op("(") ~> rep2sep(expr, op(",")) <~ op(")")) ^^ (SetLiteral(_))
 
   def array_literal: Parser[Expr] =

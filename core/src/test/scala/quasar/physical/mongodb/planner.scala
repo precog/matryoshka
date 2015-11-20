@@ -656,6 +656,11 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             Selector.In(Bson.Arr(List(Bson.Text("AZ"), Bson.Text("CO"))))))))
     }
 
+    "plan filter with field in empty array" in {
+      plan("select * from zips where state in ()") must
+        beWorkflow($pure(Bson.Arr(Nil)))
+    }
+
     "plan filter with field containing constant value" in {
       plan("select * from zips where 43.058514 in loc") must
         beWorkflow(chain(
