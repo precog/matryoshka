@@ -6,6 +6,7 @@ import de.heikoseeberger.sbtheader.HeaderPlugin
 val scalazVersion  = "7.1.4"
 val slcVersion     = "0.4"
 val monocleVersion = "1.1.1"
+val pathyVersion   = "0.0.3"
 
 // Exclusive execution settings
 lazy val ExclusiveTests = config("exclusive") extend Test
@@ -90,10 +91,12 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "io.argonaut"       %% "argonaut"                  % "6.1"          % "compile, test",
     "org.jboss.aesh"    %  "aesh"                      % "0.55"         % "compile, test",
     "org.typelevel"     %% "shapeless-scalaz"          % slcVersion     % "compile, test",
-    "com.slamdata"      %% "pathy"                     % "0.0.1-SNAPSHOT" % "compile, test",
+    "com.slamdata"      %% "pathy-core"                % pathyVersion   % "compile",
     "com.github.mpilquist" %% "simulacrum"             % "0.4.0"        % "compile, test",
+    "com.slamdata"      %% "pathy-scalacheck"          % pathyVersion   % "test",
     "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion  % "test",
     "org.specs2"        %% "specs2-core"               % "2.4"          % "test",
+    "org.scalacheck"    %% "scalacheck"                % "1.11.6"       % "test" force(),
     "org.typelevel"     %% "scalaz-specs2"             % "0.3.0"        % "test",
     "org.typelevel"     %% "shapeless-scalacheck"      % slcVersion     % "test",
     "net.databinder.dispatch" %% "dispatch-core"       % "0.11.1"       % "test"),
