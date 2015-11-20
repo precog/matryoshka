@@ -143,7 +143,11 @@ package object interactive {
           err => Process.fail( new RuntimeException("error loading: " + err.message)),
           j => Process.eval(Task.now(j))
         ))
-        backend.save(path, data)
+        for {
+          _ <- liftE(Task.delay(println("loading: " + path.simplePathname)))
+          _ <- backend.save(path, data)
+          _ <- liftE(Task.delay(println("...done")))
+        } yield ()
       }
     }
   }
@@ -163,10 +167,6 @@ package object interactive {
    *  @param prefix The path under which to store the collection materialized from the data file
    *  @param file file from which to the load the data
    */
-  def loadFile(backend: Backend, prefix: Path, file: File): ProcessingTask[Unit] = {
-    for {
-    _ <- liftE(Task.delay(println("loading: " + file)))
-    _ <- loadData(backend, prefix, DataSource.fromFile(file))
-    } yield ()
-  }
+  def loadFile(backend: Backend, prefix: Path, file: File): ProcessingTask[Unit] =
+    loadData(backend, prefix, DataSource.fromFile(file))
 }
