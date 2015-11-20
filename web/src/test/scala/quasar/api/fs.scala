@@ -340,7 +340,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
         val resp = meta()
         resp.getStatusCode must_== 404
-        resp.getResponseBody must_== ""
+        resp.getResponseBody must_== """{"error":"There is no file/directory at /missing"}"""
       }
     }
 
@@ -360,7 +360,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
         val resp = meta()
         resp.getStatusCode must_== 404
-        resp.getResponseBody must_== ""
+        resp.getResponseBody must_== """{"error":"There is no file/directory at /foo/baz/"}"""
       }
     }
 
@@ -433,7 +433,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         val resp = meta()
 
         resp.getStatusCode must_== 404
-        resp.getResponseBody must_== ""
+        resp.getResponseBody must_== """{"error":"There is no file/directory at /foo"}"""
       }
     }
 

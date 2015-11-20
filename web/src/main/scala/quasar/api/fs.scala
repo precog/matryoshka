@@ -385,7 +385,7 @@ final case class FileSystemApi[WC, SC](
       bknd.exists(path).fold(
         handlePathError,
         x =>
-          if (!x) NotFound()
+          if (!x) NotFound(errorBody("There is no file/directory at " + path, None))
           else if (path.pureDir)
             bknd.ls(path).fold(
               handlePathError,
