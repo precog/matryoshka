@@ -16,6 +16,15 @@ object QueryFile {
   final case class ExecutePlan(lp: Fix[LogicalPlan], out: AFile)
     extends QueryFile[(PhaseResults, FileSystemError \/ ResultFile)]
 
+  /** TODO: While this is a bit better in one dimension here in `QueryFile`,
+    *       @mossprescott points out it is still a bit of a stretch to include
+    *       in this algebra. We need to revisit this and probably add algebras
+    *       over multiple dimensions to better organize these (and other)
+    *       operations.
+    *
+    *       For more discussion, see
+    *       https://github.com/quasar-analytics/quasar/pull/986#discussion-diff-45081757
+    */
   final case class ListContents(dir: ADir)
     extends QueryFile[FileSystemError \/ Set[Node]]
 
