@@ -72,7 +72,7 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
 
       val p = write.append(f, xs.toProcess) ++ write.create(f, ys.toProcess)
 
-      evalLogZero(p).run.toEither must beLeft(PathError(FileExists(f)))
+      evalLogZero(p).run.toEither must beLeft(PathError(PathExists(f)))
     }
 
     "create should consume all input into a new file" ! prop {
@@ -86,7 +86,7 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
       (f: AFile, xs: Vector[Data]) =>
 
       evalLogZero(write.replace(f, xs.toProcess))
-        .run.toEither must beLeft(PathError(FileNotFound(f)))
+        .run.toEither must beLeft(PathError(PathNotFound(f)))
     }
 
     "replace should leave the existing file untouched on failure" ! prop {

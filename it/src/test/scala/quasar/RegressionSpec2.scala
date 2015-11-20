@@ -60,7 +60,7 @@ class RegressionSpec2
         regressionExample(f, t, name, run)
       }
 
-      step(runT(run)(manage.deleteDir(DataDir)).runVoid)
+      step(runT(run)(manage.delete(DataDir)).runVoid)
     }; ()
   }
 

@@ -27,11 +27,11 @@ object readfile {
   val interpret: ReadFile ~> MongoRead = new (ReadFile ~> MongoRead) {
     def apply[A](rf: ReadFile[A]) = rf match {
       case Open(file, offset, limit) =>
-        Collection.fromFile(file).fold(
+        Collection.fromPathy(file).fold(
           err  => PathError(err).left.point[MongoRead],
           coll => collectionExists(coll).liftM[ReadStateT].ifM(
                     openCursor(coll, offset, limit) map (_.right[FileSystemError]),
-                    PathError(FileNotFound(file)).left.point[MongoRead]))
+                    PathError(PathNotFound(file)).left.point[MongoRead]))
 
       case Read(h) =>
         lookupCursor(h)

@@ -18,9 +18,8 @@ package object fs {
   type RDir  = RelDir[Sandboxed]
   type AFile = AbsFile[Sandboxed]
   type RFile = RelFile[Sandboxed]
-
-  type RelPath[S] = RelDir[S] \/ RelFile[S]
-  type AbsPath[S] = AbsDir[S] \/ AbsFile[S]
+  type APath = pathy.Path[Abs,_,Sandboxed]
+  type RPath = pathy.Path[Rel,_,Sandboxed]
 
   type PathErr2T[F[_], A] = EitherT[F, PathError2, A]
   type FileSystemErrT[F[_], A] = EitherT[F, FileSystemError, A]

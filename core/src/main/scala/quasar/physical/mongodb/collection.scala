@@ -75,10 +75,10 @@ object Collection {
       \/-(_)).join
 
   // TODO: Rename to `fromPath` once old path code is deleted
-  def fromPathy(path: AbsPath[Sandboxed]): PathError2 \/ Collection = {
+  def fromPathy(path: APath): PathError2 \/ Collection = {
     import PathError2._
 
-    flatten(None, None, None, Some(_), Some(_), path.merge)
+    flatten(None, None, None, Some(_), Some(_), path)
       .toIList.unite.uncons(
         InvalidPath(path, "no database specified").left,
         (h, t) => t.toNel.cata(
@@ -93,12 +93,6 @@ object Collection {
             } yield Collection(db, coll)) leftMap (InvalidPath(path, _)),
           InvalidPath(path, "path names a database, but no collection").left))
   }
-
-  def fromDir(dir: ADir): PathError2 \/ Collection =
-    fromPathy(dir.left)
-
-  def fromFile(file: AFile): PathError2 \/ Collection =
-    fromPathy(file.right)
 
   private trait PathParser extends RegexParsers {
     override def skipWhitespace = false

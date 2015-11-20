@@ -48,7 +48,7 @@ object InMemory {
             } yield h.right
 
           case None =>
-            fsFileNotFound(f)
+            fsPathNotFound(f)
         }
 
       case ReadFile.Read(h) =>
@@ -71,7 +71,7 @@ object InMemory {
                     .map(κ(xs.slice(rIdx, rIdx + rCount).right))
 
               case None =>
-                fsFileNotFound(f)
+                fsPathNotFound(f)
             }
 
           case None =>
@@ -113,7 +113,7 @@ object InMemory {
         scenario.fold(moveDir(_, _, semantics), moveFile(_, _, semantics))
 
       case Delete(path) =>
-        path.fold(deleteDir, deleteFile)
+        refineType(path).fold(deleteDir, deleteFile)
 
       case TempFile(nearTo) =>
         nextSeq map (n => nearTo.cata(
@@ -196,11 +196,11 @@ object InMemory {
 
   //----
 
-  private def fsFileNotFound[A](f: AFile): InMemoryFs[FileSystemError \/ A] =
-    PathError(FileNotFound(f)).left.point[InMemoryFs]
+  private def fsPathNotFound[A](f: AFile): InMemoryFs[FileSystemError \/ A] =
+    PathError(PathNotFound(f)).left.point[InMemoryFs]
 
-  private def fsFileExists[A](f: AFile): InMemoryFs[FileSystemError \/ A] =
-    PathError(FileExists(f)).left.point[InMemoryFs]
+  private def fsPathExists[A](f: AFile): InMemoryFs[FileSystemError \/ A] =
+    PathError(PathExists(f)).left.point[InMemoryFs]
 
   private def moveDir(src: ADir, dst: ADir, s: MoveSemantics): InMemoryFs[FileSystemError \/ Unit] =
     for {
@@ -208,7 +208,7 @@ object InMemory {
       sufxs =  m.keys.toStream.map(_ relativeTo src).unite
       files =  sufxs map (src </> _) zip (sufxs map (dst </> _))
       r0    <- files.traverseU { case (sf, df) => EitherT(moveFile(sf, df, s)) }.run
-      r1    =  r0 flatMap (_.nonEmpty either (()) or PathError(DirNotFound(src)))
+      r1    =  r0 flatMap (_.nonEmpty either (()) or PathError(PathNotFound(src)))
     } yield r1
 
   private def moveFile(src: AFile, dst: AFile, s: MoveSemantics): InMemoryFs[FileSystemError \/ Unit] = {
@@ -216,16 +216,16 @@ object InMemory {
 
     val move0: InMemoryFs[FileSystemError \/ Unit] = for {
       v <- fileL(src) <:= None
-      r <- v.cata(xs => (fileL(dst) := Some(xs)) as ().right, fsFileNotFound(src))
+      r <- v.cata(xs => (fileL(dst) := Some(xs)) as ().right, fsPathNotFound(src))
     } yield r
 
     s match {
       case Overwrite =>
         move0
       case FailIfExists =>
-        fileL(dst).st flatMap (_ ? fsFileExists[Unit](dst) | move0)
+        fileL(dst).st flatMap (_ ? fsPathExists[Unit](dst) | move0)
       case FailIfMissing =>
-        fileL(dst).st flatMap (_ ? move0 | fsFileNotFound(dst))
+        fileL(dst).st flatMap (_ ? move0 | fsPathNotFound(dst))
     }
   }
 
@@ -234,15 +234,15 @@ object InMemory {
       m  <- fmL.st
       ss =  m.keys.toStream.map(_ relativeTo d).unite
       r0 <- ss.traverseU(f => EitherT(deleteFile(d </> f))).run
-      r1 =  r0 flatMap (_.nonEmpty either (()) or PathError(DirNotFound(d)))
+      r1 =  r0 flatMap (_.nonEmpty either (()) or PathError(PathNotFound(d)))
     } yield r1
 
   private def deleteFile(f: AFile): InMemoryFs[FileSystemError \/ Unit] =
-    (fileL(f) <:= None) map (_.void \/> PathError(FileNotFound(f)))
+    (fileL(f) <:= None) map (_.void \/> PathError(PathNotFound(f)))
 
   private def ls(d: ADir): InMemoryFs[FileSystemError \/ Set[Node]] =
     fmL.st map (
       _.keys.toList.map(_ relativeTo d).unite.toNel
         .map(_ foldMap (f => Node.fromFirstSegmentOf(f).toSet))
-        .toRightDisjunction(PathError(DirNotFound(d))))
+        .toRightDisjunction(PathError(PathNotFound(d))))
 }

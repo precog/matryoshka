@@ -70,7 +70,7 @@ object QueryFile {
         R.scanAll(f).translate[ExecM](hoistFS)
 
       def handleTemp(tmp: AFile) = {
-        val cleanup = (hoistFS(M.deleteFile(tmp)): ExecM[Unit])
+        val cleanup = (hoistFS(M.delete(tmp)): ExecM[Unit])
                         .liftM[Process].drain
         values(tmp) onComplete cleanup
       }
@@ -126,9 +126,9 @@ object QueryFile {
 
       def lsR(desc: RDir): StreamT[M, Node] =
         StreamT.fromStream[M, Node](ls(dir </> desc) map (_.toStream))
-          .flatMap(_.path.fold(
+          .flatMap(n => refineType(n.path).fold(
             d => lsR(desc </> d),
-            f => Node.File(desc </> f).point[S]))
+            f => Node.Plain(desc </> f).point[S]))
 
       lsR(currentDir).foldLeft(Set.empty[Node])(_ + _)
     }

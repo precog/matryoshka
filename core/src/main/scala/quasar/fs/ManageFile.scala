@@ -102,7 +102,7 @@ object ManageFile {
   final case class Move(scenario: MoveScenario, semantics: MoveSemantics)
     extends ManageFile[FileSystemError \/ Unit]
 
-  final case class Delete(path: AbsPath[Sandboxed])
+  final case class Delete(path: APath)
     extends ManageFile[FileSystemError \/ Unit]
 
   final case class TempFile(nearTo: Option[AFile])
@@ -135,16 +135,8 @@ object ManageFile {
     }
 
     /** Delete the given file system path, fails if the path does not exist. */
-    def delete(path: AbsPath[Sandboxed]): M[Unit] =
+    def delete(path: APath): M[Unit] =
       EitherT(lift(Delete(path)))
-
-    /** Delete the given directory, fails if the directory does not exist. */
-    def deleteDir(dir: ADir): M[Unit] =
-      delete(dir.left)
-
-    /** Delete the given file, fails if the file does not exist. */
-    def deleteFile(file: AFile): M[Unit] =
-      delete(file.right)
 
     /** Returns the path to a new temporary file. When `nearTo` is specified,
       * an attempt is made to return a tmp path that is as physically close to

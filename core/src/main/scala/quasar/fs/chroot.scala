@@ -84,7 +84,7 @@ object chroot {
             .map(_ leftMap stripPathError(prefix))
 
         case Delete(p) =>
-          Coyoneda.lift(Delete(p.bimap(rebase(_, prefix), rebase(_, prefix))))
+          Coyoneda.lift(Delete(rebase(p, prefix)))
             .map(_ leftMap stripPathError(prefix))
 
         case TempFile(nt) =>
@@ -152,7 +152,7 @@ object chroot {
 
   ////
 
-  private val fsPathError: Optional[FileSystemError, AbsPath[Sandboxed]] =
+  private val fsPathError: Optional[FileSystemError, APath] =
     FileSystemError.pathError composeLens PathError2.errorPath
 
   private val fsPlannerError: Optional[FileSystemError, Fix[LogicalPlan]] =
@@ -176,17 +176,20 @@ object chroot {
     val stripPlan: Fix[LogicalPlan] => Fix[LogicalPlan] =
       _ translate stripRead
 
-    fsPathError.modify(stripPathPrefix(prefix)) compose
-    fsPlannerError.modify(stripPlan)
+    fsPathError.modify(stripAPathPrefix(prefix)) compose
+      fsPlannerError.modify(stripPlan)
   }
-
-  private def stripPathPrefix(prefix: ADir): AbsPath[Sandboxed] => AbsPath[Sandboxed] =
-    _.bimap(stripPrefix(prefix), stripPrefix(prefix))
 
   private def stripNodePrefix(prefix: ADir): Node => Node =
     _.fold(
       Node.Mount compose stripRelPrefix(prefix),
-      p => Node.Plain(p.bimap(stripRelPrefix(prefix), stripRelPrefix(prefix))))
+      Node.Plain compose stripRPathPrefix(prefix))
+
+  private def stripAPathPrefix(prefix: ADir): APath => APath =
+    p => stripPrefix(prefix)(p)
+
+  private def stripRPathPrefix(prefix: ADir): RPath => RPath =
+    p => stripRelPrefix(prefix)(p)
 
   private def stripRelPrefix[T](prefix: ADir): PPath[Rel, T, Sandboxed] => PPath[Rel, T, Sandboxed] =
     p => prefix.relativeTo(rootDir).flatMap(p relativeTo _) getOrElse p

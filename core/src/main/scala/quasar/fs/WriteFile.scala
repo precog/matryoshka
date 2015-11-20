@@ -4,7 +4,6 @@ package fs
 import quasar.Predef._
 import quasar.fp._
 
-import monocle.std.{disjunction => D}
 import scalaz._, Scalaz._
 import scalaz.stream._
 
@@ -106,7 +105,7 @@ object WriteFile {
                      : Process[M, FileSystemError] = {
 
       def shouldNotExist: M[FileSystemError] =
-        MonadError[G, FileSystemError].raiseError(PathError(FileExists(dst)))
+        MonadError[G, FileSystemError].raiseError(PathError(PathExists(dst)))
 
       fileExistsM(dst).liftM[Process].ifM(
         shouldNotExist.liftM[Process],
@@ -127,7 +126,7 @@ object WriteFile {
                       : Process[M, FileSystemError] = {
 
       def shouldExist: M[FileSystemError] =
-        MonadError[G, FileSystemError].raiseError(PathError(FileNotFound(dst)))
+        MonadError[G, FileSystemError].raiseError(PathError(PathNotFound(dst)))
 
       fileExistsM(dst).liftM[Process].ifM(
         saveChunked0(dst, src, MoveSemantics.FailIfMissing),
@@ -157,21 +156,21 @@ object WriteFile {
                             (implicit MF: ManageFile.Ops[S])
                             : Process[M, FileSystemError] = {
 
-      val fsFileNotFound = pathError composePrism pathNotFound composePrism D.right
+      val fsPathNotFound = pathError composePrism pathNotFound
 
       def cleanupTmp(tmp: AFile)(t: Throwable): Process[M, Nothing] =
-        Process.eval_[M, Unit](MF.deleteFile(tmp))
+        Process.eval_[M, Unit](MF.delete(tmp))
           .causedBy(Cause.Error(t))
 
       def attemptMove(tmp: AFile): M[Unit] =
         MonadError[G, FileSystemError].handleError(MF.moveFile(tmp, dst, sem))(e =>
-          if (fsFileNotFound.getOption(e) exists (_ == tmp)) ().point[M]
+          if (fsPathNotFound.getOption(e) exists (_ == tmp)) ().point[M]
           else MonadError[G, FileSystemError].raiseError(e))
 
       MF.tempFileNear(dst).liftM[FileSystemErrT].liftM[Process] flatMap { tmp =>
         appendChunked(tmp, src).terminated.take(1)
           .flatMap(_.cata(
-            werr => MF.deleteFile(tmp).as(werr).liftM[Process],
+            werr => MF.delete(tmp).as(werr).liftM[Process],
             Process.eval_[M, Unit](attemptMove(tmp))))
           .onFailure(cleanupTmp(tmp))
       }

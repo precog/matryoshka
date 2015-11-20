@@ -63,7 +63,7 @@ class MongoDbFileSystemSpec
 
     tmpFile flatMap { f =>
       val p = write.save(f, oneDoc.toProcess).terminated *>
-              manage.deleteFile(f).liftM[Process]
+              manage.delete(f).liftM[Process]
 
       rethrow[Task, FileSystemError].apply(execT(run, p))
     }
@@ -89,7 +89,7 @@ class MongoDbFileSystemSpec
           }
         }
 
-        step(invalidData.flatMap(p => runT(run)(manage.deleteDir(p))).runVoid)
+        step(invalidData.flatMap(p => runT(run)(manage.delete(p))).runVoid)
       }
 
       /** NB: These tests effectively require "root" level permissions on the
@@ -110,12 +110,12 @@ class MongoDbFileSystemSpec
               query.ls(rootDir).liftM[Process]           |@|
               write.save(f, oneDoc.toProcess).terminated |@|
               query.ls(rootDir).liftM[Process]           |@|
-              manage.deleteDir(d).liftM[Process]         |@|
+              manage.delete(d).liftM[Process]         |@|
               query.ls(rootDir).liftM[Process]
             ) { (before, _, create, _, delete) =>
               val d0 = d.relativeTo(rootDir) getOrElse currentDir
-              (before must not contain(Node.Dir(d0))) and
-              (create must contain(Node.Dir(d0))) and
+              (before must not contain(Node.Plain(d0))) and
+              (create must contain(Node.Plain(d0))) and
               (delete must_== before)
             }
           }
@@ -139,14 +139,14 @@ class MongoDbFileSystemSpec
               write.save(f1, oneDoc.toProcess).terminated |@|
               write.save(f2, oneDoc.toProcess).terminated |@|
               query.ls(rootDir).liftM[Process]            |@|
-              manage.deleteDir(rootDir).liftM[Process]    |@|
+              manage.delete(rootDir).liftM[Process]    |@|
               query.ls(rootDir).liftM[Process]
             ) { (_, _, before, _, after) =>
               val dA = d1.relativeTo(rootDir) getOrElse currentDir
               val dB = d2.relativeTo(rootDir) getOrElse currentDir
 
-              (before must contain(Node.Dir(dA))) and
-              (before must contain(Node.Dir(dB))) and
+              (before must contain(Node.Plain(dA))) and
+              (before must contain(Node.Plain(dB))) and
               (after must beEmpty)
             }
           }
@@ -198,11 +198,10 @@ class MongoDbFileSystemSpec
           }
 
           def check(file: AFile) = {
-            val errP: Prism[FileSystemError \/ ResultFile, AFile] =
+            val errP: Prism[FileSystemError \/ ResultFile, APath] =
               D.left                    composePrism
               FileSystemError.pathError composePrism
-              PathError2.pathNotFound   composePrism
-              D.right
+              PathError2.pathNotFound
 
             def check0(expr: sql.Expr) =
               (run(query.fileExists(file)).run must beFalse) and

@@ -22,7 +22,7 @@ class WriteFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
   val writesPrefix: ADir = rootDir </> dir("forwriting")
 
   def deleteForWriting(run: Run): FsTask[Unit] =
-    runT(run)(manage.deleteDir(writesPrefix))
+    runT(run)(manage.delete(writesPrefix))
 
   fileSystemShould { _ => implicit run =>
     "Writing Files" should {
@@ -80,9 +80,9 @@ class WriteFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
       "append two files, one in subdir of the other's parent, should succeed" >> {
         val d = writesPrefix </> dir("subdir1")
         val f1 = d </> file("subdirfile1")
-        val f1Node = Node.File(file("subdirfile1"))
+        val f1Node = Node.Plain(file("subdirfile1"))
         val f2 = d </> dir("subdir2") </> file("subdirfile2")
-        val f2Node = Node.File(dir("subdir2") </> file("subdirfile2"))
+        val f2Node = Node.Plain(dir("subdir2") </> file("subdirfile2"))
         val p = write.append(f1, oneDoc.toProcess).drain ++
                 write.append(f2, oneDoc.toProcess).drain ++
                 query.lsAll(d).liftM[Process]

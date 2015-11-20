@@ -36,13 +36,13 @@ object managefile {
           .run.liftM[ManageInT]
 
       case Delete(path) =>
-        path.fold(deleteDir, deleteFile)
+        refineType(path).fold(deleteDir, deleteFile)
           .run.liftM[ManageInT]
 
       case TempFile(maybeNear) =>
         val dbName = defaultDb map { defDb =>
           maybeNear
-            .flatMap(f => Collection.fromFile(f).toOption)
+            .flatMap(f => Collection.fromPathy(f).toOption)
             .cata(_.databaseName, defDb.run)
         }
 
@@ -98,16 +98,16 @@ object managefile {
     def reifyMongoErr(m: MongoDbIO[Unit]): MongoFsM[Unit] =
       EitherT(m.attempt flatMap {
         case -\/(e: MongoServerException) if e.getCode == 10026 =>
-          PathError(FileNotFound(src)).left.point[MongoDbIO]
+          PathError(PathNotFound(src)).left.point[MongoDbIO]
 
         case -\/(e: MongoServerException) if e.getCode == 10027 =>
-          PathError(FileExists(dst)).left.point[MongoDbIO]
+          PathError(PathExists(dst)).left.point[MongoDbIO]
 
         case -\/(e: MongoCommandException) if e.getErrorMessage == srcNotFoundErr =>
-          PathError(FileNotFound(src)).left.point[MongoDbIO]
+          PathError(PathNotFound(src)).left.point[MongoDbIO]
 
         case -\/(e: MongoCommandException) if e.getErrorMessage == dstExistsErr =>
-          PathError(FileExists(dst)).left.point[MongoDbIO]
+          PathError(PathExists(dst)).left.point[MongoDbIO]
 
         case -\/(t) =>
           fail(t)
@@ -120,21 +120,21 @@ object managefile {
       EitherT(collectionsIn(dstColl.databaseName)
                 .filter(_ == dstColl)
                 .runLast
-                .map(_.toRightDisjunction(PathError(FileNotFound(dst))).void))
+                .map(_.toRightDisjunction(PathError(PathNotFound(dst))).void))
 
     if (src == dst)
-      collFromFileM(src) flatMap (srcColl =>
+      collFromPathM(src) flatMap (srcColl =>
         collectionExists(srcColl).liftM[FileSystemErrT].ifM(
           if (MoveSemantics.failIfExists isMatching sem)
-            MonadError[MongoE, FileSystemError].raiseError(PathError(FileExists(src)))
+            MonadError[MongoE, FileSystemError].raiseError(PathError(PathExists(src)))
           else
             ().point[MongoFsM]
           ,
-          MonadError[MongoE, FileSystemError].raiseError(PathError(FileNotFound(src)))))
+          MonadError[MongoE, FileSystemError].raiseError(PathError(PathNotFound(src)))))
     else
       for {
-        srcColl <- collFromFileM(src)
-        dstColl <- collFromFileM(dst)
+        srcColl <- collFromPathM(src)
+        dstColl <- collFromPathM(dst)
         rSem    =  moveToRename(sem)
         _       <- if (MoveSemantics.failIfMissing isMatching sem)
                      ensureDstExists(dstColl)
@@ -163,10 +163,10 @@ object managefile {
     }
 
   private def deleteFile(file: AFile): MongoFsM[Unit] =
-    collFromFileM(file) flatMap (c =>
+    collFromPathM(file) flatMap (c =>
       collectionExists(c).liftM[FileSystemErrT].ifM(
         dropCollection(c).liftM[FileSystemErrT],
-        PathError(FileNotFound(file)).raiseError[MongoE, Unit]))
+        PathError(PathNotFound(file)).raiseError[MongoE, Unit]))
 
   private def defaultDb: MongoManage[DefaultDb] =
     MonadReader[R, ManageIn].ask.map(_._1)

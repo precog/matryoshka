@@ -41,17 +41,17 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
   }
 
   def deleteForReading(run: Run): FsTask[Unit] =
-    runT(run)(manage.deleteDir(readsPrefix))
+    runT(run)(manage.delete(readsPrefix))
 
   fileSystemShould { _ => implicit run =>
     "Reading Files" should {
       // Load read-only data
       step((deleteForReading(run).run.void *> loadForReading(run).run.void).run)
 
-      "open returns FileNotFound when file DNE" >>* {
+      "open returns PathNotFound when file DNE" >>* {
         val dne = rootDir </> dir("doesnt") </> file("exist")
         read.unsafe.open(dne, Natural._0, None).run map { r =>
-          r.toEither must beLeft(PathError(FileNotFound(dne)))
+          r.toEither must beLeft(PathError(PathNotFound(dne)))
         }
       }
 

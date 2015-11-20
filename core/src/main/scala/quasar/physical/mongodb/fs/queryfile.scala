@@ -35,7 +35,7 @@ object queryfile {
             (for {
               _      <- checkPathsExist(lp)
               wf     <- convertP(lp)(MongoDbPlanner.plan(lp))
-              dst    <- EitherT(Collection.fromFile(out)
+              dst    <- EitherT(Collection.fromPathy(out)
                                   .leftMap(PathError)
                                   .point[F])
               salt   <- liftG(MongoDbIO.liftTask(NameGenerator.salt)
@@ -141,9 +141,9 @@ object queryfile {
 
   // TODO: This is a hack, but is only used to create a Pathy.Path for error
   //       messages and will go away once LogicalPlan is converted to Pathy.
-  private def qPathToPathy(p: QPath): AbsPath[Sandboxed] = {
+  private def qPathToPathy(p: QPath): APath = {
     val abs = p.asAbsolute
     val absDir = abs.dir.foldLeft(rootDir[Sandboxed])((d, n) => d </> dir(n.value))
-    abs.file.map(n => absDir </> file(n.value)) \/> absDir
+    abs.file.map(n => absDir </> file(n.value)) getOrElse absDir
   }
 }
