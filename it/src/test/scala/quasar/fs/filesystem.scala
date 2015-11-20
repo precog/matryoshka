@@ -466,11 +466,14 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
 
       def parse(query: String) =
         liftE[ProcessingError](SQLParser.parseInContext(Query(query), TestDir).fold(e => Task.fail(new RuntimeException(e.message)), Task.now))
-      def eval(fs: Backend, expr: Expr, path: Option[Path]):
-          ProcessingTask[IndexedSeq[Data]] =
-        fs.eval(QueryRequest(expr, path, Variables(Map()))).run._2.fold(
-            e => liftE(Task.fail(new RuntimeException(e.message))),
-            _.runLog)
+      def eval(fs: Backend, query: Expr): ProcessingTask[IndexedSeq[Data]] =
+        fs.eval(QueryRequest(query, Variables(Map()))).run._2.fold(
+          e => liftE(Task.fail(new RuntimeException(e.message))),
+          _.runLog)
+      def run(fs: Backend, query: Expr, out: Path): ProcessingTask[ResultPath] =
+        fs.run(QueryRequest(query, Variables(Map())), out).run._2.fold(
+          e => liftE(Task.fail(new RuntimeException(e.message))),
+          _.leftMap(PEvalError(_)))
 
       "leave no temps behind" in {
         (for {
@@ -479,13 +482,13 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
 
           before <- fs.lsAll(Path.Root).leftMap(PPathError(_))
 
-          // NB: this query *does* produce a temporary result (not a simple read)
-          expr   <- parse("select a from " + tmp.simplePathname)
-          rez    <- eval(fs, expr, None)
+          // NB: this query *does* use temps (not streamable)
+          expr   <- parse("select a.a, b.a from " + tmp.simplePathname + " a, " + tmp.simplePathname + " b")
+          rez    <- eval(fs, expr)
 
           after  <- fs.lsAll(Path.Root).leftMap(PPathError(_))
         } yield {
-          rez must_== Vector(Data.Obj(ListMap("a" -> Data.Int(1))))
+          rez must_== Vector(Data.Obj(ListMap("0" -> Data.Int(1), "1" -> Data.Int(1))))
           after must contain(exactly(before.toList: _*))
         }).fold(_ must beNull, ι).run
       }
@@ -497,15 +500,17 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
 
           before <- fs.lsAll(Path.Root).leftMap(PPathError(_))
 
-          out    <- liftE(genTempFile)
-          // NB: this query *does* produce a temporary result (not a simple read)
+          outReq <- liftE(genTempFile)
+          // NB: this query *does* use temps (not streamable)
           expr   <- parse("select a from " + tmp.simplePathname)
-          rez    <- eval(fs, expr, Some(TestDir ++ out))
+          outAct <- run(fs, expr, TestDir ++ outReq)
+          rez    <- fs.scan(outAct.path, 0, None).runLog.leftMap(PResultError(_))
 
           after  <- fs.lsAll(Path.Root).leftMap(PPathError(_))
         } yield {
-          rez must_== Vector(Data.Obj(ListMap("a" -> Data.Int(1))))
-          after must contain(exactly(FilesystemNode(TestDir ++ out, None) :: before.toList: _*))
+          outAct.path must_== outReq
+          rez must_== Vector(Data.Obj(ListMap("0" -> Data.Int(1), "1" -> Data.Int(1))))
+          after must contain(exactly(FilesystemNode(TestDir ++ outReq, None) :: before.toList: _*))
         }).fold(_ must beNull, ι).run
       }
     }

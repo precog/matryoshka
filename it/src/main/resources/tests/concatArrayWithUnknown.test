@@ -1,5 +1,6 @@
 {
     "name": "concat array with unknown structure",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select city, state, loc || [ pop ] from zips",
     "predicate": "containsAtLeast",

@@ -36,8 +36,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
       val wf = $pure(Bson.Doc(ListMap("foo" -> Bson.Text("bar"))))
 
         MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisjunction(
-          """db.tmp.gen_0.insert({ "foo": "bar" });
-            |db.tmp.gen_0.find();
+          """[{ "foo": "bar" }];
             |""".stripMargin)
     }
 
@@ -47,16 +46,16 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         Bson.Doc(ListMap("bar" -> Bson.Int64(2))))))
 
         MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisjunction(
-          """db.tmp.gen_0.insert({ "foo": NumberLong(1) });
-            |db.tmp.gen_0.insert({ "bar": NumberLong(2) });
-            |db.tmp.gen_0.find();
+          """[{ "foo": NumberLong(1) }, { "bar": NumberLong(2) }];
             |""".stripMargin)
     }
 
     "fail with non-doc pure value" in {
       val wf = $pure(Bson.Text("foo"))
 
-      MongoDbEvaluator.toJS(crystallize(wf)) must beLeftDisjunction
+      MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisjunction(
+        """["foo"];
+          |""".stripMargin)
     }
 
     "fail with multiple pure values, one not a doc" in {
@@ -64,7 +63,9 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
         Bson.Doc(ListMap("foo" -> Bson.Int64(1))),
         Bson.Int64(2))))
 
-        MongoDbEvaluator.toJS(crystallize(wf)) must beLeftDisjunction
+        MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisjunction(
+          """[{ "foo": NumberLong(1) }, NumberLong(2)];
+            |""".stripMargin)
     }
 
     "write simple pipeline workflow to JS" in {
@@ -75,11 +76,8 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
 
       MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisjunction(
         """db.zips.aggregate(
-          |  [
-          |    { "$match": { "pop": { "$gte": NumberLong(1000) } } },
-          |    { "$out": "tmp.gen_0" }],
+          |  [{ "$match": { "pop": { "$gte": NumberLong(1000) } } }],
           |  { "allowDiskUse": true });
-          |db.tmp.gen_0.find();
           |""".stripMargin)
     }
 
@@ -102,10 +100,8 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |          { "pop": { "$gte": NumberLong(100) } }]
           |      }
           |    },
-          |    { "$sort": { "city": NumberInt(1) } },
-          |    { "$out": "tmp.gen_0" }],
+          |    { "$sort": { "city": NumberInt(1) } }],
           |  { "allowDiskUse": true });
-          |db.tmp.gen_0.find();
           |""".stripMargin)
     }
 
@@ -132,8 +128,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |        this))
           |  },
           |  function (key, values) { return Array.sum(values) },
-          |  { "out": { "replace": "tmp.gen_0" } });
-          |db.tmp.gen_0.find();
+          |  {  });
           |""".stripMargin)
     }
 
@@ -150,11 +145,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |      (function (key, value) { return [key, value] })(this._id, this))
           |  },
           |  function (key, values) { return values[0] },
-          |  {
-          |    "out": { "replace": "tmp.gen_0" },
-          |    "query": { "$where": function () { return foo } }
-          |  });
-          |db.tmp.gen_0.find();
+          |  { "query": { "$where": function () { return foo } } });
           |""".stripMargin)
     }
 

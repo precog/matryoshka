@@ -43,11 +43,7 @@ class RegressionSpec extends BackendTest {
         _ <- Task.delay(println(query))
         t <- {
           val (ps, v) = testBackend.eval(
-              QueryRequest(
-                query     = expr,
-                out       = None,
-                variables = Variables.fromMap(vars))
-              ).run
+              QueryRequest(expr, Variables.fromMap(vars))).run
           v.fold(
             ce => Task.fail(new RuntimeException(ce.message)),
             pr => Task.now((ps, pr)))

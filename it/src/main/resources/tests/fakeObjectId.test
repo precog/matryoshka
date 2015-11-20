@@ -1,5 +1,6 @@
 {
     "name": "convert a field to ObjectId",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "objectids.data",
     "query": "select oid(bar) from objectids",
     "predicate": "equalsInitial",

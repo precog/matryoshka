@@ -1,5 +1,6 @@
 {
     "name": "join with multiple conditions",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "slamengine_commits.data",
     "query": "select l.sha as child, l.author.login as c_auth, r.sha as parent, r.author.login as p_auth from slamengine_commits l join slamengine_commits r on r.sha = l.parents[0].sha and l.author.login = r.author.login",
     "predicate": "containsAtLeast",

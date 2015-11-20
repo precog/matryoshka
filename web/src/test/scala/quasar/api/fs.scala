@@ -126,8 +126,9 @@ object Mock {
     }
     val evaluator = new Evaluator[Plan] {
       val name = "Stub"
-      def execute(physical: Plan) =
-        EitherT.right(Task.now(ResultPath.Temp(Path("tmp/out"))))
+      def executeTo(physical: Plan, out: Path) =
+        EitherT.right(Task.now(ResultPath.User(out)))
+      def evaluate(physical: Plan) = Process.emit(Data.Obj(ListMap("7" -> Data.Str("ok"))))
       def compile(physical: Plan) = "Stub" -> Cord(physical.toString)
     }
     val RP = PlanRenderTree
@@ -1136,7 +1137,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must beRightDisjunction((
             readableContentType,
-            List(Json("0" := "ok"))))
+            List(Json("7" := "ok"))))
         }
       }
 

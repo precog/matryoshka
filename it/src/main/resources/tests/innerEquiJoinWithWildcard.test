@@ -1,5 +1,6 @@
 {
     "name": "perform inner equi-join with wildcard",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select * from zips join zips z2 on zips._id = z2._id",
     "predicate": "containsAtLeast",

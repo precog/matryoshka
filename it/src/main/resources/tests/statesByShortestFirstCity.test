@@ -1,6 +1,7 @@
 {
   "name": "states sorted by the length of name of their first city, alphabetically",
   "description": "combines an aggregate function (min) with a function implemented in JS (length)",
+  "backends": { "mongodb_read_only": "pending" },
 
   "data": "zips.data",
 
