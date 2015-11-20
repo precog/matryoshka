@@ -7,12 +7,13 @@ import quasar.fp._
 import org.specs2.mutable.Specification
 import org.specs2.ScalaCheck
 import pathy.Path._
+import pathy.scalacheck.PathyArbitrary._
 import scalaz._
 import scalaz.std.vector._
 import scalaz.syntax.either._
 
 class ReadFileSpec extends Specification with ScalaCheck with FileSystemFixture {
-  import DataGen._, PathyGen._, FileSystemError._, PathError2._
+  import DataGen._, FileSystemError._, PathError2._
 
   "ReadFile" should {
     "scan should read data until an empty vector is received" ! prop {

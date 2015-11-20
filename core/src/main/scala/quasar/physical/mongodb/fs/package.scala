@@ -11,6 +11,7 @@ import pathy._, Path._
 import scalaz.~>
 import scalaz.std.option._
 import scalaz.syntax.std.option._
+import scalaz.syntax.foldable._
 import scalaz.syntax.monadPlus._
 import scalaz.concurrent.Task
 
@@ -22,7 +23,7 @@ package object fs {
   object DefaultDb {
     def fromPath[T](path: Path[Abs, T, Sandboxed]): Option[DefaultDb] =
       flatten(none, none, none, _.some, κ(none), path)
-        .unite.headOption map (DefaultDb(_))
+        .toIList.unite.headOption map (DefaultDb(_))
   }
 
   final case class TmpPrefix(run: String) extends scala.AnyVal

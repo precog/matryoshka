@@ -1,12 +1,13 @@
 package quasar.physical.mongodb
 
 import quasar.Predef._
-import quasar.fs.{Path, PathyGen}
+import quasar.fs.{Path, SpecialStr}
 
 import org.specs2.mutable._
 import org.specs2.scalaz._
 import org.specs2.ScalaCheck
 import org.scalacheck._
+import pathy.scalacheck._
 
 class CollectionSpec extends Specification with ScalaCheck with DisjunctionMatchers {
 
@@ -286,28 +287,27 @@ class CollectionSpec extends Specification with ScalaCheck with DisjunctionMatch
         beRightDisjunction
     }
 
-    import PathyGen._
-
-    "never emit an invalid db name" ! prop { f: AbsFile[Sandboxed] =>
-      val notInRootDir = parentDir(f).fold(false)(_ != rootDir)
-      val notTooLong = posixCodec.printPath(f).length < 30
+    "never emit an invalid db name" ! prop { f: AbsFileOf[SpecialStr] =>
+      val file = f.path
+      val notInRootDir = parentDir(file).fold(false)(_ != rootDir)
+      val notTooLong = posixCodec.printPath(file).length < 30
       // NB: as long as the path is not too long, it should convert to something that's legal
       (notInRootDir && notTooLong) ==> {
-        Collection.fromFile(f).fold(
+        Collection.fromFile(file).fold(
           err => scala.sys.error(err.toString),
           coll => {
             " ./\\*<>:|?".foreach { c => coll.databaseName.toList must not(contain(c)) }
           })
       }
-    }
+    }.set(maxSize = 5)
 
-    "round-trip" ! prop { f: AbsFile[Sandboxed] =>
+    "round-trip" ! prop { f: AbsFileOf[SpecialStr] =>
       // NB: the path might be too long to convert
-      val r = Collection.fromFile(f)
+      val r = Collection.fromFile(f.path)
       (r.isRight) ==> {
         r.fold(
           err  => scala.sys.error(err.toString),
-          coll => identicalPath(f, coll.asFile) must beTrue)
+          coll => identicalPath(f.path, coll.asFile) must beTrue)
       }
     }
   }

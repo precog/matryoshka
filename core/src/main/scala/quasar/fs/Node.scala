@@ -61,7 +61,7 @@ object Node {
     flatten(none, none, none,
       n => Dir(dir(n)).some,
       n => File(file(n)).some,
-      f).unite.headOption
+      f).toIList.unite.headOption
 
   implicit val nodeEncodeJson: EncodeJson[Node] =
     EncodeJson(node => Json(

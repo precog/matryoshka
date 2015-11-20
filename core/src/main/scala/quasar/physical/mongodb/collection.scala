@@ -79,7 +79,7 @@ object Collection {
     import PathError2._
 
     flatten(None, None, None, Some(_), Some(_), path.merge)
-      .unite.uncons(
+      .toIList.unite.uncons(
         InvalidPath(path, "no database specified").left,
         (h, t) => t.toNel.cata(
           ss => (for {

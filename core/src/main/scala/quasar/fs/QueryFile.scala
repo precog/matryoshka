@@ -135,9 +135,7 @@ object QueryFile {
 
     /** Returns whether the given file exists. */
     def fileExists(file: AbsFile[Sandboxed]): F[Boolean] = {
-      // TODO: Add fileParent[B, S](f: Path[B, File, S]): Path[B, Dir, S] to pathy
-      val parent =
-        parentDir(file) getOrElse scala.sys.error("impossible, files have parents!")
+      val parent = fileParent(file)
 
       ls(parent)
         .map(_ flatMap (_.file.map(parent </> _).toSet) exists (identicalPath(file, _)))

@@ -5,11 +5,11 @@ import quasar.Predef._
 
 import org.specs2.mutable.Specification
 import org.specs2.ScalaCheck
-
 import pathy.Path._
+import pathy.scalacheck.PathyArbitrary._
 
 class QueryFileSpec extends Specification with ScalaCheck with FileSystemFixture {
-  import InMemory._, PathyGen._, FileSystemError._, PathError2._
+  import InMemory._, FileSystemError._, PathError2._
 
   "QueryFile" should {
     "lsAll" >> {
