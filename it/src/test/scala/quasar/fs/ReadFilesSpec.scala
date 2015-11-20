@@ -155,9 +155,9 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
 object ReadFilesSpec {
   import FileSystemTest._
 
-  final case class TestDatum(file: AbsFile[Sandboxed], data: EStream[Data])
+  final case class TestDatum(file: AFile, data: EStream[Data])
 
-  val readsPrefix: AbsDir[Sandboxed] = rootDir </> dir("forreading")
+  val readsPrefix: ADir = rootDir </> dir("forreading")
 
   val emptyFile = TestDatum(
     readsPrefix </> file("empty"),

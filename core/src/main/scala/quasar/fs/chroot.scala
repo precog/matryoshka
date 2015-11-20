@@ -16,7 +16,7 @@ import scalaz.syntax.functor._
 object chroot {
 
   /** Rebases all paths in `ReadFile` operations onto the given prefix. */
-  def readFile(prefix: AbsDir[Sandboxed]): ReadFileF ~> ReadFileF = {
+  def readFile(prefix: ADir): ReadFileF ~> ReadFileF = {
     import ReadFile._
 
     val f = new (ReadFile ~> ReadFileF) {
@@ -39,11 +39,11 @@ object chroot {
     }
   }
 
-  def readFileIn[S[_]](prefix: AbsDir[Sandboxed])(implicit S: ReadFileF :<: S): S ~> S =
+  def readFileIn[S[_]](prefix: ADir)(implicit S: ReadFileF :<: S): S ~> S =
     interpret.injectedNT[ReadFileF, S](readFile(prefix))
 
   /** Rebases all paths in `WriteFile` operations onto the given prefix. */
-  def writeFile(prefix: AbsDir[Sandboxed]): WriteFileF ~> WriteFileF = {
+  def writeFile(prefix: ADir): WriteFileF ~> WriteFileF = {
     import WriteFile._
 
     val f = new (WriteFile ~> WriteFileF) {
@@ -66,11 +66,11 @@ object chroot {
     }
   }
 
-  def writeFileIn[S[_]](prefix: AbsDir[Sandboxed])(implicit S: WriteFileF :<: S): S ~> S =
+  def writeFileIn[S[_]](prefix: ADir)(implicit S: WriteFileF :<: S): S ~> S =
     interpret.injectedNT[WriteFileF, S](writeFile(prefix))
 
   /** Rebases all paths in `ManageFile` operations onto the given prefix. */
-  def manageFile(prefix: AbsDir[Sandboxed]): ManageFileF ~> ManageFileF = {
+  def manageFile(prefix: ADir): ManageFileF ~> ManageFileF = {
     import ManageFile._, MoveScenario._
 
     val f = new (ManageFile ~> ManageFileF) {
@@ -98,11 +98,11 @@ object chroot {
     }
   }
 
-  def manageFileIn[S[_]](prefix: AbsDir[Sandboxed])(implicit S: ManageFileF :<: S): S ~> S =
+  def manageFileIn[S[_]](prefix: ADir)(implicit S: ManageFileF :<: S): S ~> S =
     interpret.injectedNT[ManageFileF, S](manageFile(prefix))
 
   /** Rebases paths in `QueryFile` onto the given prefix. */
-  def queryFile(prefix: AbsDir[Sandboxed]): QueryFileF ~> QueryFileF = {
+  def queryFile(prefix: ADir): QueryFileF ~> QueryFileF = {
     import QueryFile._
     import ResultFile.resultFile
 
@@ -133,11 +133,11 @@ object chroot {
     }
   }
 
-  def queryFileIn[S[_]](prefix: AbsDir[Sandboxed])(implicit S: QueryFileF :<: S): S ~> S =
+  def queryFileIn[S[_]](prefix: ADir)(implicit S: QueryFileF :<: S): S ~> S =
     interpret.injectedNT[QueryFileF, S](queryFile(prefix))
 
   /** Rebases all paths in `FileSystem` operations onto the given prefix. */
-  def fileSystem[S[_]](prefix: AbsDir[Sandboxed])
+  def fileSystem[S[_]](prefix: ADir)
                       (implicit S0: ReadFileF :<: S,
                                 S1: WriteFileF :<: S,
                                 S2: ManageFileF :<: S,
@@ -159,10 +159,10 @@ object chroot {
     FileSystemError.plannerError composeLens Field1.first
 
   // TODO: AbsDir relativeTo rootDir doesn't need to be partial, add the appropriate method to pathy
-  private def rebase[T](p: PPath[Abs,T,Sandboxed], onto: AbsDir[Sandboxed]): PPath[Abs,T,Sandboxed] =
+  private def rebase[T](p: PPath[Abs,T,Sandboxed], onto: ADir): PPath[Abs,T,Sandboxed] =
     p.relativeTo(rootDir[Sandboxed]).fold(p)(onto </> _)
 
-  private def stripPathError(prefix: AbsDir[Sandboxed]): FileSystemError => FileSystemError = {
+  private def stripPathError(prefix: ADir): FileSystemError => FileSystemError = {
     val base = Path(posixCodec.printPath(prefix))
 
     val stripRead: LogicalPlan ~> LogicalPlan =
@@ -180,17 +180,17 @@ object chroot {
     fsPlannerError.modify(stripPlan)
   }
 
-  private def stripPathPrefix(prefix: AbsDir[Sandboxed]): AbsPath[Sandboxed] => AbsPath[Sandboxed] =
+  private def stripPathPrefix(prefix: ADir): AbsPath[Sandboxed] => AbsPath[Sandboxed] =
     _.bimap(stripPrefix(prefix), stripPrefix(prefix))
 
-  private def stripNodePrefix(prefix: AbsDir[Sandboxed]): Node => Node =
+  private def stripNodePrefix(prefix: ADir): Node => Node =
     _.fold(
       Node.Mount compose stripRelPrefix(prefix),
       p => Node.Plain(p.bimap(stripRelPrefix(prefix), stripRelPrefix(prefix))))
 
-  private def stripRelPrefix[T](prefix: AbsDir[Sandboxed]): PPath[Rel, T, Sandboxed] => PPath[Rel, T, Sandboxed] =
+  private def stripRelPrefix[T](prefix: ADir): PPath[Rel, T, Sandboxed] => PPath[Rel, T, Sandboxed] =
     p => prefix.relativeTo(rootDir).flatMap(p relativeTo _) getOrElse p
 
-  private def stripPrefix[T](prefix: AbsDir[Sandboxed]): PPath[Abs, T, Sandboxed] => PPath[Abs, T, Sandboxed] =
+  private def stripPrefix[T](prefix: ADir): PPath[Abs, T, Sandboxed] => PPath[Abs, T, Sandboxed] =
     p => p.relativeTo(prefix).fold(p)(rootDir </> _)
 }

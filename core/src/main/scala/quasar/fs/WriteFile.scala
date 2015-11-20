@@ -5,7 +5,6 @@ import quasar.Predef._
 import quasar.fp._
 
 import monocle.std.{disjunction => D}
-import pathy.Path._
 import scalaz._, Scalaz._
 import scalaz.stream._
 
@@ -22,7 +21,7 @@ object WriteFile {
       Order.orderBy(_.run)
   }
 
-  final case class Open(file: AbsFile[Sandboxed])
+  final case class Open(file: AFile)
     extends WriteFile[FileSystemError \/ WriteHandle]
 
   final case class Write(h: WriteHandle, chunk: Vector[Data])
@@ -44,7 +43,7 @@ object WriteFile {
       * all attempts are made to continue consuming input until the source is
       * exhausted.
       */
-    def appendChannel(dst: AbsFile[Sandboxed]): Channel[M, Vector[Data], Vector[FileSystemError]] = {
+    def appendChannel(dst: AFile): Channel[M, Vector[Data], Vector[FileSystemError]] = {
       def writeChunk(h: WriteHandle): Vector[Data] => M[Vector[FileSystemError]] =
         xs => unsafe.write(h, xs).liftM[FileSystemErrT]
 
@@ -54,7 +53,7 @@ object WriteFile {
     }
 
     /** Same as `append` but accepts chunked [[Data]]. */
-    def appendChunked(dst: AbsFile[Sandboxed], src: Process[F, Vector[Data]]): Process[M, FileSystemError] = {
+    def appendChunked(dst: AFile, src: Process[F, Vector[Data]]): Process[M, FileSystemError] = {
       val accumPartialWrites =
         process1.id[FileSystemError]
           .map(partialWrite.getOption)
@@ -79,11 +78,11 @@ object WriteFile {
       * write all values from `src` in the presence of errors, will emit a
       * [[FileSystemError]] for each input value that failed to write.
       */
-    def append(dst: AbsFile[Sandboxed], src: Process[F, Data]): Process[M, FileSystemError] =
+    def append(dst: AFile, src: Process[F, Data]): Process[M, FileSystemError] =
       appendChunked(dst, src map (Vector(_)))
 
     /** Same as `save` but accepts chunked [[Data]]. */
-    def saveChunked(dst: AbsFile[Sandboxed], src: Process[F, Vector[Data]])
+    def saveChunked(dst: AFile, src: Process[F, Vector[Data]])
                    (implicit MF: ManageFile.Ops[S])
                    : Process[M, FileSystemError] = {
 
@@ -94,7 +93,7 @@ object WriteFile {
       * atomically. Any errors during writing will abort the entire operation
       * leaving any existing values unaffected.
       */
-    def save(dst: AbsFile[Sandboxed], src: Process[F, Data])
+    def save(dst: AFile, src: Process[F, Data])
             (implicit MF: ManageFile.Ops[S])
             : Process[M, FileSystemError] = {
 
@@ -102,7 +101,7 @@ object WriteFile {
     }
 
     /** Same as `create` but accepts chunked [[Data]]. */
-    def createChunked(dst: AbsFile[Sandboxed], src: Process[F, Vector[Data]])
+    def createChunked(dst: AFile, src: Process[F, Vector[Data]])
                      (implicit QF: QueryFile.Ops[S], MF: ManageFile.Ops[S])
                      : Process[M, FileSystemError] = {
 
@@ -115,7 +114,7 @@ object WriteFile {
     }
 
     /** Create the given file with the contents of `src`. Fails if already exists. */
-    def create(dst: AbsFile[Sandboxed], src: Process[F, Data])
+    def create(dst: AFile, src: Process[F, Data])
               (implicit QF: QueryFile.Ops[S], MF: ManageFile.Ops[S])
               : Process[M, FileSystemError] = {
 
@@ -123,7 +122,7 @@ object WriteFile {
     }
 
     /** Same as `replace` but accepts chunked [[Data]]. */
-    def replaceChunked(dst: AbsFile[Sandboxed], src: Process[F, Vector[Data]])
+    def replaceChunked(dst: AFile, src: Process[F, Vector[Data]])
                       (implicit QF: QueryFile.Ops[S], MF: ManageFile.Ops[S])
                       : Process[M, FileSystemError] = {
 
@@ -138,7 +137,7 @@ object WriteFile {
     /** Replace the contents of the given file with `src`. Fails if the file
       * doesn't exist.
       */
-    def replace(dst: AbsFile[Sandboxed], src: Process[F, Data])
+    def replace(dst: AFile, src: Process[F, Data])
                (implicit QF: QueryFile.Ops[S], MF: ManageFile.Ops[S])
                : Process[M, FileSystemError] = {
 
@@ -147,24 +146,24 @@ object WriteFile {
 
     ////
 
-    private def fileExistsM(file: AbsFile[Sandboxed])
+    private def fileExistsM(file: AFile)
                            (implicit QF: QueryFile.Ops[S])
                            : M[Boolean] = {
 
       QF.fileExists(file).liftM[FileSystemErrT]
     }
 
-    private def saveChunked0(dst: AbsFile[Sandboxed], src: Process[F, Vector[Data]], sem: MoveSemantics)
+    private def saveChunked0(dst: AFile, src: Process[F, Vector[Data]], sem: MoveSemantics)
                             (implicit MF: ManageFile.Ops[S])
                             : Process[M, FileSystemError] = {
 
       val fsFileNotFound = pathError composePrism pathNotFound composePrism D.right
 
-      def cleanupTmp(tmp: AbsFile[Sandboxed])(t: Throwable): Process[M, Nothing] =
+      def cleanupTmp(tmp: AFile)(t: Throwable): Process[M, Nothing] =
         Process.eval_[M, Unit](MF.deleteFile(tmp))
           .causedBy(Cause.Error(t))
 
-      def attemptMove(tmp: AbsFile[Sandboxed]): M[Unit] =
+      def attemptMove(tmp: AFile): M[Unit] =
         MonadError[G, FileSystemError].handleError(MF.moveFile(tmp, dst, sem))(e =>
           if (fsFileNotFound.getOption(e) exists (_ == tmp)) ().point[M]
           else MonadError[G, FileSystemError].raiseError(e))
@@ -197,7 +196,7 @@ object WriteFile {
       * Care must be taken to `close` the handle when it is no longer needed
       * to avoid potential resource leaks.
       */
-    def open(file: AbsFile[Sandboxed]): M[WriteHandle] =
+    def open(file: AFile): M[WriteHandle] =
       EitherT(lift(Open(file)))
 
     /** Write a chunk of data to the file represented by the write handle.

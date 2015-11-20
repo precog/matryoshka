@@ -37,10 +37,10 @@ class RegressionSpec2
     liftFT[FileSystemIO].compose(injectNT[Task, FileSystemIO])
 
   val TestsRoot = new File("it/src/main/resources/tests")
-  val DataDir: AbsDir[Sandboxed] = rootDir </> dir("regression")
+  val DataDir: ADir = rootDir </> dir("regression")
   val DataPath: QPath = QPath(posixCodec.printPath(DataDir))
 
-  def dataFile(fileName: String): AbsFile[Sandboxed] =
+  def dataFile(fileName: String): AFile =
     DataDir </> file1(FileName(fileName).dropExtension)
 
   val query  = QueryFile.Ops[FileSystemIO]

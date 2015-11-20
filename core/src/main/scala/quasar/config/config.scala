@@ -22,7 +22,7 @@ import quasar.config.FsPath.NonexistentFileError
 import quasar.fp._
 import quasar._, Evaluator._, Errors._
 import quasar.Evaluator.EnvironmentError.EnvFsPathError
-import quasar.fs.{Path => EnginePath}
+import quasar.fs.{Path => EnginePath, _}
 
 import java.io.{File => JFile}
 import scala.util.Properties._
@@ -115,7 +115,7 @@ trait ConfigOps[C] {
 
   def mountingsLens: Lens[C, MountingsConfig]
 
-  def defaultPathForOS(file: RelFile[Sandboxed])(os: OS): Task[FsPath[File, Sandboxed]] = {
+  def defaultPathForOS(file: RFile)(os: OS): Task[FsPath[File, Sandboxed]] = {
     def localAppData: OptionT[Task, FsPath.Aux[Abs, Dir, Sandboxed]] =
       OptionT(Task.delay(envOrNone("LOCALAPPDATA")))
         .flatMap(s => OptionT(parseWinAbsAsDir(s).point[Task]))
@@ -124,7 +124,7 @@ trait ConfigOps[C] {
       OptionT(Task.delay(propOrNone("user.home")))
         .flatMap(s => OptionT(parseAbsAsDir(os, s).point[Task]))
 
-    val dirPath: RelDir[Sandboxed] = os.fold(
+    val dirPath: RDir = os.fold(
       currentDir,
       dir("Library") </> dir("Application Support"),
       dir(".config"))

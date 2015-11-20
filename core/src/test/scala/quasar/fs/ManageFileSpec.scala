@@ -17,7 +17,7 @@ class ManageFileSpec extends Specification with ScalaCheck with FileSystemFixtur
   "ManageFile" should {
     "renameFile" >> {
       "moves the existing file to a new name in the same directory" ! prop {
-        (f: AbsFile[Sandboxed], xs: Vector[Data], name: String) => (xs.nonEmpty) ==> {
+        (f: AFile, xs: Vector[Data], name: String) => (xs.nonEmpty) ==> {
           val rename =
             manage.renameFile(f, name).liftM[Process]
           val existsP: Process[manage.M, Boolean] =

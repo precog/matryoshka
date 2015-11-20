@@ -46,7 +46,7 @@ class MongoDbFileSystemSpec
     * NB: This is a bit brittle as we're assuming this is the correct source
     *     of configuration compatible with the supplied interpreters.
     */
-  val testPrefix: Task[AbsDir[Sandboxed]] =
+  val testPrefix: Task[ADir] =
     TestConfig.testDataPrefix
 
   /** This is necessary b/c the mongo server is shared global state and we
@@ -58,7 +58,7 @@ class MongoDbFileSystemSpec
     * so that other tests aren't affected.
     */
   def restoreTestDir(run: Run): Task[Unit] = {
-    val tmpFile: Task[AbsFile[Sandboxed]] =
+    val tmpFile: Task[AFile] =
       (testPrefix |@| NameGenerator.salt.map(file))(_ </> _)
 
     tmpFile flatMap { f =>
@@ -99,11 +99,11 @@ class MongoDbFileSystemSpec
       "Deletion" >> {
         type X[A] = Process[manage.M, A]
 
-        val tmpDir: Task[AbsDir[Sandboxed]] =
+        val tmpDir: Task[ADir] =
           NameGenerator.salt map (s => rootDir </> dir(s))
 
         "top-level directory should delete database" >> {
-          def check(d: AbsDir[Sandboxed])(implicit X: Apply[X]) = {
+          def check(d: ADir)(implicit X: Apply[X]) = {
             val f = d </> file("deldb")
 
             (
@@ -129,7 +129,7 @@ class MongoDbFileSystemSpec
         }
 
         "root dir should delete all databases" >> {
-          def check(d1: AbsDir[Sandboxed], d2: AbsDir[Sandboxed])
+          def check(d1: ADir, d2: ADir)
                    (implicit X: Apply[X]) = {
 
             val f1 = d1 </> file("delall1")
@@ -197,8 +197,8 @@ class MongoDbFileSystemSpec
             Hoist[FileSystemErrT].hoist(x1)
           }
 
-          def check(file: AbsFile[Sandboxed]) = {
-            val errP: Prism[FileSystemError \/ ResultFile, AbsFile[Sandboxed]] =
+          def check(file: AFile) = {
+            val errP: Prism[FileSystemError \/ ResultFile, AFile] =
               D.left                    composePrism
               FileSystemError.pathError composePrism
               PathError2.pathNotFound   composePrism

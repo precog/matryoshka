@@ -16,7 +16,7 @@ class QueryFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
   val write  = WriteFile.Ops[FileSystem]
   val manage = ManageFile.Ops[FileSystem]
 
-  val queryPrefix: AbsDir[Sandboxed] = rootDir </> dir("forquery")
+  val queryPrefix: ADir = rootDir </> dir("forquery")
 
   def deleteForQuery(run: Run): FsTask[Unit] =
     runT(run)(manage.deleteDir(queryPrefix))

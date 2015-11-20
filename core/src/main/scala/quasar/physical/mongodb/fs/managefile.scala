@@ -72,7 +72,7 @@ object managefile {
     case MoveSemantics.Case.FailIfMissing => RenameSemantics.Overwrite
   }
 
-  private def moveDir(src: AbsDir[Sandboxed], dst: AbsDir[Sandboxed], sem: MoveSemantics)
+  private def moveDir(src: ADir, dst: ADir, sem: MoveSemantics)
                      : MongoFsM[Unit] = {
     for {
       colls    <- collectionsInDir(src)
@@ -84,7 +84,7 @@ object managefile {
     } yield ()
   }
 
-  private def moveFile(src: AbsFile[Sandboxed], dst: AbsFile[Sandboxed], sem: MoveSemantics)
+  private def moveFile(src: AFile, dst: AFile, sem: MoveSemantics)
                       : MongoFsM[Unit] = {
 
     // TODO: Is there a more structured indicator for these errors, the code
@@ -146,7 +146,7 @@ object managefile {
 
   // TODO: Really need a Path#fold[A] method, which will be much more reliable
   //       than this process of deduction.
-  private def deleteDir(dir: AbsDir[Sandboxed]): MongoFsM[Unit] =
+  private def deleteDir(dir: ADir): MongoFsM[Unit] =
     dirName(dir) match {
       case Some(n) if depth(dir) == 1 =>
         dropDatabase(n.value).liftM[FileSystemErrT]
@@ -162,7 +162,7 @@ object managefile {
         nonExistentParent(dir)
     }
 
-  private def deleteFile(file: AbsFile[Sandboxed]): MongoFsM[Unit] =
+  private def deleteFile(file: AFile): MongoFsM[Unit] =
     collFromFileM(file) flatMap (c =>
       collectionExists(c).liftM[FileSystemErrT].ifM(
         dropCollection(c).liftM[FileSystemErrT],

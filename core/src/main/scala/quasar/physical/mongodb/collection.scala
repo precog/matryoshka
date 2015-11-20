@@ -37,7 +37,7 @@ final case class Collection(databaseName: String, collectionName: String) {
   }
 
   /** Convert this collection to a file. */
-  def asFile: AbsFile[Sandboxed] = {
+  def asFile: AFile = {
     val db   = DatabaseNameUnparser(databaseName)
     val segs = CollectionNameUnparser(collectionName).reverse
     val f    = segs.headOption getOrElse db
@@ -94,10 +94,10 @@ object Collection {
           InvalidPath(path, "path names a database, but no collection").left))
   }
 
-  def fromDir(dir: AbsDir[Sandboxed]): PathError2 \/ Collection =
+  def fromDir(dir: ADir): PathError2 \/ Collection =
     fromPathy(dir.left)
 
-  def fromFile(file: AbsFile[Sandboxed]): PathError2 \/ Collection =
+  def fromFile(file: AFile): PathError2 \/ Collection =
     fromPathy(file.right)
 
   private trait PathParser extends RegexParsers {

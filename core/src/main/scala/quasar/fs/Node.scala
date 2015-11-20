@@ -15,7 +15,7 @@ sealed trait Node {
   import Node._
 
   def fold[X](
-    mnt: RelDir[Sandboxed] => X,
+    mnt: RDir => X,
     pln: RelPath[Sandboxed] => X
   ): X =
     this match {
@@ -23,11 +23,11 @@ sealed trait Node {
       case Case.Plain(p) => pln(p)
     }
 
-  def dir: Option[RelDir[Sandboxed]] =
+  def dir: Option[RDir] =
     fold(some, _.swap.toOption)
 
-  def file: Option[RelFile[Sandboxed]] =
-    fold(κ(none[RelFile[Sandboxed]]), _.toOption)
+  def file: Option[RFile] =
+    fold(κ(none[RFile]), _.toOption)
 
   def path: RelPath[Sandboxed] =
     fold(\/.left, ι)
@@ -35,29 +35,29 @@ sealed trait Node {
 
 object Node {
   object Case {
-    final case class Mount(d: RelDir[Sandboxed]) extends Node
+    final case class Mount(d: RDir) extends Node
     final case class Plain(p: RelPath[Sandboxed]) extends Node
   }
 
-  val Mount: RelDir[Sandboxed] => Node =
+  val Mount: RDir => Node =
     Case.Mount(_)
 
   val Plain: RelPath[Sandboxed] => Node =
     Case.Plain(_)
 
-  val Dir: RelDir[Sandboxed] => Node =
+  val Dir: RDir => Node =
     Plain compose \/.left
 
-  val File: RelFile[Sandboxed] => Node =
+  val File: RFile => Node =
     Plain compose \/.right
 
-  val mount: Prism[Node, RelDir[Sandboxed]] =
+  val mount: Prism[Node, RDir] =
     Prism((_: Node).fold(_.some, κ(none)))(Mount)
 
   val plain: Prism[Node, RelPath[Sandboxed]] =
     Prism((_: Node).fold(κ(none), _.some))(Plain)
 
-  def fromFirstSegmentOf(f: RelFile[Sandboxed]): Option[Node] =
+  def fromFirstSegmentOf(f: RFile): Option[Node] =
     flatten(none, none, none,
       n => Dir(dir(n)).some,
       n => File(file(n)).some,

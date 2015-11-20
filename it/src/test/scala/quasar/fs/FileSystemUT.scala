@@ -3,8 +3,6 @@ package fs
 
 import quasar.Predef._
 
-import pathy.Path._
-
 import scalaz._
 import scalaz.concurrent.Task
 
@@ -17,7 +15,7 @@ import scalaz.concurrent.Task
 final case class FileSystemUT[S[_]](
   name: String,
   run: S ~> Task,
-  testDir: AbsDir[Sandboxed]
+  testDir: ADir
 ) {
   def contramap[T[_]](f: T ~> S): FileSystemUT[T] =
     FileSystemUT(name, run compose f, testDir)

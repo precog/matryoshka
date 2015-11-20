@@ -23,7 +23,7 @@ object TestConfig {
   /** The directory under which test data may be found as well as where tests
     * can write test data/output.
     */
-  val DefaultTestPrefix: AbsDir[Sandboxed] = rootDir </> dir("quasar-test")
+  val DefaultTestPrefix: ADir = rootDir </> dir("quasar-test")
 
   /** The environment variable used to externally specify the test path prefix.
     *
@@ -46,11 +46,11 @@ object TestConfig {
     * to select an interpreter for a given config.
     */
   def externalFileSystems[S[_]](
-    pf: PartialFunction[(MountConfig, AbsDir[Sandboxed]), Task[S ~> Task]]
+    pf: PartialFunction[(MountConfig, ADir), Task[S ~> Task]]
   ): Task[NonEmptyList[FileSystemUT[S]]] = {
     def fileSystemNamed(
       n: String,
-      p: AbsDir[Sandboxed]
+      p: ADir
     ): OptionT[Task, FileSystemUT[S]] =
       TestConfig.loadConfig(n) flatMapF { c =>
         val run = pf.lift((c, p)) getOrElse Task.fail(new RuntimeException(
@@ -106,11 +106,11 @@ object TestConfig {
     * The returned [[Task]] will fail if an invalid path is provided from the
     * environment and return the [[DefaultTestPrefix]] if nothing is provided.
     */
-  def testDataPrefix: Task[AbsDir[Sandboxed]] =
+  def testDataPrefix: Task[ADir] =
     readEnv(TestPathPrefixEnvName) flatMap { s =>
       posixCodec.parseAbsDir(s).cata(
         d => OptionT(sandbox(rootDir, d).map(rootDir </> _).point[Task]),
-        fail[AbsDir[Sandboxed]](s"Test data dir must be an absolute dir, got: $s").liftM[OptionT])
+        fail[ADir](s"Test data dir must be an absolute dir, got: $s").liftM[OptionT])
     } getOrElse DefaultTestPrefix
 
   ////

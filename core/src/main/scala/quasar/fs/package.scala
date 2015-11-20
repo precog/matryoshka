@@ -14,6 +14,11 @@ package object fs {
   type FileSystem1[A] = Coproduct[ReadFileF, FileSystem0, A]
   type FileSystem[A]  = Coproduct[QueryFileF, FileSystem1, A]
 
+  type ADir  = AbsDir[Sandboxed]
+  type RDir  = RelDir[Sandboxed]
+  type AFile = AbsFile[Sandboxed]
+  type RFile = RelFile[Sandboxed]
+
   type RelPath[S] = RelDir[S] \/ RelFile[S]
   type AbsPath[S] = AbsDir[S] \/ AbsFile[S]
 

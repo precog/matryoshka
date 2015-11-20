@@ -18,7 +18,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
   val write  = WriteFile.Ops[FileSystem]
   val manage = ManageFile.Ops[FileSystem]
 
-  val managePrefix: AbsDir[Sandboxed] = rootDir </> dir("formanage")
+  val managePrefix: ADir = rootDir </> dir("formanage")
 
   def deleteForManage(run: Run): FsTask[Unit] =
     runT(run)(manage.deleteDir(managePrefix))
@@ -192,7 +192,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val f = d </> file("somefile")
 
         val p = write.save(f, oneDoc.toProcess).drain ++
-                (manage.tempFileNear(f).liftM[FileSystemErrT]: manage.M[AbsFile[Sandboxed]])
+                (manage.tempFileNear(f).liftM[FileSystemErrT]: manage.M[AFile])
                   .liftM[Process] flatMap { tf =>
                     write.save(tf, anotherDoc.toProcess).drain ++
                     read.scanAll(tf) ++
@@ -205,7 +205,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
       "write/read from temp dir near non existing" >> {
         val d = managePrefix </> dir("tmpnear2")
         val f = d </> file("somefile")
-        val p = (manage.tempFileNear(f).liftM[FileSystemErrT]: manage.M[AbsFile[Sandboxed]])
+        val p = (manage.tempFileNear(f).liftM[FileSystemErrT]: manage.M[AFile])
                   .liftM[Process] flatMap { tf =>
                     write.save(tf, anotherDoc.toProcess).drain ++
                     read.scanAll(tf) ++
@@ -216,7 +216,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
       }
 
       "write/read from arbitrary temp dir" >> {
-        val p = (manage.anyTempFile.liftM[FileSystemErrT]: manage.M[AbsFile[Sandboxed]])
+        val p = (manage.anyTempFile.liftM[FileSystemErrT]: manage.M[AFile])
                   .liftM[Process] flatMap { tf =>
                     write.save(tf, oneDoc.toProcess).drain ++
                     read.scanAll(tf) ++

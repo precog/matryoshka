@@ -6,7 +6,6 @@ import quasar.fp._
 
 import org.specs2.mutable.Specification
 import org.specs2.ScalaCheck
-import pathy.Path._
 import pathy.scalacheck.PathyArbitrary._
 import scalaz._
 import scalaz.std.vector._
@@ -19,7 +18,7 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
   "WriteFile" should {
 
     "append should consume input and close write handle when finished" ! prop {
-      (f: AbsFile[Sandboxed], xs: Vector[Data]) =>
+      (f: AFile, xs: Vector[Data]) =>
 
       val p = write.append(f, xs.toProcess).drain ++ read.scanAll(f)
 
@@ -30,7 +29,7 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
     }
 
     "append should aggregate all `PartialWrite` errors and emit the sum" ! prop {
-      (f: AbsFile[Sandboxed], xs: Vector[Data]) => (xs.length > 1) ==> {
+      (f: AFile, xs: Vector[Data]) => (xs.length > 1) ==> {
         val wf = WriteFailed(Data.Str("foo"), "b/c reasons")
         val ws = Vector(wf) +: xs.tail.as(Vector(PartialWrite(1)))
 
@@ -41,14 +40,14 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
     }
 
     "save should replace existing file" ! prop {
-      (f: AbsFile[Sandboxed], xs: Vector[Data], ys: Vector[Data]) =>
+      (f: AFile, xs: Vector[Data], ys: Vector[Data]) =>
 
       val p = (write.append(f, xs.toProcess) ++ write.save(f, ys.toProcess)).drain ++ read.scanAll(f)
 
       evalLogZero(p).run.toEither must beRight(ys)
     }
 
-    "save with empty input should create an empty file" ! prop { f: AbsFile[Sandboxed] =>
+    "save with empty input should create an empty file" ! prop { f: AFile =>
       val p = write.save(f, Process.empty) ++
               (query.fileExists(f).liftM[FileSystemErrT]: query.M[Boolean]).liftM[Process]
 
@@ -56,7 +55,7 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
     }
 
     "save should leave existing file untouched on failure" ! prop {
-      (f: AbsFile[Sandboxed], xs: Vector[Data], ys: Vector[Data]) => (xs.nonEmpty && ys.nonEmpty) ==> {
+      (f: AFile, xs: Vector[Data], ys: Vector[Data]) => (xs.nonEmpty && ys.nonEmpty) ==> {
         val err = WriteFailed(Data.Str("bar"), "")
         val ws = (xs ++ ys.init).as(Vector()) :+ Vector(err)
         val p = (write.append(f, xs.toProcess) ++ write.save(f, ys.toProcess)).drain ++ read.scanAll(f)
@@ -69,7 +68,7 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
     }
 
     "create should fail if file exists" ! prop {
-      (f: AbsFile[Sandboxed], xs: Vector[Data], ys: Vector[Data]) =>
+      (f: AFile, xs: Vector[Data], ys: Vector[Data]) =>
 
       val p = write.append(f, xs.toProcess) ++ write.create(f, ys.toProcess)
 
@@ -77,21 +76,21 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
     }
 
     "create should consume all input into a new file" ! prop {
-      (f: AbsFile[Sandboxed], xs: Vector[Data]) =>
+      (f: AFile, xs: Vector[Data]) =>
 
       evalLogZero(write.create(f, xs.toProcess) ++ read.scanAll(f))
         .run.toEither must beRight(xs)
     }
 
     "replace should fail if the file does not exist" ! prop {
-      (f: AbsFile[Sandboxed], xs: Vector[Data]) =>
+      (f: AFile, xs: Vector[Data]) =>
 
       evalLogZero(write.replace(f, xs.toProcess))
         .run.toEither must beLeft(PathError(FileNotFound(f)))
     }
 
     "replace should leave the existing file untouched on failure" ! prop {
-      (f: AbsFile[Sandboxed], xs: Vector[Data], ys: Vector[Data]) => (xs.nonEmpty && ys.nonEmpty) ==> {
+      (f: AFile, xs: Vector[Data], ys: Vector[Data]) => (xs.nonEmpty && ys.nonEmpty) ==> {
         val err = WriteFailed(Data.Int(42), "")
         val ws = (xs ++ ys.init).as(Vector()) :+ Vector(err)
         val p = (write.append(f, xs.toProcess) ++ write.replace(f, ys.toProcess)).drain ++ read.scanAll(f)
@@ -104,7 +103,7 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
     }
 
     "replace should overwrite the existing file with new data" ! prop {
-      (f: AbsFile[Sandboxed], xs: Vector[Data], ys: Vector[Data]) =>
+      (f: AFile, xs: Vector[Data], ys: Vector[Data]) =>
 
       val p = write.save(f, xs.toProcess) ++ write.replace(f, ys.toProcess) ++ read.scanAll(f)
 

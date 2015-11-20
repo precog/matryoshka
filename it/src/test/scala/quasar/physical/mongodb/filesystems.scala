@@ -10,9 +10,7 @@ import quasar.physical.mongodb.fs._
 
 import com.mongodb.ConnectionString
 import com.mongodb.async.client.{MongoClient, MongoClients}
-
 import pathy.Path._
-
 import scalaz._
 import scalaz.syntax.applicative._
 import scalaz.syntax.std.option._
@@ -21,7 +19,7 @@ import scalaz.concurrent.Task
 object filesystems {
   def testFileSystem(
     cs: ConnectionString,
-    prefix: AbsDir[Sandboxed]
+    prefix: ADir
   ): Task[FileSystem ~> Task] = for {
     defDb    <- defaultDb(cs, prefix)
     client   <- Task.delay(MongoClients create cs)
@@ -32,17 +30,14 @@ object filesystems {
 
   def testFileSystemIO(
     cs: ConnectionString,
-    prefix: AbsDir[Sandboxed]
+    prefix: ADir
   ): Task[FileSystemIO ~> Task] =
     testFileSystem(cs, prefix)
       .map(interpret.interpret2(NaturalTransformation.refl[Task], _))
 
   ////
 
-  private def defaultDb(
-    cs: ConnectionString,
-    prefix: AbsDir[Sandboxed]
-  ): Task[DefaultDb] = {
+  private def defaultDb(cs: ConnectionString, prefix: ADir): Task[DefaultDb] = {
     def noDefaultDbError = new RuntimeException(
       s"Unable to determine a default database for `${cs.toString}` from `${posixCodec.printPath(prefix)}`."
     )

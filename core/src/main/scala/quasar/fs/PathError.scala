@@ -24,19 +24,19 @@ object PathError2 {
   val PathExists: AbsPath[Sandboxed] => PathError2 =
     Case.PathExists(_)
 
-  val DirExists: AbsDir[Sandboxed] => PathError2 =
+  val DirExists: ADir => PathError2 =
     PathExists compose \/.left
 
-  val FileExists: AbsFile[Sandboxed] => PathError2 =
+  val FileExists: AFile => PathError2 =
     PathExists compose \/.right
 
   val PathNotFound: AbsPath[Sandboxed] => PathError2 =
     Case.PathNotFound(_)
 
-  val DirNotFound: AbsDir[Sandboxed] => PathError2 =
+  val DirNotFound: ADir => PathError2 =
     PathNotFound compose \/.left
 
-  val FileNotFound: AbsFile[Sandboxed] => PathError2 =
+  val FileNotFound: AFile => PathError2 =
     PathNotFound compose \/.right
 
   val InvalidPath: (AbsPath[Sandboxed], String) => PathError2 =

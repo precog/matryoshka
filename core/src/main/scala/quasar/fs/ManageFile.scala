@@ -69,8 +69,8 @@ object ManageFile {
     import MoveScenario._
 
     def fold[X](
-      d2d: (AbsDir[Sandboxed], AbsDir[Sandboxed]) => X,
-      f2f: (AbsFile[Sandboxed], AbsFile[Sandboxed]) => X
+      d2d: (ADir, ADir) => X,
+      f2f: (AFile, AFile) => X
     ): X =
       this match {
         case Case.DirToDir(sd, dd)   => d2d(sd, dd)
@@ -80,22 +80,22 @@ object ManageFile {
 
   object MoveScenario {
     object Case {
-      final case class DirToDir(src: AbsDir[Sandboxed], dst: AbsDir[Sandboxed])
+      final case class DirToDir(src: ADir, dst: ADir)
         extends MoveScenario
-      final case class FileToFile(src: AbsFile[Sandboxed], dst: AbsFile[Sandboxed])
+      final case class FileToFile(src: AFile, dst: AFile)
         extends MoveScenario
     }
 
-    val DirToDir: (AbsDir[Sandboxed], AbsDir[Sandboxed]) => MoveScenario =
+    val DirToDir: (ADir, ADir) => MoveScenario =
       Case.DirToDir(_, _)
 
-    val FileToFile: (AbsFile[Sandboxed], AbsFile[Sandboxed]) => MoveScenario =
+    val FileToFile: (AFile, AFile) => MoveScenario =
       Case.FileToFile(_, _)
 
-    val dirToDir: Prism[MoveScenario, (AbsDir[Sandboxed], AbsDir[Sandboxed])] =
+    val dirToDir: Prism[MoveScenario, (ADir, ADir)] =
       Prism((_: MoveScenario).fold((s, d) => (s, d).some, κ(none)))(DirToDir.tupled)
 
-    val fileToFile: Prism[MoveScenario, (AbsFile[Sandboxed], AbsFile[Sandboxed])] =
+    val fileToFile: Prism[MoveScenario, (AFile, AFile)] =
       Prism((_: MoveScenario).fold(κ(none), (s, d) => (s, d).some))(FileToFile.tupled)
   }
 
@@ -105,8 +105,8 @@ object ManageFile {
   final case class Delete(path: AbsPath[Sandboxed])
     extends ManageFile[FileSystemError \/ Unit]
 
-  final case class TempFile(nearTo: Option[AbsFile[Sandboxed]])
-    extends ManageFile[AbsFile[Sandboxed]]
+  final case class TempFile(nearTo: Option[AFile])
+    extends ManageFile[AFile]
 
   // TODO{scalaz}: Refactor, dropping Coyoneda and Functor constraint once we
   //               update to scalaz-7.2
@@ -121,15 +121,15 @@ object ManageFile {
       EitherT(lift(Move(scenario, semantics)))
 
     /** Move the `src` dir to `dst` dir, requesting the semantics described by `sem`. */
-    def moveDir(src: AbsDir[Sandboxed], dst: AbsDir[Sandboxed], sem: MoveSemantics): M[Unit] =
+    def moveDir(src: ADir, dst: ADir, sem: MoveSemantics): M[Unit] =
       move(MoveScenario.DirToDir(src, dst), sem)
 
     /** Move the `src` file to `dst` file, requesting the semantics described by `sem`. */
-    def moveFile(src: AbsFile[Sandboxed], dst: AbsFile[Sandboxed], sem: MoveSemantics): M[Unit] =
+    def moveFile(src: AFile, dst: AFile, sem: MoveSemantics): M[Unit] =
       move(MoveScenario.FileToFile(src, dst), sem)
 
     /** Rename the `src` file in the same directory. */
-    def renameFile(src: AbsFile[Sandboxed], name: String): M[AbsFile[Sandboxed]] = {
+    def renameFile(src: AFile, name: String): M[AFile] = {
       val dst = PPath.renameFile(src, κ(FileName(name)))
       moveFile(src, dst, MoveSemantics.Overwrite).as(dst)
     }
@@ -139,28 +139,28 @@ object ManageFile {
       EitherT(lift(Delete(path)))
 
     /** Delete the given directory, fails if the directory does not exist. */
-    def deleteDir(dir: AbsDir[Sandboxed]): M[Unit] =
+    def deleteDir(dir: ADir): M[Unit] =
       delete(dir.left)
 
     /** Delete the given file, fails if the file does not exist. */
-    def deleteFile(file: AbsFile[Sandboxed]): M[Unit] =
+    def deleteFile(file: AFile): M[Unit] =
       delete(file.right)
 
     /** Returns the path to a new temporary file. When `nearTo` is specified,
       * an attempt is made to return a tmp path that is as physically close to
       * the given file as possible.
       */
-    def tempFile(nearTo: Option[AbsFile[Sandboxed]]): F[AbsFile[Sandboxed]] =
+    def tempFile(nearTo: Option[AFile]): F[AFile] =
       lift(TempFile(nearTo))
 
     /** Returns the path to a new temporary file. */
-    def anyTempFile: F[AbsFile[Sandboxed]] =
+    def anyTempFile: F[AFile] =
       tempFile(None)
 
     /** Returns the path to a new temporary file as physically close to the
       * specified file as possible.
       */
-    def tempFileNear(file: AbsFile[Sandboxed]): F[AbsFile[Sandboxed]] =
+    def tempFileNear(file: AFile): F[AFile] =
       tempFile(Some(file))
 
     ////

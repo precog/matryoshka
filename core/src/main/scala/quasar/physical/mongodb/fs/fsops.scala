@@ -20,7 +20,7 @@ object fsops {
   import FileSystemError._, PathError2._
 
   /** The collections having a prefix equivalent to the given directory path. */
-  def collectionsInDir(dir: AbsDir[Sandboxed]): MongoFsM[Vector[Collection]] =
+  def collectionsInDir(dir: ADir): MongoFsM[Vector[Collection]] =
     for {
       c  <- collFromDirM(dir)
       cs <- MongoDbIO.collectionsIn(c.databaseName)
@@ -33,15 +33,15 @@ object fsops {
   /** A filesystem `Node` representing the first segment of a collection name
     * relative to the given parent directory.
     */
-  def collectionToNode(parent: AbsDir[Sandboxed]): Collection => Option[Node] =
+  def collectionToNode(parent: ADir): Collection => Option[Node] =
     _.asFile relativeTo parent flatMap Node.fromFirstSegmentOf
 
   /** The collection represented by the given directory. */
-  def collFromDirM(dir: AbsDir[Sandboxed]): MongoFsM[Collection] =
+  def collFromDirM(dir: ADir): MongoFsM[Collection] =
     EitherT(Collection.fromDir(dir).leftMap(PathError).point[MongoDbIO])
 
   /** The collection represented by the given file. */
-  def collFromFileM(file: AbsFile[Sandboxed]): MongoFsM[Collection] =
+  def collFromFileM(file: AFile): MongoFsM[Collection] =
     EitherT(Collection.fromFile(file).leftMap(PathError).point[MongoDbIO])
 
   /** An error indicating that the directory refers to an ancestor of `/`.
@@ -50,7 +50,7 @@ object fsops {
     *       disallowed AbsDirs like "/../foo" by construction. Revisit this once
     *       scala-pathy has been updated.
     */
-  def nonExistentParent[A](dir: AbsDir[Sandboxed]): MongoFsM[A] =
+  def nonExistentParent[A](dir: ADir): MongoFsM[A] =
     PathError(InvalidPath(dir.left, "directory refers to nonexistent parent"))
       .raiseError[MongoE, A]
 }
