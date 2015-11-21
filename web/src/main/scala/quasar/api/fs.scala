@@ -314,14 +314,19 @@ final case class FileSystemApi[WC, SC](
      * FIXME: This should really be checked in the backend, not here
      */
     def ensureNoOverlaps(cfg: WC, path: Path): Option[Task[Response]] =
-      mountings.get(cfg).keys.toList.traverseU(k =>
-        k.rebase(path)
-          .as(Conflict(errorBody("Can't add a mount point above the existing mount point at " + k, None)))
-          .swap *>
-        path.rebase(k)
-          .as(Conflict(errorBody("Can't add a mount point below the existing mount point at " + k, None)))
-          .swap
-      ).swap.toOption
+      // NB: this check applies only to non-view mounts, which (at the moment),
+      // also happen to have directory paths. And we haven't parsed the config
+      // yet, so it's expedient to just check the path type here.
+      if (path.pureDir)
+        mountings.get(cfg).keys.toList.traverseU(k =>
+          k.rebase(path)
+            .as(Conflict(errorBody("Can't add a mount point above the existing mount point at " + k, None)))
+            .swap *>
+          path.rebase(k)
+            .as(Conflict(errorBody("Can't add a mount point below the existing mount point at " + k, None)))
+            .swap
+        ).swap.toOption
+      else None
 
 
     HttpService {

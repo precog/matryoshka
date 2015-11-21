@@ -1495,6 +1495,52 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         }
       }
 
+      "succeed with view nested under existing mount" in {
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
+          val req = mount(client).POST
+                    .setHeader("X-File-Name", "foo/view1")
+                    .setBody("""{ "view": { "connectionUri": "sql2:///?q=select+*+from+zips" } }""")
+
+          val viewMetadata = metadata(client) / "foo" / "view1"
+
+          val metadataNotExists = Http(viewMetadata)
+          metadataNotExists().getStatusCode must_== 404
+
+          val result = Http(req OK as.String)
+          result() must_== "added /foo/view1"
+
+          configs()(0).mountings.get(Path("/foo/view1")) must beSome
+
+          val metadataExists = Http(viewMetadata)
+          metadataExists().getStatusCode must_== 200
+        }
+      }
+
+      "succeed with view above existing mount" in {
+        // This isn't a very realistic scenario, but the point is any path is
+        // OK for a view, as long as it's unique. Here, the view has the same
+        // name as a mount's parent dir, but as a file that's not a comflict.
+
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
+          val req = mount(client).POST
+                    .setHeader("X-File-Name", "non/root")
+                    .setBody("""{ "view": { "connectionUri": "sql2:///?q=select+*+from+zips" } }""")
+
+          val viewMetadata = metadata(client) / "non" / "root"
+
+          val metadataNotExists = Http(viewMetadata)
+          metadataNotExists().getStatusCode must_== 404
+
+          val result = Http(req OK as.String)
+          result() must_== "added /non/root"
+
+          configs()(0).mountings.get(Path("/non/root")) must beSome
+
+          val metadataExists = Http(viewMetadata)
+          metadataExists().getStatusCode must_== 200
+        }
+      }
+
       "be 409 with existing path" in {
         withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
           val req = mount(client).POST
