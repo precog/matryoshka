@@ -509,11 +509,13 @@ class WorkflowSpec extends Specification with TreeMatchers {
           Js.Select(Js.Select(Js.Ident("this"), "city"), "length"),
           Js.Num(4, false))))))) must
       beTree[WorkflowTask](
-        MapReduceTask(ReadTask(Collection("db", "zips")),
+        MapReduceTask(
+          ReadTask(Collection("db", "zips")),
           MapReduce($Map.mapFn($Map.mapNOP), $Reduce.reduceNOP,
             selection = Some(Selector.Where(Js.BinOp("<",
               Js.Select(Js.Select(Js.Ident("this"), "city"), "length"),
-              Js.Num(4, false)))))))
+              Js.Num(4, false))))),
+          None))
     }
 
     "always pipeline unconverted aggregation ops" in {
@@ -578,7 +580,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $reduce($Reduce.reduceFoldLeft, ListMap()),
         $map($Map.mapMap("value", Js.Ident("value")), ListMap())))) must
       beTree[WorkflowTask](
-        MapReduceTask(ReadTask(Collection("db", "zips")),
+        MapReduceTask(
+          ReadTask(Collection("db", "zips")),
           MapReduce(
             $Map.mapFn($Map.mapMap("value",
               Js.Access(Js.Ident("value"), Js.Num(0, false)))),
@@ -590,7 +593,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
               Some(NonEmptyList(BsonField.Name("city") -> Descending)),
             limit = Some(100),
             finalizer = Some($Map.finalizerFn($Map.mapMap("value",
-              Js.Ident("value")))))))
+              Js.Ident("value"))))),
+          None))
     }
 
     "create maximal map/reduce with flatMap" in {
@@ -608,7 +612,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $reduce($Reduce.reduceFoldLeft, ListMap()),
         $map($Map.mapMap("value", Js.Ident("value")), ListMap())))) must
       beTree[WorkflowTask](
-        MapReduceTask(ReadTask(Collection("db", "zips")),
+        MapReduceTask(
+          ReadTask(Collection("db", "zips")),
           MapReduce(
             $FlatMap.mapFn(Js.AnonFunDecl(List("key", "value"), List(
               Js.AnonElem(List(
@@ -621,7 +626,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
               Some(NonEmptyList(BsonField.Name("city") -> Descending)),
             limit = Some(100),
             finalizer = Some($Map.finalizerFn($Map.mapMap("value",
-              Js.Ident("value")))))))
+              Js.Ident("value"))))),
+          None))
     }
 
     "create map/reduce without map" in {
@@ -635,7 +641,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
         $reduce($Reduce.reduceFoldLeft, ListMap()),
         $map($Map.mapMap("value", Js.Ident("value")), ListMap())))) must
       beTree[WorkflowTask](
-        MapReduceTask(ReadTask(Collection("db", "zips")),
+        MapReduceTask(
+          ReadTask(Collection("db", "zips")),
           MapReduce(
             $Map.mapFn($Map.mapNOP),
             $Reduce.reduceFoldLeft,
@@ -646,7 +653,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
               Some(NonEmptyList(BsonField.Name("city") -> Descending)),
             limit = Some(100),
             finalizer = Some($Map.finalizerFn($Map.mapMap("value",
-              Js.Ident("value")))))))
+              Js.Ident("value"))))),
+          None))
     }
 
     "fold unwind into SimpleMap (when finalize is used)" in {
@@ -685,7 +693,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
                     Js.AnonFunDecl(List("__rez"), List(
                       Js.Call(Js.Select(Js.Ident("emit"), "apply"), List(Js.Null, Js.Ident("__rez"))))))))),
               $Reduce.reduceNOP,
-              scope = $SimpleMap.implicitScope(Set("clone")))),
+              scope = $SimpleMap.implicitScope(Set("clone"))),
+            None),
           List(
             $Project((),
               Reshape(ListMap(
@@ -739,7 +748,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
                     Js.AnonFunDecl(List("__rez"), List(
                       Js.Call(Js.Select(Js.Ident("emit"), "apply"), List(Js.Null, Js.Ident("__rez"))))))))),
               $Reduce.reduceNOP,
-              scope = $SimpleMap.implicitScope(Set("clone")))),
+              scope = $SimpleMap.implicitScope(Set("clone"))),
+            None),
           List(
             $Project((),
               Reshape(ListMap(

@@ -1402,10 +1402,10 @@ object WorkflowBuilder {
   def requiresMapReduce(wb: WorkflowBuilder): Boolean = {
     // TODO: Get rid of this when we functorize WorkflowTask
     def checkTask(wt: workflowtask.WorkflowTask): Boolean = wt match {
-      case workflowtask.FoldLeftTask(_, _)   => true
-      case workflowtask.MapReduceTask(_, _)  => true
-      case workflowtask.PipelineTask(src, _) => checkTask(src)
-      case _                                 => false
+      case workflowtask.FoldLeftTask(_, _)     => true
+      case workflowtask.MapReduceTask(_, _, _) => true
+      case workflowtask.PipelineTask(src, _)   => checkTask(src)
+      case _                                   => false
     }
 
     workflow(wb).evalZero.fold(

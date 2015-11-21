@@ -15,6 +15,7 @@ private[mongodb] final class JavaScriptWorkflowExecutor
   extends WorkflowExecutor[JavaScriptLog] {
 
   import JavaScriptWorkflowExecutor._
+  import MapReduce.OutputCollection
 
   def tell(stmt: Stmt): JavaScriptLog[Unit] =
     WriterT.tell(Vector(stmt))
@@ -34,13 +35,10 @@ private[mongodb] final class JavaScriptWorkflowExecutor
       Select(toJsRef(dst), "insert"),
       List(AnonElem(values map (_.toJs)))))
 
-  def mapReduce(src: Collection, dstCollectionName: String, mr: MapReduce) = {
-    val dst = Collection(src.databaseName, dstCollectionName)
-
+  def mapReduce(src: Collection, dst: OutputCollection, mr: MapReduce) =
     tell(Call(
       Select(toJsRef(src), "mapReduce"),
-      List(mr.map, mr.reduce, mr.bson(dst).toJs)))
-  }
+      List(mr.map, mr.reduce, mr.toCollBson(dst).toJs)))
 
   def rename(src: Collection, dst: Collection) =
     tell(Call(

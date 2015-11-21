@@ -175,7 +175,7 @@ object MongoDbIO {
   /** Returns the results of executing the map-reduce job described by `cfg`
     * on the documents from `src`.
     */
-  def mapReduce(src: Collection, cfg: MapReduce.Config): Process[MongoDbIO, Document] =
+  def mapReduce(src: Collection, cfg: MapReduce): Process[MongoDbIO, Document] =
     configuredMapReduceIterable(src, cfg)
       .liftM[Process]
       .flatMap(iterableToProcess)
@@ -186,32 +186,29 @@ object MongoDbIO {
   def mapReduce_(
     src: Collection,
     dst: MapReduce.OutputCollection,
-    cfg: MapReduce.Config
+    cfg: MapReduce
   ): MongoDbIO[Unit] = {
-    import MapReduce.Action._
+    import MapReduce._, Action._
+
+    type F[A] = State[MapReduceIterable[Document], A]
+    val ms = MonadState[State, MapReduceIterable[Document]]
+
+    def withAction(actOut: ActionedOutput): F[Unit] =
+      actOut.databaseName.traverse_[F](n => ms.modify(_.databaseName(n)))     *>
+      actOut.shardOutputCollection.traverse_[F](s => ms.modify(_.sharded(s))) *>
+      actOut.action.nonAtomic.traverse_[F](s => ms.modify(_.nonAtomic(s)))    *>
+      ms.modify(_.action(actOut.action match {
+        case Replace   => MapReduceAction.REPLACE
+        case Merge(_)  => MapReduceAction.MERGE
+        case Reduce(_) => MapReduceAction.REDUCE
+      }))
 
     configuredMapReduceIterable(src, cfg) flatMap { it =>
-      val withOutput =
-        it.collectionName(dst.collectionName)
+      val itWithOutput =
+        dst.withAction.traverse_(withAction)
+          .exec(it.collectionName(dst.collectionName))
 
-      val withAction = dst.withAction map { actOut =>
-        val databased =
-          actOut.databaseName.cata(withOutput.databaseName, withOutput)
-
-        val sharded =
-          actOut.shardOutputCollection.cata(databased.sharded, databased)
-
-        val nonAtomic =
-          actOut.action.nonAtomic.cata(sharded.nonAtomic, sharded)
-
-        nonAtomic.action(actOut.action match {
-          case Replace   => MapReduceAction.REPLACE
-          case Merge(_)  => MapReduceAction.MERGE
-          case Reduce(_) => MapReduceAction.REDUCE
-        })
-      } getOrElse withOutput
-
-      async[java.lang.Void](withAction.toCollection).void
+      async[java.lang.Void](itWithOutput.toCollection).void
     }
   }
 
@@ -313,20 +310,35 @@ object MongoDbIO {
   private def runCommand(dbName: String, cmd: Bson.Doc): MongoDbIO[Document] =
     database(dbName) flatMap (db => async[Document](db.runCommand(cmd.repr, _)))
 
-  private def configuredMapReduceIterable(src: Collection, cfg: MapReduce.Config)
+  private def configuredMapReduceIterable(src: Collection, cfg: MapReduce)
                                          : MongoDbIO[MapReduceIterable[Document]] = {
+    type IT   = MapReduceIterable[Document]
+    type F[A] = State[IT, A]
+    val ms = MonadState[State, IT]
+
+    def foldIt[A](a: Option[A])(f: (IT, A) => IT): F[Unit] =
+      ms.modify(a.foldLeft(_)(f))
+
+    val nonEmptyScope =
+      cfg.scope.nonEmpty option cfg.scope
+
+    val sortRepr =
+      cfg.inputSort map (ts =>
+        Bson.Doc(ListMap(
+          ts.list.map(_.bimap(_.asText, _.bson)): _*
+        )).repr)
+
+    val configuredIt =
+      foldIt(cfg.selection)((i, s) => i.filter(s.bson.repr))           *>
+      foldIt(sortRepr)(_ sort _)                                       *>
+      foldIt(cfg.limit)(_ limit _.toInt)                               *>
+      foldIt(cfg.finalizer)((i, f) => i.finalizeFunction(f.pprint(0))) *>
+      foldIt(nonEmptyScope)((i, s) => i.scope(Bson.Doc(s).repr))       *>
+      foldIt(cfg.jsMode)(_ jsMode _)                                   *>
+      foldIt(cfg.verbose)(_ verbose _)
+
     collection(src) map { c =>
-      val it = c.mapReduce(cfg.map, cfg.reduce)
-                 .jsMode(cfg.useJsMode)
-                 .verbose(cfg.verboseResults)
-
-      val finalized = cfg.finalizer.cata(it.finalizeFunction, it)
-      val filtered  = cfg.inputFilter.cata(finalized.filter, finalized)
-      val limited   = cfg.inputLimit.cata(l => filtered.limit(l.run.toInt), filtered)
-      val scoped    = cfg.scope.cata(limited.scope, limited)
-      val sorted    = cfg.sort.cata(scoped.sort, scoped)
-
-      sorted
+      configuredIt exec c.mapReduce(cfg.map.pprint(0), cfg.reduce.pprint(0))
     }
   }
 

@@ -29,6 +29,8 @@ import scalaz.{Free => FreeM, _}, Scalaz._
 import scalaz.concurrent._
 
 trait Executor[F[_]] {
+  import MapReduce._
+
   def generateTempName(dbName: String): F[Collection]
 
   def version: F[List[Int]]
@@ -40,7 +42,7 @@ trait Executor[F[_]] {
 
   def insert(dst: Collection, value: Bson.Doc): F[Unit]
   def aggregate(source: Collection, pipeline: workflowtask.Pipeline): F[Unit]
-  def mapReduce(source: Collection, dst: Collection, mr: MapReduce): F[Unit]
+  def mapReduce(source: Collection, dst: OutputCollection, mr: MapReduce): F[Unit]
   def drop(coll: Collection): F[Unit]
   def rename(src: Collection, dst: Collection): F[Unit]
   def exists(coll: Collection): F[Unit]
@@ -139,6 +141,7 @@ object MongoDbEvaluator {
 }
 
 trait MongoDbEvaluatorImpl[F[_]] {
+  import MapReduce._
 
   protected[mongodb] def executor: Executor[F]
 
@@ -210,10 +213,14 @@ trait MongoDbEvaluatorImpl[F[_]] {
           _   <- emit(executor.aggregate(src.collection, pipeline :+ $Out[Unit]((), tmp.collection)))
         } yield tmp
 
-        case MapReduceTask(source, mapReduce) => for {
+        case MapReduceTask(source, mapReduce, oact) => for {
           src <- execute0(source)
           tmp <- tempCol
-          _   <- emit(executor.mapReduce(src.collection, tmp.collection, mapReduce))
+          act  = oact getOrElse Action.Replace
+          _   <- emit(executor.mapReduce(
+                   src.collection,
+                   outputCollection(tmp.collection, act),
+                   mapReduce))
         } yield tmp
 
         case FoldLeftTask(head, tail) =>
@@ -224,9 +231,12 @@ trait MongoDbEvaluatorImpl[F[_]] {
               case _           => ().point[F]
             })
             _    <- tail.traverse[W, Unit] {
-              case MapReduceTask(source, mapReduce) => for {
+              case MapReduceTask(source, mapReduce, Some(act)) => for {
                 src <- execute0(source)
-                _   <- emit(executor.mapReduce(src.collection, head.collection, mapReduce))
+                _   <- emit(executor.mapReduce(
+                         src.collection,
+                         outputCollection(head.collection, act),
+                         mapReduce))
               } yield ()
               case t => emit(fail(InvalidTask("un-mergable FoldLeft input: " + t)))
             }
@@ -243,6 +253,13 @@ trait MongoDbEvaluatorImpl[F[_]] {
       }.sequenceU
     } yield dstCol match { case Col.User(coll) => ResultPath.User(coll.asPath); case Col.Tmp(coll) => ResultPath.Temp(coll.asPath) }
   }
+
+  ////
+
+  private def outputCollection(c: Collection, a: Action) =
+    OutputCollection(
+      c.collectionName,
+      Some(ActionedOutput(a, Some(c.databaseName), None)))
 }
 
 object MongoDbEvaluatorImpl {
@@ -277,6 +294,8 @@ class MongoDbExecutor[S](client: MongoClient,
                          val defaultWritableDB: Option[String])
     extends Executor[StateT[EvaluationTask, S, ?]] {
 
+  import MapReduce._
+
   type MT[F[_], A] = StateT[F, S, A]
   type M[A]        = MT[EvaluationTask, A]
 
@@ -294,20 +313,20 @@ class MongoDbExecutor[S](client: MongoClient,
         "pipeline" -> Bson.Arr(pipeline.map(_.bson)),
         "allowDiskUse" -> Bson.Bool(true))))
 
-  def mapReduce(source: Collection, dst: Collection, mr: MapReduce): M[Unit] =
+  def mapReduce(source: Collection, dst: OutputCollection, mr: MapReduce): M[Unit] =
     // FIXME: check same db
     runMongoCommand(
       source.databaseName,
-      Bson.Doc(
-        ListMap(
-          "mapReduce" -> Bson.Text(source.collectionName),
-          "map"       -> Bson.JavaScript(mr.map),
-          "reduce"    -> Bson.JavaScript(mr.reduce))
-        ++ mr.bson(dst).value)).mapK(_.leftMap{
-          case CommandFailed(s) if s.contains("ns doesn't exist" ) =>
-            EvalPathError(NonexistentPathError(source.asPath.asAbsolute,None))
-          case other => other
-        }: EvaluationTask[(S, Unit)])
+      Bson.Doc(ListMap(
+        "mapReduce" -> Bson.Text(source.collectionName),
+        "map"       -> Bson.JavaScript(mr.map),
+        "reduce"    -> Bson.JavaScript(mr.reduce)
+      ) ++ mr.toCollBson(dst).value)
+    ) mapK (_ leftMap {
+      case CommandFailed(s) if s.contains("ns doesn't exist") =>
+        EvalPathError(NonexistentPathError(source.asPath.asAbsolute, None))
+      case other => other
+    }: EvaluationTask[(S, Unit)])
 
   def drop(coll: Collection) = liftMongo(mongoCol(coll).drop())
 
@@ -371,6 +390,7 @@ class JSExecutor[F[_]: Monad](nameGen: NameGenerator[F])
     extends Executor[LoggerT[F]#Rec] {
   import Js._
   import JSExecutor._
+  import MapReduce._
 
   type M0[A] = EvalErrT[F, A]
   type M[A]  = WriterT[M0, Vector[Js.Stmt], A]
@@ -385,9 +405,9 @@ class JSExecutor[F[_]: Monad](nameGen: NameGenerator[F])
       AnonElem(pipeline.map(_.bson.toJs)),
       AnonObjDecl(List("allowDiskUse" -> Bool(true))))))
 
-  def mapReduce(source: Collection, dst: Collection, mr: MapReduce) =
+  def mapReduce(source: Collection, dst: OutputCollection, mr: MapReduce) =
     write(Call(Select(toJsRef(source), "mapReduce"),
-      List(mr.map, mr.reduce, mr.bson(dst).toJs)))
+      List(mr.map, mr.reduce, mr.toCollBson(dst).toJs)))
 
   def drop(coll: Collection) =
     write(Call(Select(toJsRef(coll), "drop"), Nil))

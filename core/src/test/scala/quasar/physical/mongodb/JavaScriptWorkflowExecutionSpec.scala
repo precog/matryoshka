@@ -131,7 +131,7 @@ class JavaScriptWorkflowExecutionSpec extends Specification with DisjunctionMatc
           |        this))
           |  },
           |  function (key, values) { return Array.sum(values) },
-          |  { "out": { "replace": "jswf" } });
+          |  { "out": { "replace": "jswf", "db": "db" } });
           |db.jswf.find();
           |""".stripMargin)
     }
@@ -150,7 +150,7 @@ class JavaScriptWorkflowExecutionSpec extends Specification with DisjunctionMatc
           |  },
           |  function (key, values) { return values[0] },
           |  {
-          |    "out": { "replace": "jswf" },
+          |    "out": { "replace": "jswf", "db": "db" },
           |    "query": { "$where": function () { return foo } }
           |  });
           |db.jswf.find();
@@ -195,7 +195,7 @@ class JavaScriptWorkflowExecutionSpec extends Specification with DisjunctionMatc
           |  },
           |  function (key, values) { return Array.sum(values) },
           |  {
-          |    "out": { "reduce": "jswf", "nonAtomic": true },
+          |    "out": { "reduce": "jswf", "db": "db", "nonAtomic": true },
           |    "query": { "pop": { "$lte": NumberLong(1000) } }
           |  });
           |db.jswf.find();

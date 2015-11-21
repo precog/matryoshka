@@ -310,7 +310,8 @@ object Workflow {
                 }),
                 $Reduce.reduceNOP,
                 // TODO: Get rid of this asInstanceOf!
-                selection = Some(rewriteRefs(PipelineFTraverse.void(op).asInstanceOf[$Match[Workflow]], prefixBase(base)).selector))))
+                selection = Some(rewriteRefs(PipelineFTraverse.void(op).asInstanceOf[$Match[Workflow]], prefixBase(base)).selector)),
+              None))
         }
         pipeline($Match(src, selector)) match {
           case Some((base, up, mine)) => (base, PipelineTask(up, mine))
@@ -321,28 +322,34 @@ object Workflow {
           case (base, up, pipe) => (base, PipelineTask(up, pipe))
         }
 
-      case op @ $Map((_, (base, src1 @ MapReduceTask(src0, mr @ MapReduce(m, r, None, sel, sort, limit, None, scope0, _, _)))), fn, scope) if m == $Map.mapNOP && r == $Reduce.reduceNOP =>
+      case op @ $Map((_, (base, src1 @ MapReduceTask(src0, mr @ MapReduce(m, r, sel, sort, limit, None, scope0, _, _), oa))), fn, scope) if m == $Map.mapNOP && r == $Reduce.reduceNOP =>
         Reshape.mergeMaps(scope0, scope).fold(
           op.newMR(base, src1, sel, sort, limit))(
-          s => base -> MapReduceTask(src0,
+          s => base -> MapReduceTask(
+            src0,
             mr applyLens MapReduce._map set fn
-              applyLens MapReduce._scope set s))
+               applyLens MapReduce._scope set s,
+            oa))
 
-      case op @ $Map((_, (base, src1 @ MapReduceTask(src0, mr @ MapReduce(_, _, _, _, _, _, None, scope0, _, _)))), fn, scope) =>
+      case op @ $Map((_, (base, src1 @ MapReduceTask(src0, mr @ MapReduce(_, _, _, _, _, None, scope0, _, _), oa))), fn, scope) =>
         Reshape.mergeMaps(scope0, scope).fold(
           op.newMR(base, src1, None, None, None))(
-          s => base -> MapReduceTask(src0,
+          s => base -> MapReduceTask(
+            src0,
             mr applyLens MapReduce._finalizer set Some($Map.finalizerFn(fn))
-              applyLens MapReduce._scope set s))
+               applyLens MapReduce._scope set s,
+            oa))
 
       case op @ $SimpleMap(_, _, _) => crush(op.raw)
 
-      case op @ $Reduce((_, (base, src1 @ MapReduceTask(src0, mr @ MapReduce(_, reduceNOP, _, _, _, _, None, scope0, _, _)))), fn, scope) =>
+      case op @ $Reduce((_, (base, src1 @ MapReduceTask(src0, mr @ MapReduce(_, reduceNOP, _, _, _, None, scope0, _, _), oa))), fn, scope) =>
         Reshape.mergeMaps(scope0, scope).fold(
           op.newMR(base, src1, None, None, None))(
-          s => base -> MapReduceTask(src0,
+          s => base -> MapReduceTask(
+            src0,
             mr applyLens MapReduce._reduce set fn
-              applyLens MapReduce._scope set s))
+               applyLens MapReduce._scope set s,
+            oa))
 
       case op: MapReduceF[_] =>
         op.src match {
@@ -364,20 +371,16 @@ object Workflow {
             val (nb, task) = finish(base, srcTask)
             op.newMR(nb, task, None, None, None)
         }
+
       case $FoldLeft(head, tail) =>
         (ExprVar,
           FoldLeftTask(
             (finish(_, _)).tupled(head._2)._2,
             tail.map(_._2._2 match {
-              case MapReduceTask(src, mr) =>
+              case MapReduceTask(src, mr, _) =>
                 // FIXME: $FoldLeft currently always reduces, but in future we’ll
                 //        want to have more control.
-                MapReduceTask(src,
-                  mr applyLens MapReduce._out set
-                    Some(MapReduce.WithAction(
-                      MapReduce.Action.Reduce(Some(true)),
-                      db = None,
-                      sharded = None)))
+                MapReduceTask(src, mr, Some(MapReduce.Action.Reduce(Some(true))))
               // NB: `finalize` should ensure that the final op is always a
               //     $Reduce.
               case src => scala.sys.error("not a mapReduce: " + src)
@@ -871,14 +874,16 @@ object Workflow {
 
     def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
       (ExprVar,
-        MapReduceTask(src,
+        MapReduceTask(
+          src,
           MapReduce(
             mapFn(base match {
               case DocVar(DocVar.ROOT, None) => this.fn
               case _ => compose(this.fn, mapProject(base))
             }),
             $Reduce.reduceNOP,
-            selection = sel, inputSort = sort, limit = count, scope = scope)))
+            selection = sel, inputSort = sort, limit = count, scope = scope),
+          None))
 
     def reparent[B](newSrc: B) = copy(src = newSrc)
   }
@@ -1087,14 +1092,16 @@ object Workflow {
 
     def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
       (ExprVar,
-        MapReduceTask(src,
+        MapReduceTask(
+          src,
           MapReduce(
             mapFn(base match {
               case DocVar(DocVar.ROOT, None) => this.fn
               case _ => $Map.compose(this.fn, $Map.mapProject(base))
             }),
             $Reduce.reduceNOP,
-            selection = sel, inputSort = sort, limit = count, scope = scope)))
+            selection = sel, inputSort = sort, limit = count, scope = scope),
+          None))
 
     def reparent[B](newSrc: B) = copy(src = newSrc)
   }
@@ -1142,14 +1149,16 @@ object Workflow {
       extends MapReduceF[A] {
     def newMR(base: DocVar, src: WorkflowTask, sel: Option[Selector], sort: Option[NonEmptyList[(BsonField, SortType)]], count: Option[Long]) =
       (ExprVar,
-        MapReduceTask(src,
+        MapReduceTask(
+          src,
           MapReduce(
             $Map.mapFn(base match {
               case DocVar(DocVar.ROOT, None) => $Map.mapNOP
               case _                         => $Map.mapProject(base)
             }),
             this.fn,
-            selection = sel, inputSort = sort, limit = count, scope = scope)))
+            selection = sel, inputSort = sort, limit = count, scope = scope),
+          None))
 
     def reparent[B](newSrc: B) = copy(src = newSrc)
   }

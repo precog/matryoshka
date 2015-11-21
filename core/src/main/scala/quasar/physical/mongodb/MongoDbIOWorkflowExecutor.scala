@@ -17,6 +17,8 @@ import scalaz._, Scalaz._
 private[mongodb] final class MongoDbWorkflowExecutor
   extends WorkflowExecutor[MongoDbIO] {
 
+  import MapReduce._
+
   def aggregate(src: Collection, pipeline: Pipeline) =
     MongoDbIO.aggregate_(src, pipeline map (_.bson.repr), true)
 
@@ -26,55 +28,8 @@ private[mongodb] final class MongoDbWorkflowExecutor
   def insert(dst: Collection, values: List[Bson.Doc]) =
     MongoDbIO.insert(dst, values map (_.repr))
 
-  def mapReduce(src: Collection, dstCollectionName: String, mr: MapReduce) = {
-    val lim =
-      mr.limit.cata(
-        l => Positive(l).cata(
-          _.some.point[MongoDbIO],
-          MongoDbIO.fail(new IllegalArgumentException(
-            s"limit must be a positive number: $l"))),
-        none[Positive].point[MongoDbIO])
-
-    val maybeScope =
-      if (mr.scope.isEmpty)
-        none[Document]
-      else
-        Bson.Doc(mr.scope).repr.some
-
-    val maybeSort =
-      mr.inputSort map (ts =>
-        Bson.Doc(ListMap(ts.list.map(_.bimap(_.asText, _.bson)): _*))
-          .repr)
-
-    val cfg = lim map (l =>
-      MapReduce.Config(
-        finalizer = mr.finalizer.map(_.pprint(0)),
-        inputFilter = mr.selection.map(_.bson.repr),
-        inputLimit = l,
-        map = mr.map.pprint(0),
-        reduce = mr.reduce.pprint(0),
-        scope = maybeScope,
-        sort = maybeSort,
-        useJsMode = mr.jsMode.getOrElse(false),
-        verboseResults = mr.verbose.getOrElse(true)))
-
-    val outColl = mr.out match {
-      case Some(MapReduce.WithAction(act, db, sharded)) =>
-        MapReduce.OutputCollection(
-          dstCollectionName,
-          Some(MapReduce.ActionedOutput(act, db, sharded))
-        ).point[MongoDbIO]
-
-      case Some(MapReduce.Inline) =>
-        MongoDbIO.fail(new IllegalArgumentException(
-          s"Destination collection, `$dstCollectionName`, given but MapReduce specified inline output."))
-
-      case None =>
-        MapReduce.OutputCollection(dstCollectionName, None).point[MongoDbIO]
-    }
-
-    (outColl |@| cfg)(MongoDbIO.mapReduce_(src, _, _)).join
-  }
+  def mapReduce(src: Collection, dst: OutputCollection, mr: MapReduce) =
+    MongoDbIO.mapReduce_(src, dst, mr)
 
   def rename(src: Collection, dst: Collection) =
     MongoDbIO.rename(src, dst, RenameSemantics.Overwrite)

@@ -131,7 +131,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |        this))
           |  },
           |  function (key, values) { return Array.sum(values) },
-          |  { "out": { "replace": "tmp.gen_0" } });
+          |  { "out": { "replace": "tmp.gen_0", "db": "db" } });
           |db.tmp.gen_0.find();
           |""".stripMargin)
     }
@@ -150,7 +150,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |  },
           |  function (key, values) { return values[0] },
           |  {
-          |    "out": { "replace": "tmp.gen_0" },
+          |    "out": { "replace": "tmp.gen_0", "db": "db" },
           |    "query": { "$where": function () { return foo } }
           |  });
           |db.tmp.gen_0.find();
@@ -195,7 +195,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |  },
           |  function (key, values) { return Array.sum(values) },
           |  {
-          |    "out": { "reduce": "tmp.gen_0", "nonAtomic": true },
+          |    "out": { "reduce": "tmp.gen_0", "db": "db", "nonAtomic": true },
           |    "query": { "pop": { "$lte": NumberLong(1000) } }
           |  });
           |db.tmp.gen_0.find();
