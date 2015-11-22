@@ -17,7 +17,7 @@ object QueryFile {
     extends QueryFile[(PhaseResults, FileSystemError \/ ResultFile)]
 
   /** TODO: While this is a bit better in one dimension here in `QueryFile`,
-    *       @mossprescott points out it is still a bit of a stretch to include
+    *       `@mossprescott` points out it is still a bit of a stretch to include
     *       in this algebra. We need to revisit this and probably add algebras
     *       over multiple dimensions to better organize these (and other)
     *       operations.
