@@ -23,25 +23,28 @@ class InteractiveTest extends BackendTest with NoTimeConversions with Disjunctio
       listings must contain(FilesystemNode(file, None))
     }
 
-    "Interactive" should {
-      "load test data correctly" in {
-        interactive.withTemp(backend, prefix) { tempFile =>
-          interactive.delete(backend, prefix ++ tempFile).run
-          assertNotThere(tempFile)
-          interactive.loadData(backend, prefix ++ tempFile, interactive.zips.run.content).run.run
-          assertThere(tempFile)
+    // NB: this test has nothing interesting to say about read-only
+    // connections at present.
+    if (name != TestConfig.MONGO_READ_ONLY)
+      "Interactive" should {
+        "load test data correctly" in {
+          interactive.withTemp(backend, prefix) { tempFile =>
+            interactive.delete(backend, prefix ++ tempFile).run
+            assertNotThere(tempFile)
+            interactive.loadData(backend, prefix ++ tempFile, interactive.zips.run.content).run.run
+            assertThere(tempFile)
+          }
+        }
+        "load file correctly" in {
+          val collName = "zips"
+          val path = prefix ++ Path(collName)
+          val file = new File(s"it/src/main/resources/tests/$collName.data")
+          interactive.delete(backend, path).run
+          assertNotThere(path)
+          interactive.loadFile(backend,prefix, file).run.run
+          assertThere(Path(collName))
         }
       }
-      "load file correctly" in {
-        val collName = "zips"
-        val path = prefix ++ Path(collName)
-        val file = new File(s"it/src/main/resources/tests/$collName.data")
-        interactive.delete(backend, path).run
-        assertNotThere(path)
-        interactive.loadFile(backend,prefix, file).run.run
-        assertThere(Path(collName))
-      }
-    }
     ()
   }
 }

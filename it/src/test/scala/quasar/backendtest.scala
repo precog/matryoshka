@@ -185,8 +185,8 @@ trait BackendTest extends Specification {
     *                 identifying the backend in messages as well as a list of fully qualified paths to the test data
     *                 requested (in the same order as supplied)
     */
-  def backendShould(data: DataSource*)(runTests: (Path, Backend, BackendName, List[Path]) => Unit): Unit =
-    backendShould0(data: _*) { case (p, _, b, n, ps) => runTests(p, b, n, ps) }
+  def backendShould(data: DataSource*)(runTests: (Path, Backend, Backend, BackendName, List[Path]) => Unit): Unit =
+    backendShould0(data: _*) { case (p, i, t, n, ps) => runTests(p, i, t, n, ps) }
 
   /** Run the supplied tests against all backends.
     *

@@ -25,7 +25,7 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
     new sql.SQLParser().parse(sql.Query(query))
       .valueOr(e => scala.sys.error("bad query: " + e))
 
-  backendShould(interactive.zips.run) { (prefix, backend, backendName, files) =>
+  backendShould(interactive.zips.run) { (prefix, _, backend, backendName, files) =>
     val relPrefix = prefix.asRelative
     val TestDir = relPrefix ++ testRootDir ++ genTempDir.run
     val ZipsPath = Path("/mnt/") ++ files.head
