@@ -9,6 +9,5 @@ source "$(dirname $0)/constants"
 if [[ "${TRAVIS_JOB_NUMBER##*.}" == "1" ]]; then
   "$SCRIPT_DIR/publishJarIfMaster"
   # Upload coverage information to codecov.io (BETA)
-  # Unsure about whether it will do coverage for all the code base as opposed to just core
   pip install --user codecov && codecov
 fi

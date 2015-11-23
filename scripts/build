@@ -67,9 +67,6 @@ if [[ "${JOB_NUM##*.}" == "1" ]]; then
   cp "$QUASAR_WEB_JAR_PATH" "$QUASAR_TEMP_JAR"
 
   # Build and run all tests everywhere (including integration)
-  # Note: scoverage is brain-dead, so each project's tests have to be run
-  # separately, and 'core' should be last, so that its report will include
-  # coverage in the core code provided by tests in other projects.
   "$SBT" -DisCoverageRun=true -DisIsolatedEnv=${ISOLATED_ENV:=false} coverage doc test exclusive:test
   "$SBT" coverageReport
   "$SBT" coverageAggregate
