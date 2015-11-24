@@ -16,12 +16,8 @@
 
 package quasar
 
-import quasar.Predef._
-
 import quasar.sql.Expr
-import quasar.fs.Path
 
 final case class QueryRequest(
   query:      Expr,
-  out:        Option[Path],
   variables:  Variables)

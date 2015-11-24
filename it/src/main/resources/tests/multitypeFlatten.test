@@ -1,5 +1,6 @@
 {
     "name": "flatten a single field as both object and array",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "nested_foo.data",
     "query": "select * from nested_foo where (
                 foo{*} LIKE '%15%' OR

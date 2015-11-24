@@ -211,7 +211,7 @@ final case class FileSystemApi[WC, SC](
       case req @ GET -> AsDirPath(path) :? Q(query) => {
         SQLParser.parseInContext(query, path).fold(
           handleParsingError,
-          expr => backend.flatMap(_.eval(QueryRequest(expr, None, Variables(Map()))).run._2.fold(
+          expr => backend.flatMap(_.eval(QueryRequest(expr, Variables(Map()))).run._2.fold(
             handleCompilationError,
             responseStream(req.headers.get(Accept), _))))
       }
@@ -226,7 +226,7 @@ final case class FileSystemApi[WC, SC](
 
             backend.flatMap { bknd =>
               (parseRes |@| pathRes)((expr, out) => {
-                val (phases, resultT) = bknd.run(QueryRequest(expr, Some(out), vars(req))).run
+                val (phases, resultT) = bknd.run(QueryRequest(expr, vars(req)), out).run
 
                 resultT.fold(
                   handleCompilationError,
@@ -250,7 +250,7 @@ final case class FileSystemApi[WC, SC](
       (for {
         expr  <- SQLParser.parseInContext(query, path).leftMap(handleParsingError)
 
-        phases = bknd.evalLog(QueryRequest(expr, None, Variables(Map())))
+        phases = bknd.evalLog(QueryRequest(expr, Variables(Map())))
 
         plan  <- phases.lastOption \/> InternalServerError("no plan")
       } yield plan match {

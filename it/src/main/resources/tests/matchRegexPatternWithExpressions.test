@@ -1,5 +1,6 @@
 {
   "name": "regexes in expressions and filter, with fields and constants providing the pattern",
+  "backends": { "mongodb_read_only": "pending" },
 
   "data": "zips.data",
 

@@ -1,5 +1,6 @@
 {
   "name": "regex on non-string field",
+  "backends": { "mongodb_read_only": "pending" },
   "data": "zips.data",
   "query": "select distinct * from zips where pop ~* 'foo'",
   "predicate": "equalsExactly",

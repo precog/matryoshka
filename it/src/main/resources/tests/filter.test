@@ -1,5 +1,6 @@
 {
   "name": "filter with pipeline and JS",
+  "backends": { "mongodb_read_only": "pending" },
 
   "data": "smallZips.data",
 

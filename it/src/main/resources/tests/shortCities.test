@@ -1,5 +1,6 @@
 {
     "name": "shortest city names",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select distinct city from zips order by length(city), city limit 5",
     "predicate": "equalsExactly",

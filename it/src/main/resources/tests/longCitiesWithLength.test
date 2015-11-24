@@ -1,5 +1,6 @@
 {
   "name": "long city names in Colorado",
+  "backends": { "mongodb_read_only": "pending" },
 
   "data": "zips.data",
 

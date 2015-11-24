@@ -1,5 +1,6 @@
 {
   "name": "count occurrences of each value of length(city), with filtering",
+  "backends": { "mongodb_read_only": "pending" },
 
   "data": "zips.data",
 

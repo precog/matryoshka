@@ -1,5 +1,6 @@
 {
     "name": "negate matches in filter and projection",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select city, city !~ 'A' from zips where city !~ 'CHI'",
     "predicate": "containsAtLeast",

@@ -17,13 +17,14 @@
 package quasar
 
 import quasar.Predef._
-
-import scalaz._
-import scalaz.concurrent._
-
+import quasar.Backend.ResultError
 import quasar.config.FsPath.FsPathError
 import quasar.fs._, Path._
 import quasar.Errors._
+
+import scalaz._
+import scalaz.concurrent._
+import scalaz.stream._
 
 sealed trait ResultPath {
   def path: Path
@@ -46,13 +47,23 @@ trait Evaluator[PhysicalPlan] {
   def name: String
 
   /**
-   * Executes the specified physical plan.
+   * Executes the specified physical plan, storing the results in the
+   * filesystem.
    *
    * Returns the location where the output results are located. In some
    * cases (e.g. SELECT * FROM FOO), this may not be equal to the specified
    * destination resource (because this would require copying all the data).
    */
-  def execute(physical: PhysicalPlan): ETask[EvaluationError, ResultPath]
+  def executeTo(physical: PhysicalPlan, out: Path): ETask[EvaluationError, ResultPath]
+
+  /**
+   * Executes the specified physical plan and streams the results.
+   *
+   * Note that the evaluator may write temporary results to the filesystem
+   * during evaluation, but must clean up any such temporary files after
+   * the output is consumed.
+   */
+  def evaluate(physical: PhysicalPlan): Process[ETask[EvaluationError, ?], Data]
 
   /**
    * Compile the specified physical plan to a command
@@ -196,6 +207,9 @@ object Evaluator {
     final case class EvalPathError(error: PathError) extends EvaluationError {
       def message = error.message
     }
+    final case class EvalResultError(error: ResultError) extends EvaluationError {
+      def message = error.message
+    }
     final case object NoDatabase extends EvaluationError {
       def message = "no database found"
     }
@@ -212,6 +226,14 @@ object Evaluator {
       EvaluationError.EvalPathError(error)
     def unapply(obj: EvaluationError): Option[PathError] = obj match {
       case EvaluationError.EvalPathError(error) => Some(error)
+      case _                       => None
+    }
+  }
+  object EvalResultError {
+    def apply(error: ResultError): EvaluationError =
+      EvaluationError.EvalResultError(error)
+    def unapply(obj: EvaluationError): Option[ResultError] = obj match {
+      case EvaluationError.EvalResultError(error) => Some(error)
       case _                       => None
     }
   }

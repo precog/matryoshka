@@ -38,11 +38,11 @@ final case class MapReduce(
 
   import MapReduce._
 
-  def bson(dst: Collection): Bson.Doc =
+  def bson(dst: Option[Collection]): Bson.Doc =
     Bson.Doc(ListMap(
       (// "map" -> Bson.JavaScript(map) ::
        //  "reduce" -> Bson.JavaScript(reduce) ::
-        Some("out" -> out.getOrElse(WithAction(Action.Replace, None, None)).bson(dst)) ::
+        dst.map(d => "out" -> out.getOrElse(WithAction(Action.Replace, None, None)).bson(d)) ::
         selection.map("query" -> _.bson) ::
         limit.map("limit" -> Bson.Int64(_)) ::
         finalizer.map("finalize" -> Bson.JavaScript(_)) ::

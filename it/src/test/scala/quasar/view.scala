@@ -25,7 +25,7 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
     new sql.SQLParser().parse(sql.Query(query))
       .valueOr(e => scala.sys.error("bad query: " + e))
 
-  backendShould(interactive.zips.run) { (prefix, backend, backendName, files) =>
+  backendShould(interactive.zips.run) { (prefix, _, backend, backendName, files) =>
     val relPrefix = prefix.asRelative
     val TestDir = relPrefix ++ testRootDir ++ genTempDir.run
     val ZipsPath = Path("/mnt/") ++ files.head
@@ -115,7 +115,7 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
 
     "trivial query referring to a view" in {
       val query = """select * from "/view/smallCities""""
-      root.evalResults(QueryRequest(parse(query), None, Variables(Map.empty))).fold[Result](
+      root.evalResults(QueryRequest(parse(query), Variables(Map.empty))).fold[Result](
         e => failure(e.toString),
         _.take(1).runLog.run.run must beRightDisjunction(Vector(Data.Obj(ListMap(
           "City" -> Data.Str("AARON"),
@@ -127,7 +127,7 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
     "less-trivial query referring to a view" in {
       // Refers to the shape created in the view query
       val query = """select City || ', ' || St from "/view/smallCities" where Size < 500"""
-      root.evalResults(QueryRequest(parse(query), None, Variables(Map.empty))).fold[Result](
+      root.evalResults(QueryRequest(parse(query), Variables(Map.empty))).fold[Result](
         e => failure(e.toString),
         _.take(1).runLog.run.run must beRightDisjunction(Vector(Data.Obj(ListMap(
           "0" -> Data.Str("AARON, KY")))))
@@ -136,7 +136,7 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
 
     "query with view referencing a view" in {
       val query = """select max("1") from "/view/smallCityCounts""""
-      root.evalResults(QueryRequest(parse(query), None, Variables(Map.empty))).fold[Result](
+      root.evalResults(QueryRequest(parse(query), Variables(Map.empty))).fold[Result](
         e => failure(e.toString),
         _.runLog.run.run must beRightDisjunction(Vector(Data.Obj(ListMap(
           "0" -> Data.Int(428))))))
@@ -146,7 +146,7 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
       // NB: the composed query ends up with references to city, state, and zip in
       // both the source table and the subquery result.
       val query = """select zip from "/view/simpleZips" where city = 'BOULDER' and state = 'CO' order by zip"""
-      root.evalResults(QueryRequest(parse(query), None, Variables(Map.empty))).fold[Result](
+      root.evalResults(QueryRequest(parse(query), Variables(Map.empty))).fold[Result](
         e => failure(e.toString),
         _.runLog.run.run must beRightDisjunction(Vector(
           Data.Obj(ListMap("zip" -> Data.Str("80301"))),
@@ -157,7 +157,7 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
 
     "query with view with bad reference" in {
       val query = """select * from "/view/badRef""""
-      root.evalResults(QueryRequest(parse(query), None, Variables(Map.empty))).fold[Result](
+      root.evalResults(QueryRequest(parse(query), Variables(Map.empty))).fold[Result](
         e => failure(e.toString),
         _.runLog.run.run must beLeftDisjunction(
           PEvalError(EvalPathError(NonexistentPathError(Path("/test/nonexistent"), None)))))

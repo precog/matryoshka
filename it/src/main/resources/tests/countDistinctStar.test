@@ -1,5 +1,6 @@
 {
   "name": "count distinct *",
+  "backends": { "mongodb_read_only": "pending" },
   "data": "olympics.data",
   "query": "select count(distinct *) from olympics",
   "predicate": "equalsExactly",

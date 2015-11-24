@@ -31,10 +31,16 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
     case x => x must beNull
   }
 
-  backendShould(interactive.zips.run) { (prefix, fs, _, files) =>
+  backendShould(interactive.zips.run) { (prefix, insertFs, fs, name, files) =>
     val relPrefix = prefix.asRelative
     val TestDir = relPrefix ++ testRootDir ++ genTempDir.run
     val ZipsDir = files.head
+
+    implicit class SkippedOnReadOnly[T: org.specs2.execute.AsResult](t: => T) {
+      def skippedOnReadOnly: org.specs2.execute.Result =
+        if (name == TestConfig.MONGO_READ_ONLY) org.specs2.execute.Skipped("test of write behavior")
+        else org.specs2.execute.AsResult(t)
+    }
 
     "FileSystem" should {
       // Run the task to create a single FileSystem instance for each run (I guess)
@@ -71,7 +77,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           before must not(contain(FilesystemNode(tmp, None)))
           after must contain(FilesystemNode(tmp, None))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "allow duplicate saves" in {
         (for {
@@ -84,7 +90,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           before must contain(FilesystemNode(tmp, None))
           after must contain(FilesystemNode(tmp, None))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "fail duplicate creates" in {
         (for {
@@ -97,7 +103,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           after must_== before
           rez must beLeftDisjunction(PPathError(ExistingPathError(TestDir ++ tmp, Some("can’t be created, because it already exists"))))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "fail initial replace" in {
         (for {
@@ -109,7 +115,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           after must_== before
           rez must beLeftDisjunction(PPathError(NonexistentPathError(TestDir ++ tmp, Some("can’t be replaced, because it doesn’t exist"))))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "replace one" in {
         (for {
@@ -122,7 +128,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           before must contain(FilesystemNode(tmp, None))
           after must contain(FilesystemNode(tmp, None))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "save one (subdir)" in {
         (for {
@@ -135,7 +141,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           before must not(contain(FilesystemNode(tmp, None)))
           after must contain(FilesystemNode(tmp, None))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "save one with error" in {
         val badJson = Data.Int(1)
@@ -150,7 +156,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           rez must beLeftDisjunction
           after must_== before
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "save many (approx. 10 MB in 1K docs)" in {
         val sizeInMB = 10.0
@@ -175,7 +181,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
         } yield {
           after must contain(FilesystemNode(tmp, None))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "append one" in {
         val json = Data.Obj(ListMap("a" ->Data.Int(1)))
@@ -188,7 +194,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           rez.size must_== 0
           saved.size must_== 1
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "append with one ok and one error" in {
         val json1 = Data.Obj(ListMap("a" ->Data.Int(1)))
@@ -202,7 +208,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           rez.size must_== 1
           saved.size must_== 1
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "move file" in {
         (for {
@@ -215,7 +221,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           after must not(contain(FilesystemNode(tmp1, None)))
           after must contain(FilesystemNode(tmp2, None))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "error: move file to existing path" in {
         (for {
@@ -230,7 +236,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           after must contain(FilesystemNode(tmp1, None))
           after must contain(FilesystemNode(tmp2, None))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "move file to existing path with Overwrite semantics" in {
         (for {
@@ -244,7 +250,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           after must not(contain(FilesystemNode(tmp1, None)))
           after must contain(FilesystemNode(tmp2, None))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "move file to itself (NOP)" in {
         (for {
@@ -255,7 +261,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
         } yield {
           after must contain(FilesystemNode(tmp1, None))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "move dir" in {
         (for {
@@ -271,7 +277,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           after must not(contain(FilesystemNode(tmpDir1, None)))
           after must contain(FilesystemNode(tmpDir2, None))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "move dir with destination given as file path" in {
         (for {
@@ -287,7 +293,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           after must not(contain(FilesystemNode(tmpDir1, None)))
           after must contain(FilesystemNode(tmpDir2.asDir, None))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "move missing dir to new (also missing) location (NOP)" in {
         (for {
@@ -299,7 +305,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           after must not(contain(FilesystemNode(tmpDir1, None)))
           after must not(contain(FilesystemNode(tmpDir2, None)))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "delete file" in {
         (for {
@@ -310,7 +316,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
         } yield {
           after must not(contain(FilesystemNode(tmp, None)))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "delete file but not sibling" in {
         val tmp1 = Path("file1")
@@ -327,7 +333,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           after must not(contain(FilesystemNode(tmp1, None)))
           after must contain(FilesystemNode(tmp2, None))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "delete dir" in {
         (for {
@@ -341,7 +347,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
         } yield {
           after must not(contain(FilesystemNode(tmpDir, None)))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "delete database" in {
         // NB: Because this operates on a DB, it can’t run within `TestDir`.
@@ -359,7 +365,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           create must contain(FilesystemNode(db, None))
           delete must_== before
         }).fold(skipUnlessAuthorized, ι).run
-      }
+      }.skippedOnReadOnly
 
       "delete all databases" in {
         // NB: Because this operates on a DB, it can’t run within `TestDir`.
@@ -378,7 +384,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
           before must contain(FilesystemNode(db2, None))
           after must_== Set()
         }).fold(skipUnlessAuthorized, ι).run
-      }.skippedOnUserEnv("This could destroy user data.")
+      }.skippedOnUserEnv("This could destroy user data.").skippedOnReadOnly
 
       "delete missing file (not an error)" in {
         (for {
@@ -387,7 +393,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
         } yield {
           rez must beRightDisjunction
         }).run
-      }
+      }.skippedOnReadOnly
 
       "read large data and count" in {
         val COUNT = 10000
@@ -395,7 +401,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
 
         (for {
           tmp <- genTempFile
-          _   <- fs.save(TestDir ++ tmp, data).run
+          _   <- insertFs.save(TestDir ++ tmp, data).run
 
           ds  <- fs.scan(TestDir ++ tmp, 0, None).map(_ => 1).sum.runLast.run
         } yield {
@@ -409,7 +415,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
 
         (for {
           tmp <- genTempFile
-          _   <- fs.save(TestDir ++ tmp, data).run
+          _   <- insertFs.save(TestDir ++ tmp, data).run
 
           t   = fs.scan(TestDir ++ tmp, 0, None).map(_ => 1).sum.runLast
           ds1  <- t.run
@@ -450,7 +456,7 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
 
         (for {
           tmp <- genTempFile
-          _   <- fs.save(TestDir ++ tmp, manyDocs(COUNT)).run
+          _   <- insertFs.save(TestDir ++ tmp, manyDocs(COUNT)).run
 
           ds = fs.scan(TestDir ++ tmp, 0, None).map(encode)
           ds1 = ds.translate[ProcessingTask](convertError(PResultError(_)))
@@ -465,12 +471,23 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
       import quasar.sql.{Expr, Query, SQLParser}
 
       def parse(query: String) =
-        liftE[ProcessingError](SQLParser.parseInContext(Query(query), TestDir).fold(e => Task.fail(new RuntimeException(e.message)), Task.now))
-      def eval(fs: Backend, expr: Expr, path: Option[Path]):
-          ProcessingTask[IndexedSeq[Data]] =
-        fs.eval(QueryRequest(expr, path, Variables(Map()))).run._2.fold(
-            e => liftE(Task.fail(new RuntimeException(e.message))),
-            _.runLog)
+        liftE[ProcessingError](SQLParser.parseInContext(Query(query), TestDir).fold(
+          e => Task.fail(new RuntimeException(e.message)),
+          Task.now))
+      def eval(fs: Backend, query: Expr): ProcessingTask[IndexedSeq[Data]] =
+        fs.eval(QueryRequest(query, Variables(Map()))).run._2.fold(
+          e => liftE(Task.fail(new RuntimeException(e.message))),
+          _.runLog)
+      def run(fs: Backend, query: Expr, out: Path): ProcessingTask[ResultPath] =
+        fs.run(QueryRequest(query, Variables(Map())), out).run._2.fold(
+          e => liftE(Task.fail(new RuntimeException(e.message))),
+          _.leftMap(PEvalError(_)))
+      def stripId(ds: IndexedSeq[Data]) = ds.map {
+        case Data.Obj(values) =>
+          val values1: Map[String, Data] = values.map { case ("value", Data.Obj(values2)) => "value" -> Data.Obj(values2 - "_id"); case d => d }
+          Data.Obj(values1)
+        case d => d
+      }
 
       "leave no temps behind" in {
         (for {
@@ -479,16 +496,18 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
 
           before <- fs.lsAll(Path.Root).leftMap(PPathError(_))
 
-          // NB: this query *does* produce a temporary result (not a simple read)
-          expr   <- parse("select a from " + tmp.simplePathname)
-          rez    <- eval(fs, expr, None)
+          // NB: this query *does* use temps (not streamable)
+          expr   <- parse("select *, a+1 from " + tmp.simplePathname + " order by a")
+          rez    <- eval(fs, expr)
 
           after  <- fs.lsAll(Path.Root).leftMap(PPathError(_))
         } yield {
-          rez must_== Vector(Data.Obj(ListMap("a" -> Data.Int(1))))
+          stripId(rez) must_== Vector(
+            Data.Obj(ListMap("value" -> Data.Obj(ListMap(
+              "a" -> Data.Int(1), "1" -> Data.Int(2))))))
           after must contain(exactly(before.toList: _*))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
 
       "leave only the output behind" in {
         (for {
@@ -497,18 +516,23 @@ class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedO
 
           before <- fs.lsAll(Path.Root).leftMap(PPathError(_))
 
-          out    <- liftE(genTempFile)
-          // NB: this query *does* produce a temporary result (not a simple read)
-          expr   <- parse("select a from " + tmp.simplePathname)
-          rez    <- eval(fs, expr, Some(TestDir ++ out))
+          outReq <- liftE(genTempFile)
+          // NB: this query *does* use temps (not streamable)
+          expr   <- parse("select *, a+1 from " + tmp.simplePathname + " order by a")
+          outAct <- run(fs, expr, TestDir ++ outReq)
+          rez    <- fs.scan(outAct.path, 0, None).runLog.leftMap(PResultError(_))
 
           after  <- fs.lsAll(Path.Root).leftMap(PPathError(_))
         } yield {
-          rez must_== Vector(Data.Obj(ListMap("a" -> Data.Int(1))))
-          after must contain(exactly(FilesystemNode(TestDir ++ out, None) :: before.toList: _*))
+          outAct.path.asRelative must_== TestDir ++ outReq
+          stripId(rez) must_== Vector(
+            Data.Obj(ListMap("value" -> Data.Obj(ListMap(
+              "a" -> Data.Int(1), "1" -> Data.Int(2))))))
+          after must contain(exactly(FilesystemNode(TestDir ++ outReq, None) :: before.toList: _*))
         }).fold(_ must beNull, ι).run
-      }
+      }.skippedOnReadOnly
     }
+
     val cleanup = step {
       deleteTempFiles(fs, TestDir).run
     }

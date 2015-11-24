@@ -1,5 +1,6 @@
 {
     "name": "order join by alias",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select z1._id as zip, z2.pop / 1000 as popK from zips z1 inner join zips z2 on z1._id = z2._id order by popK desc",
     "predicate": "equalsInitial",
