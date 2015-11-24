@@ -517,19 +517,23 @@ object Backend {
       for {
         backend <- BackendDefinitions.All(config)
         _       <- trap(backend.ls.leftMap(EnvPathError(_)), err => InsufficientPermissions(err.toString))
-        _       <- testWrite(backend)
+        // Temporary: this prevents any read-only mount from being created,
+        // so we can't simply require this to not fail. Possibly could be
+        // restored if we had some way to just warn the user or to specify
+        // that read-only is OK for a particular mount.
+        // _       <- testWrite(backend)
       } yield ()
   }
 
-  private def testWrite(backend: Backend): ETask[EnvironmentError, Unit] =
-    for {
-      files <- backend.ls.leftMap(EnvPathError(_))
-      dir   =  files.map(_.path).find(_.pureDir).getOrElse(Path.Root)
-      tmp   =  dir ++ Path(".quasar_tmp_connection_test")
-      data  =  Data.Obj(ListMap("a" -> Data.Int(1)))
-      _     <- backend.save(tmp, Process.emit(data)).leftMap(EnvWriteError(_))
-      _     <- backend.delete(tmp).leftMap(EnvPathError(_))
-    } yield ()
+  // private def testWrite(backend: Backend): ETask[EnvironmentError, Unit] =
+  //   for {
+  //     files <- backend.ls.leftMap(EnvPathError(_))
+  //     dir   =  files.map(_.path).find(_.pureDir).getOrElse(Path.Root)
+  //     tmp   =  dir ++ Path(".quasar_tmp_connection_test")
+  //     data  =  Data.Obj(ListMap("a" -> Data.Int(1)))
+  //     _     <- backend.save(tmp, Process.emit(data)).leftMap(EnvWriteError(_))
+  //     _     <- backend.delete(tmp).leftMap(EnvPathError(_))
+  //   } yield ()
 
   private def wrap(description: String)(e: Throwable): EnvironmentError =
     EnvEvalError(CommandFailed(description + ": " + e.getMessage))
