@@ -39,6 +39,21 @@ import scalaz.concurrent._
 import scalaz.stream._
 import scodec.bits.ByteVector
 
+object FileSystemApi {
+  type Apply[WC, SC] =
+    (
+    WC,
+    WC => EnvTask[Backend],
+    MountConfig => EnvTask[Unit],
+    WC => Task[Unit],
+    WC => Task[Unit],
+    WebConfigLens[WC, SC]
+    )
+    => FileSystemApi[WC, SC]
+
+  def apply: Apply[WebConfig, ServerConfig] = new FileSystemApi(_, _, _, _, _, _)
+}
+
 /**
  * The REST API to the Quasar Engine
  * @param initialConfig The config with which the server will be started initially
@@ -47,7 +62,7 @@ import scodec.bits.ByteVector
  * @param restartServer Expected to restart server when called using the provided Configuration. Called only when the port changes.
  * @param configChanged Expected to persist a Config when called. Called whenever the Config changes.
  */
-final case class FileSystemApi[WC, SC](
+class FileSystemApi[WC, SC](
   initialConfig: WC,
   createBackend: WC => EnvTask[Backend],
   validateConfig: MountConfig => EnvTask[Unit],
@@ -84,7 +99,7 @@ final case class FileSystemApi[WC, SC](
         .as(mountings.get(cfg).keySet contains path)
     }
 
-  private def updateWebServerConfig(config: Task[WC]): Task[Unit] =
+  protected def updateWebServerConfig(config: Task[WC]): Task[Unit] =
     for {
       cfg <- config
       _   <- configChanged(cfg)
