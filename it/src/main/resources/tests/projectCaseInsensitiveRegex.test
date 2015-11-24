@@ -1,5 +1,6 @@
 {
     "name": "case-insensitive regex in projections",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select city, city ~* 'boU', city !~* 'Bou' from zips",
     "NB": "Should also test `doesNotContain`, see SD-577.",
