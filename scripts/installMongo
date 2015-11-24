@@ -30,7 +30,7 @@ $MONGO_DIR/bin/mongod --dbpath $MONGO_DIR-data --port $MONGO_PORT > /dev/null &
 
 if [[ $AUTH ]]
 then
-  sleep 1s
+  sleep 5s
 
   $MONGO_DIR/bin/mongo localhost:$MONGO_PORT/quasar-test --eval 'db.createUser({"user": "quasar-dbOwner", "pwd": "quasar", "roles": [ "dbOwner" ]})'
   $MONGO_DIR/bin/mongo localhost:$MONGO_PORT/quasar-test --eval 'db.createUser({"user": "quasar-read", "pwd": "quasar", "roles": [ "read" ]})'
