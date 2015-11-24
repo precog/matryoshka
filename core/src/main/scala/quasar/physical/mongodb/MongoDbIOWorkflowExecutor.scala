@@ -1,8 +1,8 @@
-package quasar
-package physical
-package mongodb
+package quasar.physical.mongodb
 
 import quasar.Predef._
+import quasar.{EnvironmentError2, EnvErr2T}
+import quasar.fp.prism._
 import quasar.fs.Positive
 import quasar.physical.mongodb.workflowtask._
 
@@ -10,7 +10,6 @@ import java.lang.IllegalArgumentException
 
 import com.mongodb._
 import org.bson.Document
-
 import scalaz._, Scalaz._
 
 /** Implementation class for a WorkflowExecutor in the `MongoDbIO` monad. */
@@ -46,13 +45,13 @@ private[mongodb] object MongoDbWorkflowExecutor {
     new (MongoDbIO ~> EnvErr2T[MongoDbIO, ?]) {
       def apply[A](m: MongoDbIO[A]) = EitherT(m.attemptMongo.run flatMap {
         case -\/(ex: MongoSocketOpenException) =>
-          ConnectionFailed(ex.getMessage).left.point[MongoDbIO]
+          connectionFailed(ex.getMessage).left.point[MongoDbIO]
 
         case -\/(ex: MongoSocketException) =>
-          ConnectionFailed(ex.getMessage).left.point[MongoDbIO]
+          connectionFailed(ex.getMessage).left.point[MongoDbIO]
 
         case -\/(ex) if ex.getMessage contains "Command failed with error 18: 'auth failed'" =>
-          InvalidCredentials(ex.getMessage).left.point[MongoDbIO]
+          invalidCredentials(ex.getMessage).left.point[MongoDbIO]
 
         case -\/(ex) =>
           MongoDbIO.fail(ex)

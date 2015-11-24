@@ -347,7 +347,7 @@ trait SKI {
 }
 object SKI extends SKI
 
-package object fp extends TreeInstances with ListMapInstances with EitherTInstances with OptionTInstances with StateTInstances with WriterTInstances with ToCatchableOps with PartialFunctionOps with JsonOps with ProcessOps with QFoldableOps with SKI {
+package object fp extends TreeInstances with ListMapInstances with EitherTInstances with OptionTInstances with StateTInstances with WriterTInstances with ToCatchableOps with PartialFunctionOps with JsonOps with ProcessOps with QFoldableOps with PrismInstances with SKI {
   sealed trait Polymorphic[F[_], TC[_]] {
     def apply[A: TC]: TC[F[A]]
   }

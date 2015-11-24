@@ -1,9 +1,9 @@
-package quasar
-package physical
-package mongodb
+package quasar.physical.mongodb
 
 import quasar.Predef._
+import quasar.{EnvironmentError2, EnvErr2T, SeqNameGeneratorT}
 import quasar.{NameGenerator => QNameGenerator}
+import quasar.fp.prism._
 import quasar.javascript._
 import quasar.physical.mongodb.workflowtask._
 
@@ -67,7 +67,7 @@ trait WorkflowExecutor[F[_]] {
 
     def tempColl: N[Collection] =
       for {
-        tmp <- NameGenerator[M].prefixedName("wf.").liftM[TempsT]
+        tmp <- QNameGenerator[M].prefixedName("wf.").liftM[TempsT]
         col =  Collection(dst.databaseName, tmp)
         _   <- wroteTo(col, true) // assume we'll write to this collection
       } yield col
@@ -182,7 +182,7 @@ object WorkflowExecutor {
       if (v >= MinMongoDbVersion)
         (new MongoDbWorkflowExecutor: WorkflowExecutor[MongoDbIO]).point[M]
       else
-        UnsupportedVersion("MongoDB", v).raiseError[E, WorkflowExecutor[MongoDbIO]]
+        unsupportedVersion("MongoDB", v).raiseError[E, WorkflowExecutor[MongoDbIO]]
     }
   }
 

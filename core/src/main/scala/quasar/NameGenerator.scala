@@ -3,7 +3,6 @@ package quasar
 import quasar.Predef._
 
 import simulacrum.typeclass
-
 import scalaz._
 import scalaz.concurrent.Task
 import scalaz.syntax.functor._
