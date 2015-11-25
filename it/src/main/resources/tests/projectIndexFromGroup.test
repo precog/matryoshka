@@ -5,14 +5,14 @@
     "query": "select parents[0].sha, count(*) as count from slamengine_commits group by parents[0].sha",
     "predicate": "containsAtLeast",
     "expected": [
-        { "sha": "b812837ee2f72be3aaee582b42e3ad901d1f7371", "count": 1 },
-        { "sha": "9897104b5a22571a5940f4ba2ba89addaef81ed0", "count": 1 },
-        { "sha": "3d44ce48fc0670aaf39ba1acd0e1c161f14cc2d6", "count": 1 },
-        { "sha": "82e67fef1aae1d283bff90d1d27efd4266d26d49", "count": 2 },
-        { "sha": "56d1caf5d082d1a6840090986e277d36d03f1859", "count": 4 },
-        { "sha": "b29d8f254e5df2c4d1792f077625924cd1fde2db", "count": 1 },
-        { "sha": "166f7337c8fd5db13941abf482de05accb8e9380", "count": 1 },
-        { "sha": "92245a05c6b851a97883d9276889b4f6f09fff9d", "count": 1 },
-        { "sha": "a31c0a8f2d0f771cf2aecb67c9822f930c260c29", "count": 2 },
-        { "sha": "696c6ff2556bb1ea6a6de86a03736058e8f6c52a", "count": 1 }]
+        { "count": 1, "sha": "b812837ee2f72be3aaee582b42e3ad901d1f7371" },
+        { "count": 1, "sha": "9897104b5a22571a5940f4ba2ba89addaef81ed0" },
+        { "count": 1, "sha": "3d44ce48fc0670aaf39ba1acd0e1c161f14cc2d6" },
+        { "count": 2, "sha": "82e67fef1aae1d283bff90d1d27efd4266d26d49" },
+        { "count": 4, "sha": "56d1caf5d082d1a6840090986e277d36d03f1859" },
+        { "count": 1, "sha": "b29d8f254e5df2c4d1792f077625924cd1fde2db" },
+        { "count": 1, "sha": "166f7337c8fd5db13941abf482de05accb8e9380" },
+        { "count": 1, "sha": "92245a05c6b851a97883d9276889b4f6f09fff9d" },
+        { "count": 2, "sha": "a31c0a8f2d0f771cf2aecb67c9822f930c260c29" },
+        { "count": 1, "sha": "696c6ff2556bb1ea6a6de86a03736058e8f6c52a" }]
 }
