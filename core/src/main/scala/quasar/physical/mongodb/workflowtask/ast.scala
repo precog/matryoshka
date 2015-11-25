@@ -65,21 +65,22 @@ object WorkflowTaskF {
   // final case class EvalTaskF[A](source: A, code: Js.FuncDecl)
   //     extends WorkflowTaskF[A]
 
-  implicit def WorkflowTaskFTraverse: Traverse[WorkflowTaskF] =
-    new Traverse[WorkflowTaskF] {
-      def traverseImpl[G[_], A, B](fa: WorkflowTaskF[A])(f: A => G[B])(implicit G: Applicative[G]):
-          G[WorkflowTaskF[B]] =
-        fa match {
-          case PureTaskF(bson) => G.point(PureTaskF[B](bson))
-          case ReadTaskF(coll) => G.point(ReadTaskF[B](coll))
-          case QueryTaskF(src, query, skip, limit) =>
-            f(src).map(QueryTaskF(_, query, skip, limit))
-          case PipelineTaskF(src, pipe) => f(src).map(PipelineTaskF(_, pipe))
-          case MapReduceTaskF(src, mr, oa) => f(src).map(MapReduceTaskF(_, mr, oa))
-          case FoldLeftTaskF(h, t) =>
-            (f(h) |@| t.traverse(f))(FoldLeftTaskF(_, _))
-        }
-    }
+  // NB: currently unused, and hurts coverage
+  // implicit def WorkflowTaskFTraverse: Traverse[WorkflowTaskF] =
+  //   new Traverse[WorkflowTaskF] {
+  //     def traverseImpl[G[_], A, B](fa: WorkflowTaskF[A])(f: A => G[B])(implicit G: Applicative[G]):
+  //         G[WorkflowTaskF[B]] =
+  //       fa match {
+  //         case PureTaskF(bson) => G.point(PureTaskF[B](bson))
+  //         case ReadTaskF(coll) => G.point(ReadTaskF[B](coll))
+  //         case QueryTaskF(src, query, skip, limit) =>
+  //           f(src).map(QueryTaskF(_, query, skip, limit))
+  //         case PipelineTaskF(src, pipe) => f(src).map(PipelineTaskF(_, pipe))
+  //         case MapReduceTaskF(src, mr, oa) => f(src).map(MapReduceTaskF(_, mr, oa))
+  //         case FoldLeftTaskF(h, t) =>
+  //           (f(h) |@| t.traverse(f))(FoldLeftTaskF(_, _))
+  //       }
+  //   }
 
   implicit def WorkflowTaskRenderTree: RenderTree ~> λ[α => RenderTree[WorkflowTaskF[α]]] =
     new (RenderTree ~> λ[α => RenderTree[WorkflowTaskF[α]]]) {

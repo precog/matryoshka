@@ -1,5 +1,6 @@
 {
     "name": "filter on field comparison",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select * from zips where pop < loc[1] limit 10",
     "predicate": "containsExactly",

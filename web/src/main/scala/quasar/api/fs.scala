@@ -39,6 +39,21 @@ import scalaz.concurrent._
 import scalaz.stream._
 import scodec.bits.ByteVector
 
+object FileSystemApi {
+  type Apply[WC, SC] =
+    (
+    WC,
+    WC => EnvTask[Backend],
+    MountConfig => EnvTask[Unit],
+    WC => Task[Unit],
+    WC => Task[Unit],
+    WebConfigLens[WC, SC]
+    )
+    => FileSystemApi[WC, SC]
+
+  def apply: Apply[WebConfig, ServerConfig] = new FileSystemApi(_, _, _, _, _, _)
+}
+
 /**
  * The REST API to the Quasar Engine
  * @param initialConfig The config with which the server will be started initially
@@ -47,7 +62,7 @@ import scodec.bits.ByteVector
  * @param restartServer Expected to restart server when called using the provided Configuration. Called only when the port changes.
  * @param configChanged Expected to persist a Config when called. Called whenever the Config changes.
  */
-final case class FileSystemApi[WC, SC](
+class FileSystemApi[WC, SC](
   initialConfig: WC,
   createBackend: WC => EnvTask[Backend],
   validateConfig: MountConfig => EnvTask[Unit],
@@ -84,7 +99,7 @@ final case class FileSystemApi[WC, SC](
         .as(mountings.get(cfg).keySet contains path)
     }
 
-  private def updateWebServerConfig(config: Task[WC]): Task[Unit] =
+  protected def updateWebServerConfig(config: Task[WC]): Task[Unit] =
     for {
       cfg <- config
       _   <- configChanged(cfg)
@@ -184,11 +199,9 @@ final case class FileSystemApi[WC, SC](
 
   implicit def FilesystemNodeEncodeJson = EncodeJson[FilesystemNode] { fsn =>
     Json(
-      "name" := fsn.path.simplePathname,
-      "type" := (fsn.typ match {
-        case Mount => "mount"
-        case Plain => fsn.path.file.fold("directory")(κ("file"))
-      }))
+      (("name" := fsn.path.simplePathname) ::
+        ("type" := fsn.path.file.fold("directory")(κ("file"))) ::
+        fsn.mountType.toList.map("mount" := _)): _*)
   }
 
   implicit val QueryDecoder = new QueryParamDecoder[Query] {
@@ -213,7 +226,7 @@ final case class FileSystemApi[WC, SC](
       case req @ GET -> AsDirPath(path) :? Q(query) => {
         SQLParser.parseInContext(query, path).fold(
           handleParsingError,
-          expr => backend.flatMap(_.eval(QueryRequest(expr, None, Variables(Map()))).run._2.fold(
+          expr => backend.flatMap(_.eval(QueryRequest(expr, Variables(Map()))).run._2.fold(
             handleCompilationError,
             responseStream(req.headers.get(Accept), _))))
       }
@@ -228,7 +241,7 @@ final case class FileSystemApi[WC, SC](
 
             backend.flatMap { bknd =>
               (parseRes |@| pathRes)((expr, out) => {
-                val (phases, resultT) = bknd.run(QueryRequest(expr, Some(out), vars(req))).run
+                val (phases, resultT) = bknd.run(QueryRequest(expr, vars(req)), out).run
 
                 resultT.fold(
                   handleCompilationError,
@@ -252,7 +265,7 @@ final case class FileSystemApi[WC, SC](
       (for {
         expr  <- SQLParser.parseInContext(query, path).leftMap(handleParsingError)
 
-        phases = bknd.evalLog(QueryRequest(expr, None, Variables(Map())))
+        phases = bknd.evalLog(QueryRequest(expr, Variables(Map())))
 
         plan  <- phases.lastOption \/> InternalServerError("no plan")
       } yield plan match {
@@ -316,14 +329,19 @@ final case class FileSystemApi[WC, SC](
      * FIXME: This should really be checked in the backend, not here
      */
     def ensureNoOverlaps(cfg: WC, path: Path): Option[Task[Response]] =
-      mountings.get(cfg).keys.toList.traverseU(k =>
-        k.rebase(path)
-          .as(Conflict(errorBody("Can't add a mount point above the existing mount point at " + k, None)))
-          .swap *>
-        path.rebase(k)
-          .as(Conflict(errorBody("Can't add a mount point below the existing mount point at " + k, None)))
-          .swap
-      ).swap.toOption
+      // NB: this check applies only to non-view mounts, which (at the moment),
+      // also happen to have directory paths. And we haven't parsed the config
+      // yet, so it's expedient to just check the path type here.
+      if (path.pureDir)
+        mountings.get(cfg).keys.toList.traverseU(k =>
+          k.rebase(path)
+            .as(Conflict(errorBody("Can't add a mount point above the existing mount point at " + k, None)))
+            .swap *>
+          path.rebase(k)
+            .as(Conflict(errorBody("Can't add a mount point below the existing mount point at " + k, None)))
+            .swap
+        ).swap.toOption
+      else None
 
 
     HttpService {
@@ -384,14 +402,16 @@ final case class FileSystemApi[WC, SC](
 
   def metadataService(backend: Task[Backend]) = HttpService {
     case GET -> AsPath(path) => backend flatMap { bknd =>
-      path.file.fold(
-        bknd.ls(path).fold(
-          handlePathError,
-          // NB: we sort only for deterministic results, since JSON lacks `Set`
-          paths => Ok(Json.obj("children" := paths.toList.sorted))))(
-        κ(bknd.exists(path).fold(
-          handlePathError,
-          x => if (x) Ok(Json.obj()) else NotFound()))).join
+      bknd.exists(path).fold(
+        handlePathError,
+        x =>
+          if (!x) NotFound(errorBody("There is no file/directory at " + path, None))
+          else if (path.pureDir)
+            bknd.ls(path).fold(
+              handlePathError,
+              // NB: we sort only for deterministic results, since JSON lacks `Set`
+              paths => Ok(Json("children" := paths.toList.sorted))).join
+          else Ok(Json.obj())).join
     }
   }
 

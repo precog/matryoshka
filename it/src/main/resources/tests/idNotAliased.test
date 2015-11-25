@@ -1,6 +1,6 @@
 {
     "name": "select _id explicitly",
-    "backends": { "mongodb_2_6": "pending", "mongodb_3_0": "pending" },
+    "backends": { "mongodb_2_6": "pending", "mongodb_3_0": "pending", "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select _id from zips where city = 'BOULDER' and state = 'CO'",
     "predicate": "containsExactly",

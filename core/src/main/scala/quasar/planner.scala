@@ -37,7 +37,6 @@ trait Planner[PhysicalPlan] {
 
   def queryPlanner(showNative: PhysicalPlan => (String, Cord))(implicit RA: RenderTree[PhysicalPlan]):
       QueryRequest => EitherT[(Vector[quasar.PhaseResult], ?), CompilationError, PhysicalPlan] = { req =>
-
     // TODO: Factor these things out as individual WriterT functions that can be composed.
     for {
       select     <- withTree("SQL AST")(\/-(req.query))

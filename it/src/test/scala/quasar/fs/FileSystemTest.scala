@@ -28,7 +28,7 @@ import scalaz.stream._
   *       filesystems would run concurrently.
   */
 abstract class FileSystemTest[S[_]: Functor](
-  val fileSystems: Task[NonEmptyList[FileSystemUT[S]]]
+  val fileSystems: Task[IList[FileSystemUT[S]]]
 ) extends Specification {
 
   args.report(showtimes = true)
@@ -37,9 +37,9 @@ abstract class FileSystemTest[S[_]: Functor](
   type FsTask[A] = FileSystemErrT[Task, A]
   type Run       = F ~> Task
 
-  def fileSystemShould(examples: String => Run => Unit): Unit =
-    fileSystems.map(_ foreach { case FileSystemUT(name, f, prefix) =>
-      s"$name FileSystem" should examples(name)(hoistFree(f)); ()
+  def fileSystemShould(examples: BackendName => Run => Unit): Unit =
+    fileSystems.map(_ traverse_[Id] { case FileSystemUT(name, f, prefix) =>
+      s"${name.name} FileSystem" should examples(name)(hoistFree(f)); ()
     }).run
 
   def runT(run: Run): FileSystemErrT[F, ?] ~> FsTask =
@@ -90,9 +90,9 @@ object FileSystemTest {
 
   //--- FileSystems to Test ---
 
-  def allFsUT: Task[NonEmptyList[FileSystemUT[FileSystem]]] =
+  def allFsUT: Task[IList[FileSystemUT[FileSystem]]] =
     (inMemUT |@| externalFsUT) { (mem, ext) =>
-      (mem <:: ext) map (ut => ut.contramap(chroot.fileSystem(ut.testDir)))
+      (mem :: ext) map (ut => ut.contramap(chroot.fileSystem(ut.testDir)))
     }
 
   def externalFsUT = TestConfig.externalFileSystems {
@@ -106,6 +106,6 @@ object FileSystemTest {
                    .map(_ compose InMemory.fileSystem)
                    .run
 
-    Task.delay(FileSystemUT("in-memory", f, rootDir))
+    Task.delay(FileSystemUT(BackendName("in-memory"), f, rootDir))
   }
 }

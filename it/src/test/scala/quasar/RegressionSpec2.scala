@@ -70,7 +70,7 @@ class RegressionSpec2
   def regressionExample(
     loc: File,
     test: RegressionTest,
-    backendName: String,
+    backendName: BackendName,
     run: Run
   ): Example = {
     def runTest = (for {
@@ -176,7 +176,7 @@ class RegressionSpec2
     */
   def regressionTests(
     testDir: File,
-    knownBackends: Set[String]
+    knownBackends: Set[BackendName]
   ): Task[Map[File, RegressionTest]] =
     descendantsMatching(testDir, """.*\.test"""r)
       .map(f =>
@@ -186,7 +186,7 @@ class RegressionSpec2
       .map(_.toMap)
 
   /** Verifies there are no unknown backends specified in a `RegressionTest`. */
-  def verifyBackends(knownBackends: Set[String])
+  def verifyBackends(knownBackends: Set[BackendName])
                     : RegressionTest => Task[RegressionTest] = { rt =>
 
     val unknown = rt.backends.keySet diff knownBackends
@@ -226,7 +226,7 @@ object RegressionSpec2 {
 
   lazy val knownFileSystems = TestConfig.backendNames.toSet
 
-  def externalFS: Task[NonEmptyList[FileSystemUT[FileSystemIO]]] = {
+  def externalFS: Task[IList[FileSystemUT[FileSystemIO]]] = {
     val extFs = TestConfig.externalFileSystems {
       case (MongoDbConfig(cs), dir) =>
         lazy val f = mongofs.testFileSystemIO(cs, dir).run

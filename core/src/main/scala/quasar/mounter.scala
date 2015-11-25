@@ -19,6 +19,7 @@ package quasar
 import quasar.Predef._
 import quasar.Evaluator._
 import quasar.config._
+import quasar.fp._
 import quasar.fs._
 
 import scalaz._, Scalaz._
@@ -30,30 +31,31 @@ object Mounter {
 
   def mount(mountings: MountingsConfig, backendDef: BackendDefinition): EnvTask[Backend] = {
     def rec0(backend: Backend, path: List[DirNode], conf: MountConfig): EnvTask[Backend] =
-      conf match {
-        case ViewConfig(_) => EitherT.right(Task.now(backend))
-        case _ =>
-          backend match {
-            case NestedBackend(base) => path match {
-              case Nil =>
-                backendDef(conf).leftMap {
-                  case MissingBackend(_) => MissingFileSystem(Path(path, None), conf)
-                  case otherwise         => otherwise
-                }
-
-              case dir :: dirs =>
-                rec0(base.get(dir).getOrElse(NestedBackend(Map())), dirs, conf)
-                  .map(rez => NestedBackend(base + (dir -> rez)))
+      backend match {
+        case NestedBackend(base) => path match {
+          case Nil =>
+            backendDef(conf).leftMap {
+              case MissingBackend(_) => MissingFileSystem(Path(path, None), conf)
+              case otherwise         => otherwise
             }
 
-            case _ => EitherT.left(Task.now(InvalidConfig("attempting to mount a backend within an existing backend.")))
-          }
+          case dir :: dirs =>
+            rec0(base.get(dir).getOrElse(NestedBackend(Map())), dirs, conf)
+              .map(rez => NestedBackend(base + (dir -> rez)))
+        }
+
+        case _ => EitherT.left(Task.now(InvalidConfig("attempting to mount a backend within an existing backend.")))
       }
 
     def rec(backend: Backend, mount: (Path, MountConfig)): EnvTask[Backend] = mount match {
       case (path, config) => rec0(backend, path.asAbsolute.asDir.dir, config)
     }
 
-    mountings.toList.foldLeftM(NestedBackend(Map()): Backend)(rec)
+    val (views, nonViews) = unzipDisj(mountings.toList.map {
+      case (path, cfg @ ViewConfig(_)) => -\/((path, cfg));
+      case pair => \/-(pair)
+    })
+    nonViews.foldLeftM(NestedBackend(Map()): Backend)(rec).map(root =>
+      ViewBackend(root, views.toMap))
   }
 }

@@ -1,5 +1,6 @@
 {
     "name": "concat field with constant array",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select array_concat(make_array(pop), array_concat(make_array(1), make_array(2))) from zips",
     "predicate": "containsAtLeast",

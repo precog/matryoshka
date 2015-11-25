@@ -16,17 +16,22 @@
 
 package quasar.physical.mongodb
 
+import quasar.Predef._
+import quasar._, Backend._, Errors._
+import quasar.fp._
+import quasar.Evaluator._
+
+import scala.collection.JavaConverters._
+
 import com.mongodb.client.model.{InsertOneModel, RenameCollectionOptions}
 import com.mongodb.client.{MongoCollection, MongoDatabase}
 import com.mongodb.{MongoClient, MongoCommandException, MongoNamespace}
 import org.bson.Document
-import quasar.Evaluator._
-import quasar.Predef._
-
-import scala.collection.JavaConverters._
 import scalaz.Scalaz._
 import scalaz._
 import scalaz.concurrent.Task
+import scalaz.stream._
+import scalaz.stream.io._
 
 sealed trait MongoWrapper {
   protected def client: MongoClient
@@ -87,6 +92,20 @@ sealed trait MongoWrapper {
   def collections: Task[List[Collection]] =
     databaseNames.flatMap(_.toList.traverse(MongoWrapper.collections(_, client)))
       .map(_.join)
+
+  def readCursor(cursor: Task[com.mongodb.client.MongoIterable[org.bson.Document]]):
+      Process[ETask[ResultError, ?], Data] = {
+    resource(cursor.map(_.iterator))(
+      iter => Task.delay(iter.close()))(
+      iter => Task.delay {
+        if (iter.hasNext) {
+          val obj = iter.next
+          ignore(obj.remove("_id"))
+          BsonCodec.toData(Bson.fromRepr(obj))
+        }
+        else throw Cause.End.asThrowable
+      }).translate[ETask[ResultError, ?]](liftE[ResultError])
+  }
 }
 
 object MongoWrapper {

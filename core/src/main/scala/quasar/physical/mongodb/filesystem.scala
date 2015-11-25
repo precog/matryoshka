@@ -24,7 +24,6 @@ import quasar.fs._, Path._
 import scalaz._, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
-import scalaz.stream.io._
 
 trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
   protected def server: MongoWrapper
@@ -32,30 +31,20 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
   val ChunkSize = 1000
 
   def scan0(path: Path, offset: Long, limit: Option[Long]):
-      Process[ETask[ResultError, ?], Data] =
+      Process[ETask[ResultError, ?], Data] = {
+    val skipper = (it: com.mongodb.client.FindIterable[org.bson.Document]) => it.skip(offset.toInt)
+    // NB As per the MondoDB documentation, we inverse the value of limit in order to retrieve a single batch.
+    // The documentation around this is very confusing, but it would appear that proceeding this way allows us
+    // to retrieve the data in a single batch. Behavior of the limit parameter on large datasets is tested in
+    // FileSystemSpecs and appears to work as expected.
+    val limiter = (it: com.mongodb.client.FindIterable[org.bson.Document]) => limit.map(v => it.limit(-v.toInt)).getOrElse(it)
+
+    val skipperAndLimiter = skipper andThen limiter
+
     Collection.fromPath(path).fold(
       e => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(ResultPathError(e)))),
-      col => {
-        val skipper = (it: com.mongodb.client.FindIterable[org.bson.Document]) => it.skip(offset.toInt)
-        // NB As per the MondoDB documentation, we inverse the value of limit in order to retrieve a single batch.
-        // The documentation around this is very confusing, but it would appear that proceeding this way allows us
-        // to retrieve the data in a single batch. Behavior of the limit parameter on large datasets is tested in
-        // FileSystemSpecs and appears to work as expected.
-        val limiter = (it: com.mongodb.client.FindIterable[org.bson.Document]) => limit.map(v => it.limit(-v.toInt)).getOrElse(it)
-
-        val skipperAndLimiter = skipper andThen limiter
-
-        resource(server.get(col).map(c => skipperAndLimiter(c.find()).iterator))(
-          cursor => Task.delay(cursor.close()))(
-          cursor => Task.delay {
-            if (cursor.hasNext) {
-              val obj = cursor.next
-              ignore(obj.remove("_id"))
-              BsonCodec.toData(Bson.fromRepr(obj))
-            }
-            else throw Cause.End.asThrowable
-          }).translate[ETask[ResultError, ?]](liftE[ResultError])
-      })
+      col => server.readCursor(server.get(col).map(c => skipperAndLimiter(c.find()))))
+  }
 
   def count0(path: Path): ProcessingTask[Long] = {
     val p = swapT(Collection.fromPath(path).map(server.get(_).map(_.count)))
@@ -148,7 +137,7 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
   def ls0(dir: Path): PathTask[Set[FilesystemNode]] = liftP(for {
     cols <- server.collections
     allPaths = cols.map(_.asPath)
-  } yield allPaths.map(_.rebase(dir).toOption.map(p => FilesystemNode(p.head, Plain))).foldMap(_.toSet))
+  } yield allPaths.map(_.rebase(dir).toOption.map(p => FilesystemNode(p.head, None))).foldMap(_.toSet))
 }
 
 sealed trait RenameSemantics

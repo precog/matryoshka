@@ -1,5 +1,6 @@
 {
   "name": "sort by JS expression with filter",
+  "backends": { "mongodb_read_only": "pending" },
 
   "data": "zips.data",
 

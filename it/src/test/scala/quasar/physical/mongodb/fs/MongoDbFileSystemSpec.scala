@@ -248,7 +248,7 @@ class MongoDbFileSystemSpec
 object MongoDbFileSystemSpec {
   // NB: No `chroot` here as we want to test deleting top-level
   //     dirs (i.e. databases).
-  def mongoFsUT: Task[NonEmptyList[FileSystemUT[FileSystemIO]]] =
+  def mongoFsUT: Task[IList[FileSystemUT[FileSystemIO]]] =
     TestConfig.externalFileSystems {
       case (MongoDbConfig(cs), dir) =>
         mongodb.filesystems.testFileSystemIO(cs, dir)

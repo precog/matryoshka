@@ -162,6 +162,7 @@ trait ConfigOps[C] {
                   case InvalidConfig(message) => InvalidConfig("Failed to parse " + path + ": " + message)
                   case e => e
                 }))
+      _      <- liftE[EnvironmentError](Task.delay { println("Read config from path: " + strPath) })
     } yield config
 
   }

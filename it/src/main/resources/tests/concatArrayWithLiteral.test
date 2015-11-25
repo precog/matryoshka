@@ -1,5 +1,6 @@
 {
     "name": "concat unknown with literal array",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select loc || [1, 2], city from zips",
     "predicate": "containsAtLeast",

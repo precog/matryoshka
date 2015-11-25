@@ -18,6 +18,7 @@ package quasar.api
 
 import quasar.Predef._
 import quasar.fp._
+import quasar.api.ServerOps._
 import quasar.console._
 import quasar._, Errors._, Evaluator._
 import quasar.config._
@@ -35,6 +36,11 @@ import org.http4s.server.{Server => Http4sServer, HttpService}
 import org.http4s.server.blaze.BlazeBuilder
 
 object ServerOps {
+  type Builders = List[(Int, BlazeBuilder)]
+  type Servers = List[(Int, Http4sServer)]
+  type ServersErrors = List[(Int, Throwable \/ Http4sServer)]
+  type Services = List[(String, HttpService)]
+
   final case class Options(
     config: Option[String],
     contentLoc: Option[String],
@@ -44,12 +50,12 @@ object ServerOps {
     port: Option[Int])
 }
 
-class ServerOps[WC: CodecJson, SC](
+abstract class ServerOps[WC: CodecJson, SC](
   configOps: ConfigOps[WC],
+  fileSystemApi: FileSystemApi.Apply[WC, SC],
   defaultWC: WC,
   val webConfigLens: WebConfigLens[WC, SC]) {
   import webConfigLens._
-  import ServerOps._
 
   // NB: This is a terrible thing.
   //     Is there a better way to find the path to a jar?
@@ -88,16 +94,23 @@ class ServerOps[WC: CodecJson, SC](
                        anyAvailablePort)
       .getOrElse(requested)
 
-  def createServer(config: WC, idleTimeout: Duration, svcs: EnvTask[ListMap[String, HttpService]])
-    : EnvTask[Http4sServer] = {
+  def builders(config: WC, idleTimeout: Duration): Task[Builders]
 
-    val builder = BlazeBuilder
-                  .withIdleTimeout(idleTimeout)
-                  .bindHttp(wcPort.get(config), "0.0.0.0")
+  def createServers(config: WC, idleTimeout: Duration, svcs: EnvTask[Services])
+    : EnvTask[ServersErrors] = {
 
-    svcs.flatMap(_.toList.reverse.foldLeft(builder) {
-      case (b, (path, svc)) => b.mountService(Prefix(path)(svc))
-    }.start.liftM[EnvErrT])
+    def servicesBuilder(services: Services, builders: Builders): Builders =
+      services.foldRight(builders) {
+          case ((path, svc), bs) => bs.map { case (p, b) => (p, b.mountService(Prefix(path)(svc))) }
+        }
+
+    def startBuilder(builders: Builders): EnvTask[ServersErrors] = EitherT.right {
+      builders.traverse { case (p, b) =>
+        b.start.map(s => (p, s.right)).handleWith { case ex => Task.now((p, ex.left)) }
+      }
+    }
+
+    (svcs ⊛ EitherT.right(builders(config, idleTimeout)))(servicesBuilder) >>= startBuilder
   }
 
   case class StaticContent(loc: String, path: String)
@@ -116,38 +129,43 @@ class ServerOps[WC: CodecJson, SC](
   def servers(staticContent: List[StaticContent], redirect: Option[String],
               idleTimeout: Duration, tester: MountConfig => EnvTask[Unit],
               mounter: WC => EnvTask[Backend], configWriter: WC => Task[Unit])
-             : (Process[Task, (Int, Http4sServer)], Option[WC] => Task[Unit]) = {
+             : (Process[Task, Servers], Option[WC] => Task[Unit]) = {
 
     val configQ = async.boundedQueue[Option[WC]](2)(Strategy.DefaultStrategy)
     val reload = (cfg: WC) => configQ.enqueueOne(Some(cfg))
 
-    val fileSvcs = staticContent.map { case StaticContent(l, p) => l -> staticFileService(p) }.toListMap
-    val redirSvc = ListMap("/" -> redirectService(redirect.getOrElse("/welcome")))
+    val fileSvcs = staticContent.map { case StaticContent(l, p) => l -> staticFileService(p) }
+    val redirSvc = List("/" -> redirectService(redirect.getOrElse("/welcome")))
 
-    def start(config: WC): EnvTask[(Int, Http4sServer)] =
+    def portsString(servers: Servers): String = servers.map { case (p, _) => p }.mkString(" ")
+
+    def start(config: WC): EnvTask[Servers] =
       for {
-        port    <- choosePort(wcPort.get(config)).liftM[EnvErrT]
-        fsApi   =  FileSystemApi(config, mounter, tester, reload, configWriter, webConfigLens)
-        updCfg  =  wcPort.set(port)(config)
-        server  <- createServer(updCfg, idleTimeout, fsApi.AllServices.map(_ ++ fileSvcs ++ redirSvc))
-        _       <- stdout("Server started listening on port " + port).liftM[EnvErrT]
-      } yield (port, server)
+        port <- choosePort(wcPort.get(config)).liftM[EnvErrT]
+        fsApi = fileSystemApi(config, mounter, tester, reload, configWriter, webConfigLens)
+        updCfg =  wcPort.set(port)(config)
+        serversErrors <- createServers(updCfg, idleTimeout, fsApi.AllServices.map(_.toList ++ fileSvcs ++ redirSvc))
+        servers <- serversErrors.traverseM {
+          case (p, -\/(ex)) => Task.now(List()) <* stdout(s"Server failed to start listening on port $p. ${ex.getMessage}")
+          case (p, \/-(s)) => Task.now(List((p, s))) <* stdout(s"Server started listening on port $p")
+        }.liftM[EnvErrT]
+      } yield servers
 
-    def shutdown(srv: Option[(Int, Http4sServer)], log: Boolean): Task[Unit] =
-      srv.traverse_ { case (p, s) =>
-        s.shutdown *> (if (log) stdout("Stopped server listening on port " + p) else Task.now(()))
+    def shutdown(srv: Option[Servers], log: Boolean): Task[Unit] =
+      Foldable[Option].compose[List].traverse_(srv) { case (p, s) =>
+        s.shutdown *> (if (log) stdout(s"Stopped server listening on port $p") else Task.now(()))
       }
 
-    def go(prevServer: Option[(Int, Http4sServer)]): Process[Task, (Int, Http4sServer)] =
+    def go(prevServers: Option[Servers]): Process[Task, Servers] =
       configQ.dequeue.take(1) flatMap {
         case Some(cfg) =>
-          Process.await(shutdown(prevServer, true) *> start(cfg).run)(_.fold(
+          Process.await(shutdown(prevServers, true) *> start(cfg).run)(_.fold(
             err => Process.halt.causedBy(Cause.Error(new RuntimeException(err.message))),
             tpl => Process.emit(tpl) ++ go(Some(tpl))
           ))
 
         case None =>
-          Process.eval_(shutdown(prevServer, true))
+          Process.eval_(shutdown(prevServers, true))
       }
 
     (go(None).onComplete(Process.eval_(configQ.kill)), configQ.enqueueOne)
@@ -203,11 +221,10 @@ class ServerOps[WC: CodecJson, SC](
   def main(args: Array[String]): Unit = {
     val idleTimeout = Duration.Inf
 
-    def reactToFirstServerStarted(openClient: Boolean): Sink[Task, (Int, Http4sServer)] =
-      Process.emit[((Int, Http4sServer)) => Task[Unit]] {
-        case (port, _) =>
-          val msg = stdout("Press Enter to stop.")
-          if (openClient) openBrowser(port) *> msg else msg
+    def reactToFirstServersStarted(openClient: Boolean): Sink[Task, Servers] =
+      Process.emit[Servers => Task[Unit]] { m =>
+        val msg = stdout("Press Enter to stop.")
+        if (openClient) m.map { case (p, _) => openBrowser(p) }.sequence *> msg else msg
       } ++ Process.constant(κ(Task.now(())))
 
     val exec: EnvTask[Unit] = for {
@@ -226,7 +243,7 @@ class ServerOps[WC: CodecJson, SC](
                                 cfg => Mounter.defaultMount(mountings.get(cfg)),
                                 cfg => configOps.toFile(cfg, cfgPath))
       _              <- Task.gatherUnordered(List(
-                          proc.observe(reactToFirstServerStarted(opts.openClient)).run,
+                          proc.observe(reactToFirstServersStarted(opts.openClient)).run,
                           useCfg(Some(updCfg)),
                           waitForInput *> useCfg(None)
                         )).liftM[EnvErrT]
@@ -244,9 +261,18 @@ class ServerOps[WC: CodecJson, SC](
 @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
 object Server extends ServerOps(
   WebConfig,
+  FileSystemApi.apply,
   WebConfig(ServerConfig(None), Map()),
   WebConfigLens(
     WebConfig.server,
     WebConfig.mountings,
     WebConfig.server composeLens ServerConfig.port,
-    ServerConfig.port))
+    ServerConfig.port)) {
+  import webConfigLens._
+
+  def builders(config: WebConfig, idleTimeout: Duration): Task[Builders] = Task.now(List(
+    wcPort.get(config) -> BlazeBuilder
+      .withIdleTimeout(idleTimeout)
+      .bindHttp(wcPort.get(config), "0.0.0.0")))
+
+}

@@ -45,7 +45,7 @@ you probably want to install MongoDB locally and point Quasar to that one. Insta
 allow you to run the integration tests offline as well as make the tests run as fast as possible.
 
 In order to install MongoDB locally you can either use something like Homebrew or simply go to the MongDB website and follow the
-instructions that can be found there. 
+instructions that can be found there.
 
 Once we have a MongoDB instance handy, we need to set a few
 environment variables in order to inform Quasar about where to find the backends required in order to run the integration tests.
@@ -138,6 +138,25 @@ For example, say a MongoDB instance is running on the default port on the same m
 Then the filesystem will contain the paths `/local/test/` and `/local/students/cs101`, among others.
 
 A database can be mounted at any directory path, but database mount paths must not be nested inside each other.
+
+#### View mounts
+
+If the mount's key is "view" then the mount represents a "virtual" file, defined by a SQL query. When the file's contents are read or referred to, the query is executed to generate the current result on-demand. A view can be used to create dynamic data that combines analysis and formatting of existing files without creating temporary results that need to be manually regenerated when sources are updated.
+
+For example, given the above MongoDB mount, an additional view could be defined in this way:
+
+```json
+  "mountings": {
+    ...,
+    "/simpleZips": {
+      "view": {
+        "connectionUri": "sql2:///?q=select+_id+as+zip,+city,+state+from+\"/local/test/zips\""
+      }
+    }
+  }
+```
+
+A view can be mounted at any file path. If a view's path is nested inside the path of a database mount, it will appear alongside the other files in the database. A view will "shadow" any actual file that would otherwise be mapped to the same path. Any attempt to write data to a view will result in an error.
 
 
 ## REPL Usage
@@ -326,14 +345,15 @@ SQL<sup>2</sup> supports variables inside queries (`SELECT * WHERE pop < :cutoff
 
 ### GET /metadata/fs/[path]
 
-Retrieves metadata about the files, directories, and mounts at the specified path.
+Retrieves metadata about the files, directories, and mounts which are children of the specified directory path. If the path names a file, the result is empty.
 
 ```json
 {
   "children": [
-    {"name": "test", "type": "mount"},
     {"name": "foo", "type": "directory"},
-    {"name": "bar", "type": "file"}
+    {"name": "bar", "type": "file"},
+    {"name": "test", "type": "directory", "mount": "mongodb"},
+    {"name": "baz", "type": "file", "mount": "view"}
   ]
 }
 ```
@@ -364,6 +384,8 @@ unchanged.
 
 If an error occurs when reading data from the request body, the response contains a summary in the common `error` field, and a separate array of error messages about specific values under `details`.
 
+Fails if the path identifies a view.
+
 ### POST /data/fs/[path]
 
 Appends data to the specified path, formatted as one JSON object per line in the same format as above.
@@ -372,14 +394,20 @@ was done.
 
 If an error occurs when reading data from the request body, the response contains a summary in the common `error` field, and a separate array of error messages about specific values under `details`.
 
+Fails if the path identifies a view.
+
 ### DELETE /data/fs/[path]
 
 Removes all data at the specified path. Single files are deleted atomically.
+
+Fails if the path identifies a view (views may be added and deleted through the `/mount` API).
 
 ### MOVE /data/fs/[path]
 
 Moves data from one path to another within the same backend. The new path must
 be provided in the "Destination" request header. Single files are moved atomically.
+
+Fails if either the request of destination path identifies a view (views may be added and deleted through the `/mount` API).
 
 ### GET /mount/fs/[path]
 

@@ -1,5 +1,6 @@
 {
     "name": "filter on simple JS",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select city from zips where length(city) < 4",
     "predicate": "containsAtLeast",

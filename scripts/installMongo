@@ -9,6 +9,7 @@ IFS=$'\n\t'       # http://redsymbol.net/articles/unofficial-bash-strict-mode/
 MONGO_VERSION=$1
 MONGO_DIR=$2
 MONGO_PORT=$3
+AUTH=${4-}
 
 CACHE_DIR=cache
 
@@ -23,6 +24,21 @@ tar -zxf $CACHE_DIR/$MONGO_VERSION.tgz
 mv $MONGO_VERSION $MONGO_DIR
 
 mkdir -p $MONGO_DIR-data
+
+# Start with auth disabled and create users:
 $MONGO_DIR/bin/mongod --dbpath $MONGO_DIR-data --port $MONGO_PORT > /dev/null &
+
+if [[ $AUTH ]]
+then
+  sleep 5s
+
+  $MONGO_DIR/bin/mongo localhost:$MONGO_PORT/quasar-test --eval 'db.createUser({"user": "quasar-dbOwner", "pwd": "quasar", "roles": [ "dbOwner" ]})'
+  $MONGO_DIR/bin/mongo localhost:$MONGO_PORT/quasar-test --eval 'db.createUser({"user": "quasar-read", "pwd": "quasar", "roles": [ "read" ]})'
+  $MONGO_DIR/bin/mongod --dbpath $MONGO_DIR-data --shutdown
+
+  # start again with auth this time:
+  $MONGO_DIR/bin/mongod --dbpath $MONGO_DIR-data --port $MONGO_PORT --auth > /dev/null &
+
+fi
 
 sleep 5s

@@ -1,5 +1,6 @@
 {
     "name": "filter on JS with non-JS",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select city, pop from zips where length(city) < 4 and pop < 20000",
     "predicate": "containsAtLeast",

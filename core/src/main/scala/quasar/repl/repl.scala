@@ -207,6 +207,9 @@ object Repl {
     final case class EProcessingError(e: ProcessingError) extends EngineError {
       def message = e.message
     }
+    final case class EEvaluationError(e: EvaluationError) extends EngineError {
+      def message = e.message
+    }
     final case class EDataEncodingError(e: DataEncodingError)
         extends EngineError {
       def message = e.message
@@ -248,6 +251,13 @@ object Repl {
       case _                       => None
     }
   }
+  object EEvaluationError {
+    def apply(error: EvaluationError): EngineError = EngineError.EEvaluationError(error)
+    def unapply(obj: EngineError): Option[EvaluationError] = obj match {
+      case EngineError.EEvaluationError(error) => Some(error)
+      case _                       => None
+    }
+  }
   object EDataEncodingError {
     def apply(error: DataEncodingError): EngineError = EngineError.EDataEncodingError(error)
     def unapply(obj: EngineError): Option[DataEncodingError] = obj match {
@@ -282,31 +292,56 @@ object Repl {
 
     import state.printer
 
-    SQLParser.parseInContext(Query(query), state.path).fold(
-      e => EitherT.left(Task.now(EParsingError(e))),
-      expr => {
-        val (log, resultT) = state.backend.eval(QueryRequest(expr, name.map(Path(_)), Variables.fromMap(state.variables))).run
-        for {
-          _ <- liftE[EngineError](state.debugLevel match {
-            case DebugLevel.Silent  => Task.now(())
-            case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
-            case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
-          })
-          result <- resultT.fold[EngineTask[(ProcessingError \/ IndexedSeq[Data], Double)]] (
-            e => EitherT.left(Task.now(ECompilationError(e))),
-            resT => liftE[EngineError](timeIt(resT.runLog.run)))
-          (results, elapsed) = result
-          _   <- liftE(printer("Query time: " + elapsed + "s"))
-          _   <- results.fold[EngineTask[Unit]](
-            e => EitherT.left(Task.now(EProcessingError(e))),
-            res => liftE(printer(summarize(state.summaryCount)(res.take(state.summaryCount + 1)))))
-        } yield ()
-      })
+    def printLog(log: Vector[PhaseResult]) =
+      state.debugLevel match {
+        case DebugLevel.Silent  => Task.now(())
+        case DebugLevel.Normal  => printer(log.takeRight(1).mkString("\n\n") + "\n")
+        case DebugLevel.Verbose => printer(log.mkString("\n\n") + "\n")
+      }
+
+    def expr = SQLParser.parseInContext(Query(query), state.path).leftMap(EParsingError(_))
+    def out = name.fold[EngineError \/ Option[Path]](
+        \/-(None))(
+        path => Path(path).from(state.path).bimap(EPathError(_), _.some))
+
+    ((expr |@| out) { case (expr, out) =>
+      val req = QueryRequest(expr, Variables.fromMap(state.variables))
+      out match {
+        case Some(out) =>
+          val (log, outT) = state.backend.run(req, out).run
+          for {
+            _   <- liftE[EngineError](printLog(log))
+            out <- outT.fold[EngineTask[(EvaluationError \/ ResultPath, Double)]] (
+              e => EitherT.left(Task.now(ECompilationError(e))),
+              resT => liftE[EngineError](timeIt(resT.run)))
+            (outPath, elapsed) = out
+            _   <- liftE(printer("Query time: " + elapsed + "s"))
+            _   <- outPath.fold[EngineTask[Unit]](
+              e => EitherT.left(Task.now(EEvaluationError(e))),
+              p => liftE(printer(
+                if (p.path == out) "Source file: " + p.path.simplePathname
+                else "Wrote file: " + p.path.simplePathname)))
+          } yield ()
+        case None =>
+          val (log, resultT) = state.backend.eval(req).run
+          for {
+            _ <- liftE[EngineError](printLog(log))
+            result <- resultT.fold[EngineTask[(ProcessingError \/ IndexedSeq[Data], Double)]] (
+              e => EitherT.left(Task.now(ECompilationError(e))),
+              resT => liftE[EngineError](timeIt(resT.runLog.run)))
+            (results, elapsed) = result
+            _   <- liftE(printer("Query time: " + elapsed + "s"))
+            _   <- results.fold[EngineTask[Unit]](
+              e => EitherT.left(Task.now(EProcessingError(e))),
+              res => liftE(printer(summarize(state.summaryCount)(res.take(state.summaryCount + 1)))))
+          } yield ()
+      }
+    }).fold(e => EitherT.left(Task.now(e)), ι)
   }
 
   def ls(state: RunState, path: Option[Path]): PathTask[Unit] = {
     def suffix(node: FilesystemNode) = node match {
-      case FilesystemNode(_, Mount)   => "@"
+      case FilesystemNode(_, Some(typ))            => "@ (" + typ + ")"
       case FilesystemNode(path, _) if path.pureDir => "/"
       case _ => ""
     }

@@ -1,5 +1,6 @@
 {
     "name": "count grouped joined tables",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "slamengine_commits.data",
     "query": "SELECT p.author.login, COUNT(*) FROM slamengine_commits p INNER JOIN slamengine_commits c ON p.sha = c.sha GROUP BY p.author.login",
     "predicate": "containsExactly",

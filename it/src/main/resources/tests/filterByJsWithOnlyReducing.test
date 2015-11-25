@@ -1,5 +1,6 @@
 {
   "name": "filter by JS expression, with only reducing projections",
+  "backends": { "mongodb_read_only": "pending" },
 
   "data": "zips.data",
 

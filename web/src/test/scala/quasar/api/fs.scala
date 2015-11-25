@@ -56,15 +56,18 @@ object Utils {
     val updatedConfig = Server.webConfigLens.wcPort.set(port)(config)
     def unexpectedRestart(config: WebConfig) =
       Task.fail(new java.lang.AssertionError("Did not expect the server to be restarted with this config: " + config))
-    val api = FileSystemApi(updatedConfig, createBackend, tester,
+    val api = new FileSystemApi(updatedConfig, createBackend, tester,
                             restartServer = unexpectedRestart,
                             configChanged = recordConfigChange,
                             webConfigLens = Server.webConfigLens)
-    val srv = Server.createServer(
+    val srv = Server.createServers(
       Server.webConfigLens.wcPort.set(port)(config),
       5.seconds,
-      api.AllServices).run.run
-    try { body(client, () => reloads.toList) } finally { srv.traverse_(_.shutdown.void).run }
+      api.AllServices.map(_.toList)).run.run
+    try { body(client, () => reloads.toList) } finally {
+      Traverse[EnvironmentError \/ ?].compose[List].compose[(Int, ?)].compose[Throwable \/ ?]
+        .traverse(srv)(_.shutdown).void.run
+    }
   }
 
   /** Handler for response bodies containing newline-separated JSON documents, for use with Dispatch. */
@@ -123,8 +126,9 @@ object Mock {
     }
     val evaluator = new Evaluator[Plan] {
       val name = "Stub"
-      def execute(physical: Plan) =
-        EitherT.right(Task.now(ResultPath.Temp(Path("tmp/out"))))
+      def executeTo(physical: Plan, out: Path) =
+        EitherT.right(Task.now(ResultPath.User(out)))
+      def evaluate(physical: Plan) = Process.emit(Data.Obj(ListMap("7" -> Data.Str("ok"))))
       def compile(physical: Plan) = "Stub" -> Cord(physical.toString)
     }
     val RP = PlanRenderTree
@@ -165,7 +169,7 @@ object Mock {
     def move0(src: Path, dst: Path, semantics: Backend.MoveSemantics) = ().point[Backend.PathTask]
 
     def ls0(dir: Path): Backend.PathTask[Set[Backend.FilesystemNode]] = {
-      val children = files.keys.toList.map(_.rebase(dir).toOption.map(p => Backend.FilesystemNode(p.head, Backend.Plain))).flatten
+      val children = files.keys.toList.map(_.rebase(dir).toOption.map(p => Backend.FilesystemNode(p.head, None))).flatten
       children.toSet.point[Backend.PathTask]
     }
 
@@ -337,7 +341,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
         val resp = meta()
         resp.getStatusCode must_== 404
-        resp.getResponseBody must_== ""
+        resp.getResponseBody must_== """{"error":"There is no file/directory at /missing"}"""
       }
     }
 
@@ -350,12 +354,14 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
     }
 
-    "return empty for missing path" in {
+    "be 404 with missing sub-directory" in {
       withServer(backends1, config1) { client =>
         val path = metadata(client) / "foo" / "baz" / ""
-        val meta = Http(path OK asJson)
+        val meta = Http(path)
 
-        meta() must beRightDisjunction((jsonContentType, List(Json("children" := List[Json]()))))
+        val resp = meta()
+        resp.getStatusCode must_== 404
+        resp.getResponseBody must_== """{"error":"There is no file/directory at /foo/baz/"}"""
       }
     }
 
@@ -367,11 +373,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           jsonContentType,
           List(
             Json("children" := List(
-              Json("name" := "badPath1", "type" := "mount"),
-              Json("name" := "badPath2", "type" := "mount"),
-              Json("name" := "empty",    "type" := "mount"),
-              Json("name" := "foo",      "type" := "mount"),
-              Json("name" := "large",    "type" := "mount"),
+              Json("name" := "badPath1", "type" := "directory", "mount" := "mongodb"),
+              Json("name" := "badPath2", "type" := "directory", "mount" := "mongodb"),
+              Json("name" := "empty",    "type" := "directory", "mount" := "mongodb"),
+              Json("name" := "foo",      "type" := "directory", "mount" := "mongodb"),
+              Json("name" := "large",    "type" := "directory", "mount" := "mongodb"),
               Json("name" := "non",      "type" := "directory"))))))
       }
     }
@@ -416,7 +422,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           jsonContentType,
           List(
             Json("children" := List(
-              Json("name" := "mounting", "type" := "mount"))))))
+              Json("name" := "mounting", "type" := "directory", "mount" := "mongodb"))))))
       }
     }
 
@@ -428,7 +434,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
         val resp = meta()
 
         resp.getStatusCode must_== 404
-        resp.getResponseBody must_== ""
+        resp.getResponseBody must_== """{"error":"There is no file/directory at /foo"}"""
       }
     }
 
@@ -1131,7 +1137,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           result() must beRightDisjunction((
             readableContentType,
-            List(Json("0" := "ok"))))
+            List(Json("7" := "ok"))))
         }
       }
 
@@ -1485,9 +1491,54 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           configs()(0).mountings.get(Path("/local/view1")) must beSome(
             ViewConfig(expr))
 
-          // TODO: metadata not available for views yet (see SD-978)
-          // val metadataExists = Http(viewMetadata)
-          // metadataExists().getStatusCode must_== 200
+          val metadataExists = Http(viewMetadata)
+          metadataExists().getStatusCode must_== 200
+        }
+      }
+
+      "succeed with view nested under existing mount" in {
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
+          val req = mount(client).POST
+                    .setHeader("X-File-Name", "foo/view1")
+                    .setBody("""{ "view": { "connectionUri": "sql2:///?q=select+*+from+zips" } }""")
+
+          val viewMetadata = metadata(client) / "foo" / "view1"
+
+          val metadataNotExists = Http(viewMetadata)
+          metadataNotExists().getStatusCode must_== 404
+
+          val result = Http(req OK as.String)
+          result() must_== "added /foo/view1"
+
+          configs()(0).mountings.get(Path("/foo/view1")) must beSome
+
+          val metadataExists = Http(viewMetadata)
+          metadataExists().getStatusCode must_== 200
+        }
+      }
+
+      "succeed with view above existing mount" in {
+        // This isn't a very realistic scenario, but the point is any path is
+        // OK for a view, as long as it's unique. Here, the view has the same
+        // name as a mount's parent dir, but as a file that's not a comflict.
+
+        withServerRecordConfigChange(backendForConfig, config1) { (client, configs) =>
+          val req = mount(client).POST
+                    .setHeader("X-File-Name", "non/root")
+                    .setBody("""{ "view": { "connectionUri": "sql2:///?q=select+*+from+zips" } }""")
+
+          val viewMetadata = metadata(client) / "non" / "root"
+
+          val metadataNotExists = Http(viewMetadata)
+          metadataNotExists().getStatusCode must_== 404
+
+          val result = Http(req OK as.String)
+          result() must_== "added /non/root"
+
+          configs()(0).mountings.get(Path("/non/root")) must beSome
+
+          val metadataExists = Http(viewMetadata)
+          metadataExists().getStatusCode must_== 200
         }
       }
 
@@ -1658,9 +1709,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
           configs()(0).mountings.get(Path("/local/view1")) must beSome
 
-          // TODO: metadata not available for views yet (see SD-978)
-          // val metadataExists = Http(localMetadata)
-          // metadataExists().getStatusCode must_== 200
+          val metadataExists = Http(localMetadata)
+          metadataExists().getStatusCode must_== 200
         }
       }
 
@@ -1823,7 +1873,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   "/server" should {
     def withServerExpectingRestart[A, B](backend: Backend, config: WebConfig, timeoutMillis: Long = 10000, port: Int = 8888)
                                         (causeRestart: Req => A)(afterRestart: => B): B = {
-      type S = (Int, org.http4s.server.Server)
+      type S = ServerOps.Servers
 
       val client = dispatch.host("localhost", port)
 
@@ -1841,7 +1891,7 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       (forCfg(Some(Server.webConfigLens.wcPort.set(port)(config))) *> exec).runFor(timeoutMillis)
     }
 
-    "be capable of providing it's name and version" in {
+    "be capable of providing its name and version" in {
       withServer(noBackends, config1) { client =>
         val req = (client / "server" / "info").GET
         val result = Http(req OK as.String)

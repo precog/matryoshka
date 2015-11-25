@@ -71,8 +71,8 @@ package object interactive {
     val parser = new SQLParser()
     for {
       sql <- Task.fromDisjunction(parser.parse(Query(query)).leftMap(parseError => new scala.Exception("Parse error" + parseError.message)))
-      query = QueryRequest(sql, Some(destinationPath), Variables(Map()))
-      resultPath <- backend.run(query).fold(
+      query = QueryRequest(sql, Variables(Map()))
+      resultPath <- backend.run(query, destinationPath).fold(
         err => Task.fail(new scala.Exception(err.message)),
         a => a.run.flatMap(either => Task.fromDisjunction(either.leftMap(e => new scala.Exception("Evaluation error" + e.message))))
       )._2
@@ -102,7 +102,7 @@ package object interactive {
     val parser = new SQLParser()
     parser.parse(Query(query)).fold(
       err => throw new scala.Exception("Parser Error" + err.message),
-      sql => backend.eval(QueryRequest(sql, None, Variables(Map())))
+      sql => backend.eval(QueryRequest(sql, Variables(Map())))
     )
   }
 
@@ -143,7 +143,11 @@ package object interactive {
           err => Process.fail( new RuntimeException("error loading: " + err.message)),
           j => Process.eval(Task.now(j))
         ))
-        backend.save(path, data)
+        for {
+          _ <- liftE(Task.delay(println("loading: " + path.simplePathname)))
+          _ <- backend.save(path, data)
+          _ <- liftE(Task.delay(println("...done")))
+        } yield ()
       }
     }
   }
@@ -163,10 +167,6 @@ package object interactive {
    *  @param prefix The path under which to store the collection materialized from the data file
    *  @param file file from which to the load the data
    */
-  def loadFile(backend: Backend, prefix: Path, file: File): ProcessingTask[Unit] = {
-    for {
-    _ <- liftE(Task.delay(println("loading: " + file)))
-    _ <- loadData(backend, prefix, DataSource.fromFile(file))
-    } yield ()
-  }
+  def loadFile(backend: Backend, prefix: Path, file: File): ProcessingTask[Unit] =
+    loadData(backend, prefix, DataSource.fromFile(file))
 }

@@ -54,7 +54,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   def plan(query: String): Either[CompilationError, Crystallized] =
     SQLParser.parseInContext(Query(query), Path("/db/")).fold(
       e => scala.sys.error("parsing error: " + e.message),
-      expr => queryPlanner(QueryRequest(expr, None, Variables(Map()))).run._2).toEither
+      expr => queryPlanner(QueryRequest(expr, Variables(Map()))).run._2).toEither
 
   def plan(logical: Fix[LogicalPlan]): Either[PlannerError, Crystallized] =
     (for {
@@ -65,7 +65,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
   def planLog(query: String): ParsingError \/ Vector[PhaseResult] =
     for {
       expr <- SQLParser.parseInContext(Query(query), Path("/db/"))
-    } yield queryPlanner(QueryRequest(expr, None, Variables(Map()))).run._1
+    } yield queryPlanner(QueryRequest(expr, Variables(Map()))).run._1
 
   def beWorkflow(wf: Workflow) = beRight(equalToWorkflow(wf))
 

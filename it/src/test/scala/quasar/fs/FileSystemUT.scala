@@ -1,8 +1,6 @@
 package quasar
 package fs
 
-import quasar.Predef._
-
 import scalaz._
 import scalaz.concurrent.Task
 
@@ -13,7 +11,7 @@ import scalaz.concurrent.Task
   * @param prefix a directory in the filesystem tests may use for temp data
   */
 final case class FileSystemUT[S[_]](
-  name: String,
+  name: BackendName,
   run: S ~> Task,
   testDir: ADir
 ) {

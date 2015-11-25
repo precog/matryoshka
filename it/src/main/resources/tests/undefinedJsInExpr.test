@@ -1,5 +1,6 @@
 {
     "name": "propagate undefined and null in JS",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select distinct length(meh), meh.mep, length(meh.mep) from zips",
     "predicate": "containsExactly",

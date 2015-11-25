@@ -36,40 +36,33 @@ sealed trait Backend { self =>
    * Executes a query, producing a compilation log and the path where the result
    * can be found.
    */
-  def run(req: QueryRequest):
+  def run(req: QueryRequest, out: Path):
       EitherT[(Vector[PhaseResult], ?),
               CompilationError,
-              ETask[EvaluationError, ResultPath]] = {
+              ETask[EvaluationError, ResultPath]] =
     run0(QueryRequest(
       req.query.cata(sql.mapPathsMƒ[Id](_.asRelative)),
-      req.out.map(_.asRelative),
-      req.variables)).map(_.map {
+      req.variables),
+      out.asRelative).map(_.map {
         case ResultPath.User(path) => ResultPath.User(path.asAbsolute)
         case ResultPath.Temp(path) => ResultPath.Temp(path.asAbsolute)
       })
-  }
 
-  def run0(req: QueryRequest):
+  def run0(req: QueryRequest, out: Path):
       EitherT[(Vector[PhaseResult], ?),
               CompilationError,
               ETask[EvaluationError, ResultPath]]
 
   /**
-    * Executes a query, returning both a compilation log and a source of values
-    * from the result set. If no location was specified for the results, then
-    * the temporary result is deleted after being read.
+    * Executes a query, returning both a compilation log and a streaming
+    * source of values from the result set.
     */
   def eval(req: QueryRequest):
-      EitherT[(Vector[PhaseResult], ?), CompilationError, Process[ProcessingTask, Data]] = {
-    run(req).map(outT =>
-      Process.eval[ProcessingTask, ResultPath](outT.leftMap(PEvalError(_))).flatMap[ProcessingTask, Data] { out =>
-        val results = scanAll(out.path).translate[ProcessingTask](convertError(PResultError(_)))
-        out match {
-          case ResultPath.Temp(path) => results.cleanUpWith(delete(path).leftMap(PPathError(_)))
-          case _                     => results
-        }
-      })
-  }
+      EitherT[(Vector[PhaseResult], ?), CompilationError, Process[ProcessingTask, Data]] =
+    eval0(req.copy(query = req.query.cata(sql.mapPathsMƒ[Id](_.asRelative))))
+
+  def eval0(req: QueryRequest):
+    EitherT[(Vector[PhaseResult], ?), CompilationError, Process[ProcessingTask, Data]]
 
   /**
     * Prepares a query for execution, returning only a compilation log.
@@ -185,7 +178,7 @@ sealed trait Backend { self =>
     def descPaths(p: Path): ListT[PathTask, FilesystemNode] =
       ListT[PathTask, FilesystemNode](ls(dir ++ p).map(_.toList)).flatMap { n =>
           val cp = p ++ n.path
-          if (cp.pureDir) descPaths(cp) else ListT(liftP(Task.now(List(FilesystemNode(cp, n.typ)))))
+          if (cp.pureDir) descPaths(cp) else ListT(liftP(Task.now(List(FilesystemNode(cp, n.mountType)))))
       }
     descPaths(Path(".")).run.map(_.toSet)
   }
@@ -204,17 +197,13 @@ trait PlannerBackend[PhysicalPlan] extends Backend {
 
   lazy val queryPlanner = planner.queryPlanner(evaluator.compile(_))
 
-  def run0(req: QueryRequest) = {
-    queryPlanner(req).map(plan => for {
-      rez    <- evaluator.execute(plan)
-      renamed <- (rez, req.out) match {
-        case (ResultPath.Temp(path), Some(out)) => for {
-          _ <- move(path, out, Backend.Overwrite).leftMap(EvalPathError(_))
-        } yield ResultPath.User(out)
-        case _ => liftE[EvaluationError](Task.now(rez))
-      }
-    } yield renamed)
-  }
+  def run0(req: QueryRequest, out: Path) =
+    queryPlanner(req).map(evaluator.executeTo(_, out))
+
+  def eval0(req: QueryRequest) =
+    queryPlanner(req).map(plan =>
+      evaluator.evaluate(plan)
+        .translate[Backend.ProcessingTask](convertError(Backend.PEvalError(_))))
 }
 
 /** Wraps a backend which handles some or all requests via blocking network
@@ -237,7 +226,11 @@ final case class ThreadPoolAdapterBackend(
                               = fork(backend.move0(src, dst, semantics))
   def delete0(path: Path)     = fork(backend.delete0(path))
   def ls0(dir: Path)          = fork(backend.ls0(dir))
-  def run0(req: QueryRequest) = backend.run0(req).map(fork(_))
+  def run0(req: QueryRequest, out: Path) =
+    backend.run0(req, out).map(fork(_))
+  def eval0(req: QueryRequest) =
+    backend.eval0(req)
+      .map(_.translate(fork: Backend.ProcessingTask ~> Backend.ProcessingTask))
   def scan0(path: Path, offset: Long, limit: Option[Long]) =
     backend.scan0(path, offset, limit).translate(fork: Backend.ResTask ~> Backend.ResTask)
   def append0(path: Path, values: Process[Task, Data]) =
@@ -265,9 +258,13 @@ object ThreadPoolAdapterBackend {
 final case class ViewBackend(backend: Backend, views0: Map[Path, ViewConfig]) extends Backend {
   import Backend._
 
+  // NB: keys are rewritten as relative to '/' (because that's how they
+  // arrive to the `0` methods of the trait), and all paths inside the
+  // queries are interpreted relative to each view's parent dir (and as
+  // absolute, because at least that way they're all consistent).
   val views: Map[Path, sql.Expr] =
     views0.map { case (p, ViewConfig(q)) =>
-      p.asRelative -> sql.relativizePaths(q, p.parent.asRelative).valueOr(κ(q))
+      p.asRelative -> sql.relativizePaths(q, p.parent.asAbsolute).valueOr(κ(q))
     }
 
   def tableName(path: Path) = "__sd__" + path.filename
@@ -275,21 +272,32 @@ final case class ViewBackend(backend: Backend, views0: Map[Path, ViewConfig]) ex
   def expand(query: sql.Expr): sql.Expr = sql.rewriteRelations(query) {
     case sql.TableRelationAST(name, alias) =>
       val p = Path(name)
-      views.get(p).map(sql.ExprRelationAST(_, alias.getOrElse(tableName(p))))
+      views.get(p.asRelative).map(sql.ExprRelationAST(_, alias.getOrElse(tableName(p))))
     case _ => None
   }
 
   def ls0(dir: Path) = {
     val vs = views.keys.toList.foldMap(_.rebase(dir).toSet).map { rp =>
-      if (rp.pureFile) FilesystemNode(rp, Backend.Mount)
-      else FilesystemNode(rp.head, Backend.Plain)
+      if (rp.pureFile) FilesystemNode(rp, Some("view"))
+      else FilesystemNode(rp.head, None)
     }
     def orEmpty(v: PathTask[Set[FilesystemNode]]): PathTask[Set[FilesystemNode]] =
       EitherT(v.run.map {
         case -\/(NonexistentPathError(_, _)) => \/-(Set.empty)
         case v => v
       })
-    orEmpty(backend.ls0(dir)).map(_ ++ vs)
+    orEmpty(backend.ls0(dir)).map { ns =>
+      def byPath(nodes: Set[FilesystemNode]) = nodes.map(n => n.path -> n).toMap
+      // NB: actual nodes (including mount directories) take precedence over
+      // view ancestor directories, but view files take precedence over
+      // ordinary files.
+      implicit val BiasedNodeSemigroup = new Semigroup[FilesystemNode] {
+        def append(n1: FilesystemNode, n2: => FilesystemNode) =
+          if (n1.path.pureDir) n1
+          else n2
+      }
+      (byPath(ns) |+| byPath(vs)).values.toSet
+    }
   }
 
   def count0(path: Path) =
@@ -300,7 +308,7 @@ final case class ViewBackend(backend: Backend, views0: Map[Path, ViewConfig]) ex
           Some(sql.ExprRelationAST(expand(query), tableName(path))),
           None, None, None)
 
-      backend.eval(QueryRequest(countQuery, None, Variables(Map.empty))).run._2.fold[ProcessingTask[Long]](
+      backend.eval(QueryRequest(countQuery, Variables(Map.empty))).run._2.fold[ProcessingTask[Long]](
         e => EitherT.left(Task.now(ProcessingError.ViewCompilationError(e))),
         p => EitherT(p.runLog.run).flatMap {
           case Vector(obj @ Data.Obj(fields)) =>
@@ -319,14 +327,16 @@ final case class ViewBackend(backend: Backend, views0: Map[Path, ViewConfig]) ex
       val q2 = if (offset == 0) q1 else sql.Offset(q1, sql.IntLiteral(offset))
       val scanQuery = limit.fold(q2)(l => sql.Limit(q2, sql.IntLiteral(l)))
 
-      backend.eval(QueryRequest(scanQuery, None, Variables(Map.empty))).run._2.fold[Process[ResTask, Data]](
+      backend.eval(QueryRequest(scanQuery, Variables(Map.empty))).run._2.fold[Process[ResTask, Data]](
         e => Process.eval[ResTask, Data](EitherT.left(Task.now(ResultCompilationError(e)))),
         p => p.translate[Backend.ResTask](Errors.convertError(ResultProcessingError(_))))
     }
 
-  def run0(req: QueryRequest) =
-    backend.run(req.copy(query = expand(req.query)))
+  def run0(req: QueryRequest, out: Path) =
+    backend.run(req.copy(query = expand(req.query)), out)
 
+  def eval0(req: QueryRequest) =
+    backend.eval(req.copy(query = expand(req.query)))
 
   // NB: the remainder are data-mutating, and don't apply to views:
 
@@ -475,37 +485,36 @@ object Backend {
   case object Overwrite extends MoveSemantics
   case object FailIfExists extends MoveSemantics
 
-  trait PathNodeType
-  final case object Mount extends PathNodeType
-  final case object Plain extends PathNodeType
-
-  final case class FilesystemNode(path: Path, typ: PathNodeType)
+  final case class FilesystemNode(path: Path, mountType: Option[String])
 
   implicit val FilesystemNodeOrder: scala.Ordering[FilesystemNode] =
     scala.Ordering[Path].on(_.path)
 
   def test(config: MountConfig): ETask[EnvironmentError, Unit] = config match {
-    // NB: for now, this prevents users from creating views through the API,
-    // but allows tests to run. See SD-1101.
-    case ViewConfig(_) => EitherT.left(Task.now(InvalidConfig("view creation not supported")))
+    // NB: can't meaningfully test the view query in isolation
+    case ViewConfig(_) => liftE(Task.now(()))
 
     case _ =>
       for {
         backend <- BackendDefinitions.All(config)
         _       <- trap(backend.ls.leftMap(EnvPathError(_)), err => InsufficientPermissions(err.toString))
-        _       <- testWrite(backend)
+        // Temporary: this prevents any read-only mount from being created,
+        // so we can't simply require this to not fail. Possibly could be
+        // restored if we had some way to just warn the user or to specify
+        // that read-only is OK for a particular mount.
+        // _       <- testWrite(backend)
       } yield ()
   }
 
-  private def testWrite(backend: Backend): ETask[EnvironmentError, Unit] =
-    for {
-      files <- backend.ls.leftMap(EnvPathError(_))
-      dir   =  files.map(_.path).find(_.pureDir).getOrElse(Path.Root)
-      tmp   =  dir ++ Path(".quasar_tmp_connection_test")
-      data  =  Data.Obj(ListMap("a" -> Data.Int(1)))
-      _     <- backend.save(tmp, Process.emit(data)).leftMap(EnvWriteError(_))
-      _     <- backend.delete(tmp).leftMap(EnvPathError(_))
-    } yield ()
+  // private def testWrite(backend: Backend): ETask[EnvironmentError, Unit] =
+  //   for {
+  //     files <- backend.ls.leftMap(EnvPathError(_))
+  //     dir   =  files.map(_.path).find(_.pureDir).getOrElse(Path.Root)
+  //     tmp   =  dir ++ Path(".quasar_tmp_connection_test")
+  //     data  =  Data.Obj(ListMap("a" -> Data.Int(1)))
+  //     _     <- backend.save(tmp, Process.emit(data)).leftMap(EnvWriteError(_))
+  //     _     <- backend.delete(tmp).leftMap(EnvPathError(_))
+  //   } yield ()
 
   private def wrap(description: String)(e: Throwable): EnvironmentError =
     EnvEvalError(CommandFailed(description + ": " + e.getMessage))
@@ -529,28 +538,44 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
 
   private def nodePath(node: DirNode) = Path(List(DirNode.Current, node), None)
 
-  def run0(req: QueryRequest) = {
+  private def rebaseQuery(query: sql.Expr, out: Option[Path]): CompilationError \/ (Backend, Path, sql.Expr, Option[Path]) = {
+    def description = sql.pprint(query) + out.fold("")(" to " + _.simplePathname)
+
     mounts.toList.map { case (mountDir, backend) =>
       val mountPath = nodePath(mountDir)
-      (req.query.cataM[PathError \/ ?, sql.Expr](sql.mapPathsEƒ(_.rebase(mountPath))) ⊛
-        req.out.map(_.rebase(mountPath).map(Some(_))).getOrElse(\/-(None)))((q, out) =>
-        (backend, mountPath, QueryRequest(q, out, req.variables))).toOption
+      (query.cataM[PathError \/ ?, sql.Expr](sql.mapPathsEƒ(_.rebase(mountPath))) ⊛
+        out.map(_.rebase(mountPath).map(Some(_))).getOrElse(\/-(None)))((q, out) =>
+          (backend, mountPath, q, out)).toOption
     }.foldMap(_.toList) match {
-      case (backend, mountPath, req) :: Nil =>
-        backend.run0(req).map(_.map {
-          case ResultPath.User(path) => ResultPath.User(mountPath ++ path)
-          case ResultPath.Temp(path) => ResultPath.Temp(mountPath ++ path)
-        })
+      case t :: Nil => \/-(t)
       case Nil =>
         // TODO: Restore this error message when SD-773 is fixed.
         // val err = InternalPathError("no single backend can handle all paths for request: " + req)
-        val err = InvalidPathError("the request either contained a nonexistent path or could not be handled by a single backend: " + sql.pprint(req.query))
-        Planner.emit(Vector.empty, -\/(CompilePathError(err)))
+        val err = InvalidPathError("the request either contained a nonexistent path or could not be handled by a single backend: " + description)
+        -\/(CompilePathError(err))
       case _   =>
-        val err = InternalPathError("multiple backends can handle all paths for request: " + req)
-        Planner.emit(Vector.empty, -\/(CompilePathError(err)))
+        val err = InternalPathError("multiple backends can handle all paths for query: " + description)
+        -\/(CompilePathError(err))
     }
   }
+
+  def run0(req: QueryRequest, out: Path) = {
+    rebaseQuery(req.query, Some(out)).fold(
+      err => Planner.emit(Vector.empty, -\/(err)),
+      {
+        case (backend, mountPath, query, Some(out)) =>
+          backend.run0(QueryRequest(query, req.variables), out).map(_.map {
+            case ResultPath.User(path) => ResultPath.User(mountPath ++ path)
+            case ResultPath.Temp(path) => ResultPath.Temp(mountPath ++ path)
+          })
+        case _ => scala.sys.error("doesn't happen")
+      })
+  }
+
+  def eval0(req: QueryRequest) =
+    rebaseQuery(req.query, None).fold(
+      err => Planner.emit(Vector.empty, -\/(err)),
+      { case (backend, _, query, _) => backend.eval0(req.copy(query = query)) })
 
   def scan0(path: Path, offset: Long, limit: Option[Long]):
       Process[ETask[ResultError, ?], Data] =
@@ -594,8 +619,8 @@ final case class NestedBackend(sourceMounts: Map[DirNode, Backend]) extends Back
     if (dir == Path.Current)
       EitherT.right(Task.now(mounts.toSet[(DirNode, Backend)].map { case (d, b) =>
         FilesystemNode(nodePath(d), b match {
-          case NestedBackend(_) => Plain
-          case _                => Mount
+          case NestedBackend(_) => None
+          case _                => Some("mongodb")
         })
       }))
       else delegate(dir)(_.ls0(_), ι)

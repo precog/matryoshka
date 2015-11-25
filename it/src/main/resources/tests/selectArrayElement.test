@@ -1,5 +1,6 @@
 {
     "name": "select array element",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select city, loc[0] from zips",
     "predicate": "containsAtLeast",
