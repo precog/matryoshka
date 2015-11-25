@@ -176,7 +176,9 @@ class FileSystemApi[WC, SC](
   private def errorBody(message: String, phases: Option[Vector[PhaseResult]]) =
     Json((("error" := message) :: phases.map("phases" := _).toList): _*)
 
-  private def vars(req: Request) = Variables(req.params.map { case (k, v) => (VarName(k), VarValue(v)) })
+  private val VarPrefix = "var."
+  private def vars(req: Request) = Variables(req.params.collect {
+    case (k, v) if k.startsWith(VarPrefix) => (VarName(k.substring(VarPrefix.length)), VarValue(v)) })
 
   private val QueryParameterMustContainQuery = BadRequest(errorBody("The request must contain a query", None))
   private val POSTContentMustContainQuery    = BadRequest(errorBody("The body of the POST must contain a query", None))
@@ -221,27 +223,36 @@ class FileSystemApi[WC, SC](
   @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
   object Limit extends OptionalQueryParamDecoderMatcher[Long]("limit")
 
+  def queryRequest(query: Query, path: Path,
+      offset: Option[Long], limit: Option[Long], variables: Variables)
+      : Task[Response] \/ QueryRequest =
+    SQLParser.parseInContext(query, path).bimap(
+      handleParsingError,
+      { expr =>
+        val skipped = offset.fold(expr)(o => sql.Binop(expr, sql.IntLiteral(o), sql.Offset))
+        val limited = limit.fold(skipped)(l => sql.Binop(skipped, sql.IntLiteral(l), sql.Limit))
+        QueryRequest(limited, variables)
+      })
+
   def queryService(backend: Task[Backend]) =
     HttpService {
-      case req @ GET -> AsDirPath(path) :? Q(query) => {
-        SQLParser.parseInContext(query, path).fold(
-          handleParsingError,
-          expr => backend.flatMap(_.eval(QueryRequest(expr, Variables(Map()))).run._2.fold(
+      case req @ GET -> AsDirPath(path) :? Q(query) +& Offset(offset) +& Limit(limit) =>
+        queryRequest(query, path, offset, limit, vars(req)).fold(ι,
+          qr => backend.flatMap(_.eval(qr).run._2.fold(
             handleCompilationError,
             responseStream(req.headers.get(Accept), _))))
-      }
 
       case GET -> _ => QueryParameterMustContainQuery
 
       case req @ POST -> AsDirPath(path) =>
         def go(query: Query): Task[Response] =
           req.headers.get(Destination).fold(DestinationHeaderMustExist) { x =>
-            val parseRes = SQLParser.parseInContext(query, path).leftMap(handleParsingError)
+            val queryReq = queryRequest(query, path, None, None, vars(req))
             val pathRes = Path(x.value).from(path).leftMap(handlePathError)
 
             backend.flatMap { bknd =>
-              (parseRes |@| pathRes)((expr, out) => {
-                val (phases, resultT) = bknd.run(QueryRequest(expr, vars(req)), out).run
+              (queryReq |@| pathRes)((qr, out) => {
+                val (phases, resultT) = bknd.run(qr, out).run
 
                 resultT.fold(
                   handleCompilationError,
@@ -261,13 +272,11 @@ class FileSystemApi[WC, SC](
     }
 
   def compileService(backend: Task[Backend]) = {
-    def go(path: Path, query: Query, bknd: Backend): Task[Response] = {
+    def go(req: Request, path: Path, query: Query, bknd: Backend): Task[Response] = {
       (for {
-        expr  <- SQLParser.parseInContext(query, path).leftMap(handleParsingError)
+        qr <- queryRequest(query, path, None, None, vars(req))
 
-        phases = bknd.evalLog(QueryRequest(expr, Variables(Map())))
-
-        plan  <- phases.lastOption \/> InternalServerError("no plan")
+        plan  <- bknd.evalLog(qr).lastOption \/> InternalServerError("no plan")
       } yield plan match {
         case PhaseResult.Tree(name, value)   => Ok(Json(name := value))
         case PhaseResult.Detail(name, value) => Ok(name + "\n" + value)
@@ -275,13 +284,13 @@ class FileSystemApi[WC, SC](
     }
 
     HttpService {
-      case GET -> AsDirPath(path) :? Q(query) => backend.flatMap(go(path, query, _))
+      case req @ GET -> AsDirPath(path) :? Q(query) => backend.flatMap(go(req, path, query, _))
 
       case GET -> _ => QueryParameterMustContainQuery
 
       case req @ POST -> AsDirPath(path) => for {
         query <- EntityDecoder.decodeString(req)
-        resp  <- if (query != "") backend.flatMap(go(path, Query(query), _))
+        resp  <- if (query != "") backend.flatMap(go(req, path, Query(query), _))
                  else POSTContentMustContainQuery
       } yield resp
     }

@@ -219,9 +219,13 @@ Type `help` for information on other commands.
 
 The server provides a simple JSON API.
 
-### GET /query/fs/[path]?q=[query]
+### GET /query/fs/[path]?q=[query]&offset=[offset]&limit=[limit]&var.[foo]=[value]
 
-Executes a SQL query, contained in the single, required query parameter, on the backend responsible for the request path.
+Executes a SQL query, contained in the required `q` parameter, on the backend responsible for the request path.
+
+Optional `offset` and `limit` parameters can be specified to page through the results, and are interpreted the same way as in `GET /data`.
+
+SQL<sup>2</sup> supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as query parameters in this API using the variable name prefixed by `var.` (e.g. `var.cutoff=1000`). Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
 
 The result is returned in the response body. An `Accept` header may be specified to select the format of the response body:
 - no `Accept` header: “readable” results, one per line (note: this response cannot be parsed as a single JSON object)
@@ -233,10 +237,8 @@ The formatting of CSV output can be controlled with an extended media type as in
 
 For compressed output use `Accept-Encoding: gzip`.
 
-SQL `limit` syntax may be used to keep the result size reasonable.
 
-
-### POST /query/fs/[path]?foo=var
+### POST /query/fs/[path]?var.[foo]=[value]
 
 Executes a SQL query, contained in the request body, on the backend responsible for the request path.
 
@@ -244,7 +246,7 @@ The `Destination` header must specify the *output path*, where the results of th
 
 All paths referenced in the query, as well as the output path, are interpreted as relative to the request path, unless they begin with `/`.
 
-SQL<sup>2</sup> supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as query parameters in this API. Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
+SQL<sup>2</sup> supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as query parameters in this API using the variable name prefixed by `var.` (e.g. `var.cutoff=1000`). Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
 
 This API method returns the name where the results are stored, as an absolute path, as well as logging information.
 
@@ -328,19 +330,21 @@ error at the root of the response):
 }
 ```
 
-### GET /compile/fs/[path]?q=[query]
+### GET /compile/fs/[path]?q=[query]&var.[foo]=[value]
 
 Compiles, but does not execute, a SQL query, contained in the single, required
 query parameter, on the backend responsible for the request path. The resulting
 plan is returned in the response body.
 
+SQL<sup>2</sup> supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as query parameters in this API using the variable name prefixed by `var.` (e.g. `var.cutoff=1000`). Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
 
-### POST /compile/fs/[path]?foo=var
+
+### POST /compile/fs/[path]?var.[foo]=[value]
 
 Compiles, but does not execute, a SQL query, contained in the request body.
 The resulting plan is returned in the response body.
 
-SQL<sup>2</sup> supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as query parameters in this API. Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
+SQL<sup>2</sup> supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as query parameters in this API using the variable name prefixed by `var.` (e.g. `var.cutoff=1000`). Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
 
 
 ### GET /metadata/fs/[path]
