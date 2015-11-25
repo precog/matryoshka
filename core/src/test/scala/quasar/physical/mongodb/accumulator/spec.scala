@@ -27,5 +27,6 @@ class AccumulatorSpec extends Spec {
 
   implicit val arbIntAccumOp = arbAccumOp(Arbitrary.arbInt)
 
-  checkAll(traverse.laws[AccumOp])
+  checkAll(comonad.laws[AccumOp])
+  checkAll(traverse1.laws[AccumOp])
 }

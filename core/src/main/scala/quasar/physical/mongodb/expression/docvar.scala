@@ -32,7 +32,7 @@ object DocField {
   }
 }
 final case class DocVar(name: DocVar.Name, deref: Option[BsonField]) {
-  def path: List[BsonField.Leaf] = deref.toList.flatMap(_.flatten.toList)
+  def path: List[BsonField.Name] = deref.toList.flatMap(_.flatten.toList)
 
   def startsWith(that: DocVar) = (this.name == that.name) && {
     (this.deref |@| that.deref)(_ startsWith (_)) getOrElse (that.deref.isEmpty)
@@ -82,7 +82,7 @@ object DocVar {
 
     def apply(deref: Option[BsonField]) = DocVar(this, deref)
 
-    def apply(leaves: List[BsonField.Leaf]) = DocVar(this, BsonField(leaves))
+    def apply(leaves: List[BsonField.Name]) = DocVar(this, BsonField(leaves))
 
     def unapply(v: DocVar): Option[Option[BsonField]] = Some(v.deref)
   }

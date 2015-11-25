@@ -239,18 +239,23 @@ sealed trait BsonField {
   import BsonField._
 
   def \ (that: BsonField): BsonField = (this, that) match {
-    case (Path(x), Path(y)) => Path(NonEmptyList.nel(x.head, x.tail ++ y.list))
-    case (Path(x), y: Leaf) => Path(NonEmptyList.nel(x.head, x.tail :+ y))
-    case (y: Leaf, Path(x)) => Path(NonEmptyList.nel(y, x.list))
-    case (x: Leaf, y: Leaf) => Path(NonEmptyList.nels(x, y))
+    case (Path(x),     Path(y))     => Path(x ⊹ y)
+    case (Path(x),     y @ Name(_)) => Path(x ⊹ NonEmptyList(y))
+    case (x @ Name(_), Path(y))     => Path(x <:: y)
+    case (x @ Name(_), y @ Name(_)) => Path(NonEmptyList(x, y))
   }
 
-  def \\ (tail: List[BsonField]): BsonField = if (tail.isEmpty) this else this match {
-    case Path(p) => Path(NonEmptyList.nel(p.head, p.tail ::: tail.flatMap(_.flatten.toList)))
-    case l: Leaf => Path(NonEmptyList.nel(l, tail.flatMap(_.flatten.toList)))
+  def \\ (tail: List[BsonField]): BsonField =
+    if (tail.isEmpty) this
+    else {
+      val t = tail.flatMap(_.flatten.toList)
+      this match {
+        case Path(p)     => Path(p :::> t)
+        case l @ Name(_) => Path(NonEmptyList.nel(l, t))
+    }
   }
 
-  def flatten: NonEmptyList[Leaf]
+  def flatten: NonEmptyList[Name]
 
   def parent: Option[BsonField] =
     BsonField(flatten.toList.dropRight(1))
@@ -269,21 +274,16 @@ sealed trait BsonField {
     this.flatten.foldLeft(JsFn.identity)((acc, leaf) =>
       leaf match {
         case Name(v)  => JsFn(JsFn.defaultName, jscore.Access(acc(jscore.Ident(JsFn.defaultName)), jscore.Literal(Js.Str(v))))
-        case Index(v) => JsFn(JsFn.defaultName, jscore.Access(acc(jscore.Ident(JsFn.defaultName)), jscore.Literal(Js.Num(v, false))))
       })
 
   override def hashCode = this match {
     case Name(v) => v.hashCode
-    case Index(v) => v.hashCode
     case Path(v) if (v.tail.length ≟ 0) => v.head.hashCode
     case p @ Path(_) => p.flatten.hashCode
   }
 
   override def equals(that: Any): Boolean = (this, that) match {
     case (Name(v1),      Name(v2))      => v1 ≟ v2
-    case (Name(_),       Index(_))      => false
-    case (Index(v1),     Index(v2))     => v1 ≟ v2
-    case (Index(_),      Name(_))       => false
     case (v1: BsonField, v2: BsonField) => v1.flatten.equals(v2.flatten)
     case _                              => false
   }
@@ -293,42 +293,27 @@ object BsonField {
   sealed trait Root
   final case object Root extends Root
 
-  def apply(v: NonEmptyList[BsonField.Leaf]): BsonField = v match {
+  def apply(v: NonEmptyList[BsonField.Name]): BsonField = v match {
     case NonEmptyList(head) => head
     case _ => Path(v)
   }
 
-  def apply(v: List[BsonField.Leaf]): Option[BsonField] = v.toNel.map(apply)
+  def apply(v: List[BsonField.Name]): Option[BsonField] = v.toNel.map(apply)
 
-  sealed trait Leaf extends BsonField {
+  final case class Name(value: String) extends BsonField {
     def asText = Path(NonEmptyList(this)).asText
 
     def flatten = NonEmptyList(this)
 
-    // Distinction between these is artificial as far as BSON concerned so you
-    // can always translate a leaf to a Name (but not an Index since the key might
-    // not be numeric).
-    def toName: Name = this match {
-      case n @ Name(_) => n
-      case Index(idx) => Name(idx.toString)
-    }
-  }
-
-  final case class Name(value: String) extends Leaf {
     override def toString = s"""BsonField.Name("$value")"""
   }
-  final case class Index(value: Int) extends Leaf {
-    override def toString = s"BsonField.Index($value)"
-  }
 
-  private final case class Path(values: NonEmptyList[Leaf]) extends BsonField {
+  private final case class Path(values: NonEmptyList[Name]) extends BsonField {
     def flatten = values
 
     def asText = (values.list.zipWithIndex.map {
       case (Name(value), 0) => value
       case (Name(value), _) => "." + value
-      case (Index(value), 0) => value.toString
-      case (Index(value), _) => "." + value.toString
     }).mkString("")
 
     override def toString = values.list.mkString(" \\ ")

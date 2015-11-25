@@ -78,7 +78,7 @@ package object workflowtask {
       case op: ShapePreservingF[_]                 => src
 
       case $Project((), Reshape(shape), _)         => Some(shape.keys.toList)
-      case $Group((), Grouped(shape), _)           => Some(shape.keys.map(_.toName).toList)
+      case $Group((), Grouped(shape), _)           => Some(shape.keys.toList)
       case $Unwind((), _)                          => src
       case $Redact((), _)                          => None
       case $GeoNear((), _, _, _, _, _, _, _, _, _) => src.map(_ :+ BsonField.Name("dist"))

@@ -21,7 +21,7 @@ import quasar.{NonTerminal, RenderTree, Terminal}, RenderTree.ops._
 import quasar.fp._
 import quasar.namegen._
 import quasar._, Planner._
-import quasar.recursionschemes._, Recursive.ops._
+import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
 import quasar.fs.Path
 import quasar.javascript._
 import quasar.std.StdLib._
@@ -604,14 +604,14 @@ object WorkflowBuilder {
                   // TODO: Once we have type information available to the
                   //       planner, don’t wrap fields that can’t be arrays.
                   case Root() | Field(_) => -\/(Reshape(ListMap(
-                    BsonField.Name("") -> \/-(rewriteExprRefs($var(field.toDocVar))(prefixBase0(base))))))
+                    BsonField.Name("0") -> \/-(rewriteExprRefs($var(field.toDocVar))(prefixBase0(base))))))
                   case Subset(fields) => -\/(Reshape(fields.toList.map(fld =>
                     fld -> \/-($var(DocField(fld)))).toListMap))
                 }
             }
             case _ => -\/(Reshape(fields.map(_.toDocVar).zipWithIndex.map {
               case (field, index) =>
-                BsonField.Index(index).toName -> \/-($var(field))
+                BsonField.Name(index.toString) -> \/-($var(field))
             }.toListMap).rewriteRefs(prefixBase0(base)))
           }
 
@@ -633,10 +633,10 @@ object WorkflowBuilder {
               toCollectionBuilder(ExprBuilder(src, \/-(expr)))
             case Doc(obj) =>
               val (grouped, ungrouped) =
-                obj.foldLeft[(ListMap[BsonField.Leaf, Accumulator], ListMap[BsonField.Name, Expression])]((ListMap.empty[BsonField.Leaf, Accumulator], ListMap.empty[BsonField.Name, Expression]))((acc, item) =>
+                obj.foldLeft[(ListMap[BsonField.Name, Accumulator], ListMap[BsonField.Name, Expression])]((ListMap.empty[BsonField.Name, Accumulator], ListMap.empty[BsonField.Name, Expression]))((acc, item) =>
                   item match {
                     case (k, -\/(v)) =>
-                      ((x: ListMap[BsonField.Leaf, Accumulator]) => x + (k -> v)).first(acc)
+                      ((x: ListMap[BsonField.Name, Accumulator]) => x + (k -> v)).first(acc)
                     case (k, \/-(v)) =>
                       ((x: ListMap[BsonField.Name, Expression]) => x + (k -> v)).second(acc)
                   })
@@ -1471,10 +1471,8 @@ object WorkflowBuilder {
     def rightMap(keyExpr: List[JsFn]): AnonFunDecl =
       $Map.mapKeyVal(("key", "value"),
         keyExpr match {
-          case Nil      => Js.Null
-          case List(js) =>
-            jscore.Obj(ListMap(jscore.Name("") -> js(jscore.ident("value")))).toJs
-          case _        =>
+          case Nil => Js.Null
+          case _   =>
             jscore.Obj(keyExpr.map(_(jscore.ident("value"))).zipWithIndex.foldLeft[ListMap[jscore.Name, JsCore]](ListMap[jscore.Name, JsCore]()) {
               case (acc, (j, i)) => acc + (jscore.Name(i.toString) -> j)
             }).toJs

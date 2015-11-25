@@ -10,7 +10,7 @@ trait ArbBsonField {
 
   lazy val genBsonFieldIndex = for {
     index <- Gen.chooseNum(0, 10)
-  } yield BsonField.Index(index)
+  } yield BsonField.Name(index.toString)
 
   implicit val arbBsonField: Arbitrary[BsonField] = Arbitrary(for {
     list <- Gen.nonEmptyListOf(Gen.oneOf(genBsonFieldName, genBsonFieldIndex))

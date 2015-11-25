@@ -17,6 +17,10 @@
 package quasar.physical.mongodb.accumulator
 
 import quasar.Predef._
+import quasar.RenderTree
+import quasar.fp._
+
+import scalaz._
 
 sealed trait AccumOp[A]
 object AccumOp {
@@ -28,6 +32,41 @@ object AccumOp {
   final case class $min[A](value: A)      extends AccumOp[A]
   final case class $avg[A](value: A)      extends AccumOp[A]
   final case class $sum[A](value: A)      extends AccumOp[A]
+
+  implicit val AccumOpInstance: Traverse1[AccumOp] with Comonad[AccumOp]  =
+    new Traverse1[AccumOp] with Comonad[AccumOp] {
+      def cobind[A, B](fa: AccumOp[A])(f: (AccumOp[A]) ⇒ B) = map(fa)(κ(f(fa)))
+
+      def copoint[A](p: AccumOp[A]) =
+        p match {
+          case $addToSet(value) => value
+          case $avg(value)      => value
+          case $first(value)    => value
+          case $last(value)     => value
+          case $max(value)      => value
+          case $min(value)      => value
+          case $push(value)     => value
+          case $sum(value)      => value
+        }
+
+      def foldMapRight1[A, B](fa: AccumOp[A])(z: (A) ⇒ B)(f: (A, ⇒ B) ⇒ B) =
+        z(copoint(fa))
+
+      def traverse1Impl[G[_], A, B](fa: AccumOp[A])(f: A => G[B])(implicit G: Apply[G]) =
+        fa match {
+          case $addToSet(value) => G.map(f(value))($addToSet(_))
+          case $avg(value)      => G.map(f(value))($avg(_))
+          case $first(value)    => G.map(f(value))($first(_))
+          case $last(value)     => G.map(f(value))($last(_))
+          case $max(value)      => G.map(f(value))($max(_))
+          case $min(value)      => G.map(f(value))($min(_))
+          case $push(value)     => G.map(f(value))($push(_))
+          case $sum(value)      => G.map(f(value))($sum(_))
+        }
+    }
+
+  implicit val AccumOpRenderTree: RenderTree[Accumulator] =
+    RenderTree.fromToString[Accumulator]("AccumOp")
 }
 
 object $addToSet {

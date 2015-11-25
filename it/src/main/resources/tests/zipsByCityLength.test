@@ -6,8 +6,19 @@
                 from zips
                 where state != 'MI'
                 group by length(city)",
-    "predicate": "containsAtLeast",
-    "expected": [{ "len": 3, "cnt":  127 },
-                 { "len": 4, "cnt":  927 },
-                 { "len": 5, "cnt": 2181 }]
+    "predicate": "containsExactly",
+    "expected": [{ "cnt":  127, "len":  3 },
+                 { "cnt":  927, "len":  4 },
+                 { "cnt": 2181, "len":  5 },
+                 { "cnt": 4239, "len":  6 },
+                 { "cnt": 4450, "len":  7 },
+                 { "cnt": 3776, "len":  8 },
+                 { "cnt": 3387, "len":  9 },
+                 { "cnt": 2999, "len": 10 },
+                 { "cnt": 2269, "len": 11 },
+                 { "cnt": 1509, "len": 12 },
+                 { "cnt": 1037, "len": 13 },
+                 { "cnt":  623, "len": 14 },
+                 { "cnt":  369, "len": 15 },
+                 { "cnt":  584, "len": 16 }]
 }
