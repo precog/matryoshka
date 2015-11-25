@@ -280,9 +280,13 @@ object ThreadPoolAdapterBackend {
 final case class ViewBackend(backend: Backend, views0: Map[Path, ViewConfig]) extends Backend {
   import Backend._
 
+  // NB: keys are rewritten as relative to '/' (because that's how they
+  // arrive to the `0` methods of the trait), and all paths inside the
+  // queries are interpreted relative to each view's parent dir (and as
+  // absolute, because at least that way they're all consistent).
   val views: Map[Path, sql.Expr] =
     views0.map { case (p, ViewConfig(q)) =>
-      p.asRelative -> sql.relativizePaths(q, p.parent.asRelative).valueOr(κ(q))
+      p.asRelative -> sql.relativizePaths(q, p.parent.asAbsolute).valueOr(κ(q))
     }
 
   def tableName(path: Path) = "__sd__" + path.filename
@@ -290,7 +294,7 @@ final case class ViewBackend(backend: Backend, views0: Map[Path, ViewConfig]) ex
   def expand(query: sql.Expr): sql.Expr = sql.rewriteRelations(query) {
     case sql.TableRelationAST(name, alias) =>
       val p = Path(name)
-      views.get(p).map(sql.ExprRelationAST(_, alias.getOrElse(tableName(p))))
+      views.get(p.asRelative).map(sql.ExprRelationAST(_, alias.getOrElse(tableName(p))))
     case _ => None
   }
 
