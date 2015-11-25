@@ -34,9 +34,11 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
 
     val views = Map(
       Path("/view/simpleZips") -> config.ViewConfig(parse("select _id as zip, city, state from  \"/" + ZipsPath.simplePathname + "\"")),
-      Path("/view/smallCities") -> config.ViewConfig(parse("select city as City, state as St, sum(pop) as Size from \"/" + ZipsPath.simplePathname + "\" group by city, state having sum(pop) <= 1000 order by city, state")),
+      Path("/view/a/smallCities") -> config.ViewConfig(parse("select city as City, state as St, sum(pop) as Size from \"/" + ZipsPath.simplePathname + "\" group by city, state having sum(pop) <= 1000 order by city, state")),
       // NB: this view refers to the previous view using a relative path
-      Path("/view/smallCityCounts") -> config.ViewConfig(parse("select St, count(*) from smallCities group by St order by count(*) desc, St")),
+      Path("/view/a/smallCityCounts1") -> config.ViewConfig(parse("select St, count(*) from smallCities group by St order by count(*) desc, St")),
+      // ...and this one uses an absolute path, and lives in a different dir:
+      Path("/view/b/smallCityCounts2") -> config.ViewConfig(parse("select St, count(*) from \"/view/a/smallCities\" group by St order by count(*) desc, St")),
       Path("/view/badRef") -> config.ViewConfig(parse("""select foo from "/mnt/test/nonexistent"""")),
       Path("/mnt/overlayed") -> config.ViewConfig(parse("select * from \"/" + ZipsPath.simplePathname + "\"")))
 
@@ -45,7 +47,7 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
     "identify view as a mount" in {
       root.ls(Path("/view/")).run.run.fold[Result](
         e => failure(e.toString),
-        _ must contain(FilesystemNode(Path("smallCities"), Some("view"))))
+        _ must contain(FilesystemNode(Path("simpleZips"), Some("view"))))
     }
 
     "include view ancestors as plain directories" in {
@@ -69,11 +71,15 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
     }
 
     "count view" in {
-      root.count(Path("/view/smallCities")).run.run must beRightDisjunction(7809)
+      root.count(Path("/view/a/smallCities")).run.run must beRightDisjunction(7809)
     }
 
     "count view with view reference" in {
-      root.count(Path("/view/smallCityCounts")).run.run must beRightDisjunction(51)
+      root.count(Path("/view/a/smallCityCounts1")).run.run must beRightDisjunction(51)
+    }
+
+    "count view with view reference (absolute)" in {
+      root.count(Path("/view/b/smallCityCounts2")).run.run must beRightDisjunction(51)
     }
 
     "count view with bad reference" in {
@@ -87,7 +93,7 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
     }
 
     "scan view" in {
-      root.scan(Path("/view/smallCities"), 10, Some(10)).runLog.run.run.fold[Result](
+      root.scan(Path("/view/a/smallCities"), 10, Some(10)).runLog.run.run.fold[Result](
         e => failure(e.toString),
         _ must contain(
           Data.Obj(ListMap(
@@ -101,7 +107,15 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
     }
 
     "scan view with view reference" in {
-      root.scan(Path("/view/smallCityCounts"), 0, Some(1)).runLog.run.run must
+      root.scan(Path("/view/a/smallCityCounts1"), 0, Some(1)).runLog.run.run must
+        beRightDisjunction(Vector(
+          Data.Obj(ListMap(
+            "St" -> Data.Str("IA"),
+            "1" -> Data.Int(428)))))
+    }
+
+    "scan view with view reference (absolute)" in {
+      root.scan(Path("/view/b/smallCityCounts2"), 0, Some(1)).runLog.run.run must
         beRightDisjunction(Vector(
           Data.Obj(ListMap(
             "St" -> Data.Str("IA"),
@@ -114,7 +128,7 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
     }
 
     "trivial query referring to a view" in {
-      val query = """select * from "/view/smallCities""""
+      val query = """select * from "/view/a/smallCities""""
       root.evalResults(QueryRequest(parse(query), Variables(Map.empty))).fold[Result](
         e => failure(e.toString),
         _.take(1).runLog.run.run must beRightDisjunction(Vector(Data.Obj(ListMap(
@@ -126,7 +140,7 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
 
     "less-trivial query referring to a view" in {
       // Refers to the shape created in the view query
-      val query = """select City || ', ' || St from "/view/smallCities" where Size < 500"""
+      val query = """select City || ', ' || St from "/view/a/smallCities" where Size < 500"""
       root.evalResults(QueryRequest(parse(query), Variables(Map.empty))).fold[Result](
         e => failure(e.toString),
         _.take(1).runLog.run.run must beRightDisjunction(Vector(Data.Obj(ListMap(
@@ -135,7 +149,15 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
     }
 
     "query with view referencing a view" in {
-      val query = """select max("1") from "/view/smallCityCounts""""
+      val query = """select max("1") from "/view/a/smallCityCounts1""""
+      root.evalResults(QueryRequest(parse(query), Variables(Map.empty))).fold[Result](
+        e => failure(e.toString),
+        _.runLog.run.run must beRightDisjunction(Vector(Data.Obj(ListMap(
+          "0" -> Data.Int(428))))))
+    }
+
+    "query with view referencing a view (absolute)" in {
+      val query = """select max("1") from "/view/b/smallCityCounts2""""
       root.evalResults(QueryRequest(parse(query), Variables(Map.empty))).fold[Result](
         e => failure(e.toString),
         _.runLog.run.run must beRightDisjunction(Vector(Data.Obj(ListMap(
@@ -166,28 +188,28 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
     val oneDoc = Process.emit(Data.Obj(ListMap("a" -> Data.Int(0))))
 
     "save to view: an error" in {
-      root.save(Path("/view/smallCities"), oneDoc).run.run must
-        beLeftDisjunction(ProcessingError.ViewWriteError(Path("view/smallCities")))
+      root.save(Path("/view/a/smallCities"), oneDoc).run.run must
+        beLeftDisjunction(ProcessingError.ViewWriteError(Path("view/a/smallCities")))
     }
 
     "move from view path: an error" in {
-      root.move(Path("/view/smallCities"), Path("/foo/bar"), Overwrite).run.run must
-        beLeftDisjunction(PathTypeError(Path("view/smallCities"), Some("cannot move view")))
+      root.move(Path("/view/a/smallCities"), Path("/foo/bar"), Overwrite).run.run must
+        beLeftDisjunction(PathTypeError(Path("view/a/smallCities"), Some("cannot move view")))
     }
 
     "move to view path: an error" in {
-      root.move(Path("/foo/bar"), Path("/view/smallCities"), Overwrite).run.run must
-        beLeftDisjunction(PathTypeError(Path("view/smallCities"), Some("cannot move file to view location")))
+      root.move(Path("/foo/bar"), Path("/view/a/smallCities"), Overwrite).run.run must
+        beLeftDisjunction(PathTypeError(Path("view/a/smallCities"), Some("cannot move file to view location")))
     }
 
     "append to view: an error" in {
-      root.append(Path("/view/smallCities"), oneDoc).runLog.run.run must
-        beLeftDisjunction(PathTypeError(Path("view/smallCities"), Some("cannot write to view")))
+      root.append(Path("/view/a/smallCities"), oneDoc).runLog.run.run must
+        beLeftDisjunction(PathTypeError(Path("view/a/smallCities"), Some("cannot write to view")))
     }
 
     "delete view: an error" in {
-      root.delete(Path("/view/smallCities")).run.run must
-        beLeftDisjunction(PathTypeError(Path("view/smallCities"), Some("cannot delete view")))
+      root.delete(Path("/view/a/smallCities")).run.run must
+        beLeftDisjunction(PathTypeError(Path("view/a/smallCities"), Some("cannot delete view")))
     }
 
     val cleanup = step {
