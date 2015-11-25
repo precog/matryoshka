@@ -1,5 +1,6 @@
 {
     "name": "project unrelated field with object flatten",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "usa_factbook.data",
     "query": "select intro from usa_factbook where geo{*}.text = '19,924 km'",
     "predicate": "containsExactly",

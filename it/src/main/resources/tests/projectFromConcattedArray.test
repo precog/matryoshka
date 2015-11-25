@@ -1,5 +1,6 @@
 {
     "name": "project from concatted array",
+    "backends": { "mongodb_read_only": "pending" },
     "data": "zips.data",
     "query": "select (loc || [1, 2])[1] from zips",
     "predicate": "containsAtLeast",
