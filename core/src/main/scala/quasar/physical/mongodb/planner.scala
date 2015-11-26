@@ -161,8 +161,10 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
 
       func match {
         case Constantly => Arity1(ι)
-        case Count => Arity1(Select(_, "count"))
-        case Length => Arity1(Select(_, "length"))
+        case Count =>
+          Arity1(expr => Call(ident("NumberLong"), List(Select(expr, "count"))))
+        case Length =>
+          Arity1(expr => Call(ident("NumberLong"), List(Select(expr, "length"))))
         case Sum =>
           Arity1(x =>
             Call(Select(x, "reduce"), List(ident("+"))))
@@ -872,7 +874,7 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
           lift(Arity2(HasWorkflow, HasKeys)).flatMap((distinctBy(_, _)).tupled)
 
         case Length       =>
-          lift(Arity1(HasWorkflow).map(jsExpr1(_, JsFn(JsFn.defaultName, jscore.Select(jscore.Ident(JsFn.defaultName), "length")))))
+          lift(Arity1(HasWorkflow).map(jsExpr1(_, JsFn(JsFn.defaultName, jscore.Call(jscore.ident("NumberLong"), List(jscore.Select(jscore.Ident(JsFn.defaultName), "length")))))))
 
         case Search       => lift(Arity3(HasWorkflow, HasWorkflow, HasWorkflow)).flatMap {
           case (value, pattern, insen) =>
