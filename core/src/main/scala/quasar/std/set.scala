@@ -207,7 +207,6 @@ trait SetLib extends Library {
         Type.Const(Data.Bool(false))
       case List(Type.Const(x), Type.Const(Data.Set(set))) =>
         Type.Const(Data.Bool(set.contains(x)))
-      case List(_,             Type.Const(Data.Set(_)))   => Type.Bool
       case List(_,             _)                         => Type.Bool
     },
     basicUntyper)
