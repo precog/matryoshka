@@ -39,22 +39,6 @@ trait ArrayLib extends Library {
     },
     basicUntyper)
 
-  val In = Mapping(
-    "(in)",
-    "Determines whether a value is in a given array.",
-    Type.Bool, Type.Top :: Type.AnyArray ⨿ Type.AnySet :: Nil,
-    noSimplification,
-    partialTyper {
-      case List(Type.Const(x), Type.Const(Data.Arr(arr))) =>
-        Type.Const(Data.Bool(arr.contains(x)))
-      case List(Type.Const(x), Type.Const(Data.Set(set))) =>
-        Type.Const(Data.Bool(set.contains(x)))
-      case List(_,             Type.Const(Data.Arr(_)))   => Type.Bool
-      case List(_,             Type.Const(Data.Set(_)))   => Type.Bool
-      case List(_,             _)                         => Type.Bool
-    },
-    basicUntyper)
-
-  def functions = ArrayLength :: In :: Nil
+  def functions = ArrayLength :: Nil
 }
 object ArrayLib extends ArrayLib
