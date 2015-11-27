@@ -287,13 +287,12 @@ class CollectionSpec extends Specification with ScalaCheck with DisjunctionMatch
         beRightDisjunction
     }
 
-    "never emit an invalid db name" ! prop { f: AbsFileOf[SpecialStr] =>
-      val file = f.path
-      val notInRootDir = parentDir(file).fold(false)(_ != rootDir)
-      val notTooLong = posixCodec.printPath(file).length < 30
+    "never emit an invalid db name" ! prop { (db: SpecialStr, c: SpecialStr) =>
+      val f = rootDir </> dir(db.str) </> file(c.str)
+      val notTooLong = posixCodec.printPath(f).length < 30
       // NB: as long as the path is not too long, it should convert to something that's legal
-      (notInRootDir && notTooLong) ==> {
-        Collection.fromPathy(file).fold(
+      notTooLong ==> {
+        Collection.fromPathy(f).fold(
           err => scala.sys.error(err.toString),
           coll => {
             " ./\\*<>:|?".foreach { c => coll.databaseName.toList must not(contain(c)) }
