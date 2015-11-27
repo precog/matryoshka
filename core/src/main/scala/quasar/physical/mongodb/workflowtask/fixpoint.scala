@@ -50,9 +50,10 @@ object PipelineTask {
 }
 
 object MapReduceTask {
-  def apply(source: WorkflowTask, mapReduce: MapReduce): WorkflowTask =
-    Fix(MapReduceTaskF(source, mapReduce))
-  def unapply(obj: WorkflowTask): Option[(WorkflowTask, MapReduce)] =
+  import MapReduce._
+  def apply(source: WorkflowTask, mapReduce: MapReduce, outAct: Option[Action]): WorkflowTask =
+    Fix(MapReduceTaskF(source, mapReduce, outAct))
+  def unapply(obj: WorkflowTask): Option[(WorkflowTask, MapReduce, Option[Action])] =
     MapReduceTaskF.unapply(obj.unFix)
 }
 

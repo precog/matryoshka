@@ -28,43 +28,66 @@ QUASAR_MONGODB_TESTDB="quasar-test"
 QUASAR_MONGODB_HOST_2_6="localhost:27018"
 QUASAR_MONGODB_HOST_3_0="localhost:27019"
 
-rm -rf "$TEMP_DIR"
-mkdir -p "$TEMP_DIR"
+JOB_NUM=${TRAVIS_JOB_NUMBER:="1"}
 
-# Build the pristine JAR without coverage:
-# We cannot do this at the end is because it would require us to clean the project
-# which would remove the coverage information that Jenkins expects to find in the workspace after the build
-"$SBT" clean oneJar
-
-# Save a copy of the "clean" oneJar, since running code coverage
-# will produce a "dirty" version:
-cp "$QUASAR_WEB_JAR_PATH" "$QUASAR_TEMP_JAR"
+# Enables running tests for a single mongo release by specifying an argument of
+# "2_6" or "3_0" for the MongoDB 2.6.x and 3.0.x releases.
+if [[ "$#" == "1" ]]; then
+  QUASAR_MONGODB_RELEASE="$1"
+else
+  QUASAR_MONGODB_RELEASE="ALL"
+fi
 
 # Perform setup for integration tests:
 if [[ ${LOCAL_MONGODB:-} == "true" ]] ; then
   export QUASAR_TEST_PATH_PREFIX="/${QUASAR_MONGODB_TESTDB}/"
-  export QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_2_6}\"}}"
-  export QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-dbOwner:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
-  export QUASAR_MONGODB_READ_ONLY="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-read:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
-  export QUASAR_MONGODB_READ_ONLY_INSERT="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-dbOwner:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
+
+  if [[ "$QUASAR_MONGODB_RELEASE" == "2_6" ]]; then
+    export QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_2_6}\"}}"
+  elif [[ "$QUASAR_MONGODB_RELEASE" == "3_0" ]]; then
+    export QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_0}\"}}"
+  elif [[ "$QUASAR_MONGODB_RELEASE" == "3_0_RO" ]]; then
+    export QUASAR_MONGODB_READ_ONLY="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-read:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
+    export QUASAR_MONGODB_READ_ONLY_INSERT="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-dbOwner:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
+  else
+    export QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_2_6}\"}}"
+    export QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-dbOwner:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
+    export QUASAR_MONGODB_READ_ONLY="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-read:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
+    export QUASAR_MONGODB_READ_ONLY_INSERT="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-dbOwner:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
+  fi
 
   echo "Using local MongoDB config"
 fi
 
-# Build and run all tests everywhere (including integration)
-# Note: scoverage is brain-dead, so each project's tests have to be run
-# separately, and 'core' should be last, so that its report will include
-# coverage in the core code provided by tests in other projects.
-"$SBT" -DisCoverageRun=true -DisIsolatedEnv=${ISOLATED_ENV:=false} doc coverage 'project it' test 'project web' test 'project core' test
+if [[ "${JOB_NUM##*.}" == "1" ]]; then
+  rm -rf "$TEMP_DIR"
+  mkdir -p "$TEMP_DIR"
 
-# Build completed, copy oneJar to right location:
-mkdir -p $QUASAR_WEB_JAR_DIR
-cp $QUASAR_TEMP_JAR $QUASAR_WEB_JAR_PATH
+  # Build the pristine JAR without coverage:
+  # We cannot do this at the end is because it would require us to clean the project
+  # which would remove the coverage information that Jenkins expects to find in the workspace after the build
+  "$SBT" clean oneJar
 
-# Test to ensure the JAR file is valid:
-"$SCRIPT_DIR/testJar"
-TEST_STATUS=$?
+  # Save a copy of the "clean" oneJar, since running code coverage
+  # will produce a "dirty" version:
+  cp "$QUASAR_WEB_JAR_PATH" "$QUASAR_TEMP_JAR"
 
-echo "Result of Quasar JAR test: $TEST_STATUS"
+  # Build and run all tests everywhere (including integration)
+  "$SBT" -DisCoverageRun=true -DisIsolatedEnv=${ISOLATED_ENV:=false} coverage doc test exclusive:test
+  "$SBT" coverageReport
+  "$SBT" coverageAggregate
 
-exit $TEST_STATUS
+  # Build completed, copy oneJar to right location:
+  mkdir -p $QUASAR_WEB_JAR_DIR
+  cp $QUASAR_TEMP_JAR $QUASAR_WEB_JAR_PATH
+
+  # Test to ensure the JAR file is valid:
+  "$SCRIPT_DIR/testJar"
+  TEST_STATUS=$?
+
+  echo "Result of Quasar JAR test: $TEST_STATUS"
+
+  exit $TEST_STATUS
+else
+  "$SBT" -DisIsolatedEnv=${ISOLATED_ENV:=false} test exclusive:test
+fi

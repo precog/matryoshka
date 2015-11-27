@@ -24,6 +24,7 @@ import quasar.fs._, Path._
 import scala.util.parsing.combinator._
 
 import scalaz._, Scalaz._
+import pathy.Path.{dir => pDir, file => pFile, _}
 
 final case class Collection(databaseName: String, collectionName: String) {
   import Collection._
@@ -34,25 +35,37 @@ final case class Collection(databaseName: String, collectionName: String) {
     val segs = NonEmptyList(first, rest: _*)
     Path(DirNode.Current :: segs.list.dropRight(1).map(DirNode(_)), Some(FileNode(segs.last)))
   }
+
+  /** Convert this collection to a file. */
+  def asFile: AFile = {
+    val db   = DatabaseNameUnparser(databaseName)
+    val segs = CollectionNameUnparser(collectionName).reverse
+    val f    = segs.headOption getOrElse db
+
+    (segs ::: List(db)).drop(1).foldRight(rootDir)((d, p) => p </> pDir(d)) </> pFile(f)
+  }
 }
+
 object Collection {
   import PathError._
 
+  // TODO: Remove once Path has been replaced by pathy.Path
   def foldPath[A](path: Path)(clusterF: => A, dbF: String => A, collF: Collection => A):
       PathError \/ A = {
     val abs = path.asAbsolute
     val segs = abs.dir.map(_.value) ++ abs.file.map(_.value).toList
-    segs match {
-      case Nil => \/-(clusterF)
+
+    (segs match {
+      case Nil => clusterF.right
       case first :: rest => for {
         db       <- DatabaseNameParser(first)
         collSegs <- rest.traverseU(CollectionSegmentParser(_))
         coll     =  collSegs.mkString(".")
         _        <- if (utf8length(db) + 1 + utf8length(coll) > 120)
-                      -\/(InvalidPathError("database/collection name too long (> 120 bytes): " + db + "." + coll))
-                    else \/-(())
+                      s"database/collection name too long (> 120 bytes): $db.$coll".left
+                    else ().right
       } yield if (collSegs.isEmpty) dbF(db) else collF(Collection(db, coll))
-    }
+    }) leftMap InvalidPathError
   }
 
   def fromPath(path: Path): PathError \/ Collection =
@@ -60,6 +73,26 @@ object Collection {
       -\/(PathTypeError(path, Some("has no segments"))),
       κ(-\/(InvalidPathError("path names a database, but no collection: " + path))),
       \/-(_)).join
+
+  // TODO: Rename to `fromPath` once old path code is deleted
+  def fromPathy(path: APath): PathError2 \/ Collection = {
+    import PathError2._
+
+    flatten(None, None, None, Some(_), Some(_), path)
+      .toIList.unite.uncons(
+        InvalidPath(path, "no database specified").left,
+        (h, t) => t.toNel.cata(
+          ss => (for {
+              db   <- DatabaseNameParser(h)
+              segs <- ss.traverseU(CollectionSegmentParser(_))
+              coll =  segs.toList mkString "."
+              len  =  utf8length(db) + 1 + utf8length(coll)
+              _    <- if (len > 120)
+                        s"database+collection name too long ($len > 120 bytes): $db.$coll".left
+                      else ().right
+            } yield Collection(db, coll)) leftMap (InvalidPath(path, _)),
+          InvalidPath(path, "path names a database, but no collection").left))
+  }
 
   private trait PathParser extends RegexParsers {
     override def skipWhitespace = false
@@ -94,13 +127,13 @@ object Collection {
 
     def char: Parser[String] = substitute(DatabaseNameEscapes) | "(?s).".r
 
-    def apply(input: String): PathError \/ String = parseAll(name, input) match {
+    def apply(input: String): String \/ String = parseAll(name, input) match {
+      case Success(name, _) if utf8length(name) > 64 =>
+        s"database name too long (> 64 bytes): $name".left
       case Success(name, _) =>
-        if (utf8length(name) > 64)
-          -\/(InvalidPathError("database name too long (> 64 bytes): " + name))
-        else \/-(name)
+        name.right
       case failure : NoSuccess =>
-        -\/(InvalidPathError("failed to parse ‘" + input + "’: " + failure.msg))
+        s"failed to parse ‘$input’: ${failure.msg}".left
     }
   }
 
@@ -129,9 +162,11 @@ object Collection {
     /**
       * @return If implemented correctly, should always return a [[String]] in the right hand of the [[Disjunction]]
       */
-    def apply(input: String): PathError \/ String = parseAll(seg, input) match {
-      case Success(seg, _) => \/-(seg)
-      case failure : NoSuccess => -\/(InvalidPathError("failed to parse ‘" + input + "’: " + failure.msg))
+    def apply(input: String): String \/ String = parseAll(seg, input) match {
+      case Success(seg, _) =>
+        seg.right
+      case failure : NoSuccess =>
+        s"failed to parse ‘$input’: ${failure.msg}".left
     }
   }
 

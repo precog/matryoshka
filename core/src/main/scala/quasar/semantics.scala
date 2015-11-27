@@ -90,16 +90,16 @@ trait SemanticAnalysis {
 
   type Failure = NonEmptyList[SemanticError]
 
-  private def fail[A](e: SemanticError) = Validation.failure[NonEmptyList[SemanticError], A](NonEmptyList(e))
-  private def succeed[A](s: A) = Validation.success[NonEmptyList[SemanticError], A](s)
+  private def fail[A](e: SemanticError) = Validation.failure[Failure, A](NonEmptyList(e))
+  private def succeed[A](s: A) = Validation.success[Failure, A](s)
 
   sealed trait Synthetic
   object Synthetic {
     final case object SortKey extends Synthetic
-  }
 
-  implicit val SyntheticRenderTree: RenderTree[Synthetic] =
-    RenderTree.fromToString[Synthetic]("Synthetic")
+    implicit val SyntheticRenderTree: RenderTree[Synthetic] =
+      RenderTree.fromToString[Synthetic]("Synthetic")
+  }
 
   private val syntheticPrefix = "__sd__"
 

@@ -4,7 +4,6 @@ import quasar.Predef._
 import quasar.RenderTree
 import quasar.javascript.Js
 import quasar.fp._
-import quasar.recursionschemes._
 import quasar.TreeMatchers
 
 import org.specs2.mutable._

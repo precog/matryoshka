@@ -19,7 +19,7 @@ package quasar
 import quasar.Predef._
 import quasar.fp._
 import quasar.fs.Path._
-import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
+import quasar.recursionschemes._, Fix._, Recursive.ops._, FunctorT.ops._
 import quasar.sql._
 
 import scalaz._, Scalaz._
@@ -115,6 +115,9 @@ object Planner {
   implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {
     def render(v: PlannerError) = Terminal(List("Error"), Some(v.message))
   }
+
+  implicit val plannerErrorShow: Show[PlannerError] =
+    Show.show(_.message)
 
   sealed trait CompilationError {
     def message: String

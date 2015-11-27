@@ -2,7 +2,7 @@ package quasar
 
 import quasar.Predef._
 import quasar.fs._
-import quasar.recursionschemes._, FunctorT.ops._
+import quasar.recursionschemes._, cofree._, Fix._, FunctorT.ops._
 import quasar.std._
 
 import org.specs2.mutable._

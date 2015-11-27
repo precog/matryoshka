@@ -18,7 +18,7 @@ package quasar.std
 
 import quasar.Predef._
 import quasar._, LogicalPlan._, SemanticError._
-import quasar.recursionschemes._, Recursive.ops._
+import quasar.recursionschemes._, cofree._, Recursive.ops._
 import quasar.fp._
 import quasar.recursionschemes._, Recursive.ops._
 

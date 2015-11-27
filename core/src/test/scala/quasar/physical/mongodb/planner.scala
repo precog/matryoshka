@@ -3,7 +3,7 @@ package quasar.physical.mongodb
 import quasar.Predef._
 import quasar.RenderTree, RenderTree.ops._
 import quasar.fp._
-import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
+import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._, Fix._
 import quasar._
 import quasar.fs.Path
 import quasar.javascript._

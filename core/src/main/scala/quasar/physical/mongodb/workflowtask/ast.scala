@@ -14,18 +14,23 @@
  * limitations under the License.
  */
 
-package quasar.physical.mongodb.workflowtask
+package quasar
+package physical
+package mongodb
+package workflowtask
 
 import quasar.Predef._
 import quasar.{RenderTree, Terminal, NonTerminal}
 import quasar.javascript._
-import quasar.physical.mongodb._
 
 import scalaz._, Scalaz._
 
 /** A WorkflowTask approximately represents one request to MongoDB. */
 sealed trait WorkflowTaskF[A]
 object WorkflowTaskF {
+  import Workflow._
+  import MapReduce._
+
   /** A task that returns a necessarily small amount of raw data. */
   final case class PureTaskF[A](value: Bson) extends WorkflowTaskF[A]
 
@@ -42,7 +47,7 @@ object WorkflowTaskF {
       extends WorkflowTaskF[A]
 
   /** A task that executes a Mongo map/reduce job. */
-  final case class MapReduceTaskF[A](source: A, mapReduce: MapReduce)
+  final case class MapReduceTaskF[A](source: A, mapReduce: MapReduce, outAct: Option[Action])
       extends WorkflowTaskF[A]
 
   /** A task that executes a sequence of other tasks, one at a time, collecting
@@ -71,16 +76,20 @@ object WorkflowTaskF {
   //         case QueryTaskF(src, query, skip, limit) =>
   //           f(src).map(QueryTaskF(_, query, skip, limit))
   //         case PipelineTaskF(src, pipe) => f(src).map(PipelineTaskF(_, pipe))
-  //         case MapReduceTaskF(src, mr) => f(src).map(MapReduceTaskF(_, mr))
+  //         case MapReduceTaskF(src, mr, oa) => f(src).map(MapReduceTaskF(_, mr, oa))
   //         case FoldLeftTaskF(h, t) =>
   //           (f(h) |@| t.traverse(f))(FoldLeftTaskF(_, _))
   //       }
   //   }
 
-  implicit def WorkflowTaskRenderTree(implicit RC: RenderTree[Collection], RO: RenderTree[WorkflowF[Unit]], RJ: RenderTree[Js], RS: RenderTree[Selector]):
-      RenderTree ~> λ[α => RenderTree[WorkflowTaskF[α]]] =
+  implicit def WorkflowTaskRenderTree: RenderTree ~> λ[α => RenderTree[WorkflowTaskF[α]]] =
     new (RenderTree ~> λ[α => RenderTree[WorkflowTaskF[α]]]) {
       def apply[α](ra: RenderTree[α]) = new RenderTree[WorkflowTaskF[α]] {
+        val RC = RenderTree[Collection]
+        val RO = RenderTree[WorkflowF[Unit]]
+        val RJ = RenderTree[Js]
+        val RS = RenderTree[Selector]
+
         val WorkflowTaskNodeType = "WorkflowTask" :: "Workflow" :: Nil
 
         def render(task: WorkflowTaskF[α]) = task match {
@@ -102,21 +111,22 @@ object WorkflowTaskF {
               NonTerminal("Pipeline" :: nt, None, pipeline.map(RO.render(_))) ::
                 Nil)
 
-          case MapReduceTaskF(source, MapReduce(map, reduce, outOpt, selectorOpt, sortOpt, limitOpt, finalizerOpt, scopeOpt, jsModeOpt, verboseOpt)) =>
+          case MapReduceTaskF(source, MapReduce(map, reduce, selectorOpt, sortOpt, limitOpt, finalizerOpt, scopeOpt, jsModeOpt, verboseOpt), outAct) =>
             val nt = "MapReduceTask" :: WorkflowTaskNodeType
-            NonTerminal(nt, None,
-              ra.render(source) ::
-                RJ.render(map) ::
-                RJ.render(reduce) ::
-                Terminal("Out" :: nt, Some(outOpt.toString)) ::
-                selectorOpt.map(RS.render(_)).getOrElse(Terminal("None" :: Nil, None)) ::
-                sortOpt.map(keys => NonTerminal("Sort" :: nt, None,
-                  (keys.map { case (expr, ot) => Terminal("Key" :: "Sort" :: nt, Some(expr.toString + " -> " + ot)) } ).toList)).getOrElse(Terminal("None" :: Nil, None)) ::
-                Terminal("Limit" :: nt, Some(limitOpt.toString)) ::
-                finalizerOpt.map(RJ.render(_)).getOrElse(Terminal("None" :: Nil, None)) ::
-                Terminal("Scope" :: nt, Some(scopeOpt.toString)) ::
-                Terminal("JsMode" :: nt, Some(jsModeOpt.toString)) ::
-                Nil)
+            NonTerminal(nt, None, List(
+              ra.render(source),
+              RJ.render(map),
+              RJ.render(reduce),
+              selectorOpt.fold(Terminal("None" :: Nil, None))(RS.render(_)),
+              sortOpt.fold(Terminal("None" :: Nil, None))(keys =>
+                NonTerminal("Sort" :: nt, None, keys.list map { case (expr, ot) =>
+                  Terminal("Key" :: "Sort" :: nt, Some(expr.toString + " -> " + ot))
+                })),
+              Terminal("Limit" :: nt, Some(limitOpt.toString)),
+              finalizerOpt.fold(Terminal("None" :: Nil, None))(RJ.render(_)),
+              Terminal("Scope" :: nt, Some(scopeOpt.toString)),
+              Terminal("JsMode" :: nt, Some(jsModeOpt.toString))
+            ) ::: outAct.map(act => Terminal("Out" :: nt, Some(Action.bsonFieldName(act)))).toList)
 
           case FoldLeftTaskF(head, tail) =>
             NonTerminal("FoldLeftTask" :: WorkflowTaskNodeType, None, ra.render(head) :: tail.toList.map(ra.render))
@@ -167,11 +177,12 @@ object PipelineTaskF {
 }
 
 object MapReduceTaskF {
-  def apply[A](source: A, mapReduce: MapReduce): WorkflowTaskF[A] =
-    WorkflowTaskF.MapReduceTaskF[A](source, mapReduce)
-  def unapply[A](obj: WorkflowTaskF[A]): Option[(A, MapReduce)] = obj match {
-    case WorkflowTaskF.MapReduceTaskF(source, mapReduce) =>
-      Some((source, mapReduce))
+  import MapReduce._
+  def apply[A](source: A, mapReduce: MapReduce, outAct: Option[Action]): WorkflowTaskF[A] =
+    WorkflowTaskF.MapReduceTaskF[A](source, mapReduce, outAct)
+  def unapply[A](obj: WorkflowTaskF[A]): Option[(A, MapReduce, Option[Action])] = obj match {
+    case WorkflowTaskF.MapReduceTaskF(source, mapReduce, outAct) =>
+      Some((source, mapReduce, outAct))
     case _ => None
   }
 }

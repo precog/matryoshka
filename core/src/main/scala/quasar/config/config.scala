@@ -22,7 +22,7 @@ import quasar.config.FsPath.NonexistentFileError
 import quasar.fp._
 import quasar._, Evaluator._, Errors._
 import quasar.Evaluator.EnvironmentError.EnvFsPathError
-import quasar.fs.{Path => EnginePath}
+import quasar.fs.{Path => EnginePath, _}
 
 import java.io.{File => JFile}
 import scala.util.Properties._
@@ -49,13 +49,14 @@ object MongoConnectionString {
   def decode(uri: String): DecodeResult[ConnectionString] = {
     DecodeResult(parse(uri).leftMap(κ((s"invalid connection URI: $uri", CursorHistory(Nil)))))
   }
-  implicit val codec: CodecJson[ConnectionString] =
+
+  implicit val connectionStringCodecJson: CodecJson[ConnectionString] =
     CodecJson[ConnectionString](
-      c => jString(c.getURI),
+      c => jString(c.getConnectionString),
       _.as[String].flatMap(decode))
 }
 object MongoDbConfig {
-  import MongoConnectionString.codec
+  import MongoConnectionString._
   implicit def Codec: CodecJson[MongoDbConfig] =
     casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")
 }
@@ -114,7 +115,7 @@ trait ConfigOps[C] {
 
   def mountingsLens: Lens[C, MountingsConfig]
 
-  def defaultPathForOS(file: RelFile[Sandboxed])(os: OS): Task[FsPath[File, Sandboxed]] = {
+  def defaultPathForOS(file: RFile)(os: OS): Task[FsPath[File, Sandboxed]] = {
     def localAppData: OptionT[Task, FsPath.Aux[Abs, Dir, Sandboxed]] =
       OptionT(Task.delay(envOrNone("LOCALAPPDATA")))
         .flatMap(s => OptionT(parseWinAbsAsDir(s).point[Task]))
@@ -123,7 +124,7 @@ trait ConfigOps[C] {
       OptionT(Task.delay(propOrNone("user.home")))
         .flatMap(s => OptionT(parseAbsAsDir(os, s).point[Task]))
 
-    val dirPath: RelDir[Sandboxed] = os.fold(
+    val dirPath: RDir = os.fold(
       currentDir,
       dir("Library") </> dir("Application Support"),
       dir(".config"))

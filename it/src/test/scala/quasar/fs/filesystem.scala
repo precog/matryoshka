@@ -13,6 +13,7 @@ import scalaz.concurrent._
 import scalaz.stream._
 
 class FileSystemSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserEnv {
+
   import Backend._
   import Errors._
   import quasar.fs._

@@ -145,4 +145,7 @@ object Data {
     def dataType = Type.Bottom
     def toJs = jscore.ident(Js.Undefined.ident)
   }
+
+  implicit val dataShow: Show[Data] =
+    Show.showFromToString
 }

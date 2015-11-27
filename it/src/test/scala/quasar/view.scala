@@ -17,7 +17,6 @@ import scalaz.stream._
 // than implementing some kind of mock Backend.
 class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserEnv {
   import Backend._
-  import Errors._
   import Path.PathError._
   import Evaluator.EvalPathError
 

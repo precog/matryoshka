@@ -21,10 +21,10 @@ import quasar.{Data, DataCodec}
 
 import argonaut._, Argonaut._
 
-
 final case class WriteError(value: Data, hint: Option[String]) {
   def message = hint.getOrElse("error writing data") + "; value: " + value
 }
+
 object WriteError {
   implicit val Encode: EncodeJson[WriteError] = EncodeJson[WriteError](e =>
     Json("data"   := DataCodec.Precise.encode(e.value),

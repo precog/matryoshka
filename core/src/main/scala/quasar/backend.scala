@@ -23,36 +23,14 @@ import quasar.Errors._
 import quasar.Evaluator._
 import quasar.Planner._
 import quasar.config._
-import quasar.fs._; import Path._
+import quasar.fs._, Path._
 
 import scalaz.{Tree => _, _}, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream.{Writer => _, _}
 
-sealed trait PhaseResult {
-  def name: String
-}
-object PhaseResult {
-  import argonaut._, Argonaut._
-
-  final case class Tree(name: String, value: RenderedTree) extends PhaseResult {
-    override def toString = name + "\n" + Show[RenderedTree].shows(value)
-  }
-  final case class Detail(name: String, value: String) extends PhaseResult {
-    override def toString = name + "\n" + value
-  }
-
-  implicit def PhaseResultEncodeJson: EncodeJson[PhaseResult] = EncodeJson {
-    case Tree(name, value)   => Json.obj("name" := name, "tree" := value)
-    case Detail(name, value) => Json.obj("name" := name, "detail" := value)
-  }
-}
-
 sealed trait Backend { self =>
   import Backend._
-  import Evaluator._
-  import Path._
-  import Planner._
 
   /**
    * Executes a query, producing a compilation log and the path where the result
@@ -491,7 +469,6 @@ object Backend {
     def message = "invalid limit: " + value + " (must be >= 1)"
   }
 
-  type PathErrT[F[_], A] = EitherT[F, PathError, A]
   type PathTask[X] = ETask[PathError, X]
   val liftP = new (Task ~> PathTask) {
     def apply[T](t: Task[T]): PathTask[T] = EitherT.right(t)

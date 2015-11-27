@@ -21,6 +21,8 @@ import quasar.fp._
 
 import scalaz._
 import scalaz.concurrent._
+import scalaz.syntax.monad._
+import scalaz.syntax.std.option._
 
 object Errors {
   import scalaz.stream.Process
@@ -30,32 +32,27 @@ object Errors {
   implicit class PrOpsETask[E, O](self: Process[ETask[E, ?], O])
       extends PrOps[ETask[E, ?], O](self)
 
-  implicit def ETaskCatchable[E]: Catchable[ETask[E, ?]] =
-    new Catchable[ETask[E, ?]] {
-      def attempt[A](f: ETask[E, A]) =
-        EitherT(f.run.attempt.map(_.fold(
-          e => \/-(-\/(e)),
-          _.fold(-\/(_), x => \/-(\/-(x))))))
-
-      def fail[A](err: Throwable) = EitherT.right(Task.fail(err))
+  def handle[E, A, B>:A](t: ETask[E, A])(f: PartialFunction[Throwable, B]):
+      ETask[E, B] = {
+    type G[F[_], X] = EitherT[F, E, X]
+    Catchable[G[Task, ?]].attempt(t) flatMap {
+      case -\/(t) => f.lift(t).cata(Task.now, Task.fail(t)).liftM[G]
+      case \/-(a) => Applicative[G[Task, ?]].point(a)
     }
-
-  def handle[E, A, B>:A](t: ETask[E, A])(f: PartialFunction[Throwable,B]):
-      ETask[E, B] =
-    ETaskCatchable[E].attempt(t) flatMap {
-      case -\/(e) => liftE[E](f.lift(e) map (Task.now) getOrElse Task.fail(e))
-      case \/-(a) => liftE[E](Task.now(a))
-    }
+  }
 
   def handleWith[E, A, B>:A](t: ETask[E, A])(f: PartialFunction[Throwable, ETask[E, B]]):
-      ETask[E, B] =
-    ETaskCatchable[E].attempt(t) flatMap {
-      case -\/(e) => f.lift(e) getOrElse liftE[E](Task.fail(e))
-      case \/-(a) => liftE[E](Task.now(a))
+      ETask[E, B] = {
+    type G[F[_], X] = EitherT[F, E, X]
+    Catchable[G[Task, ?]].attempt(t) flatMap {
+      case -\/(t) => f.lift(t) getOrElse liftE(Task.fail(t))
+      case \/-(a) => Applicative[G[Task, ?]].point(a)
     }
+  }
 
-  def liftE[E] = new (Task ~> ETask[E, ?]) {
-    def apply[T](t: Task[T]): ETask[E, T] = EitherT.right(t)
+  def liftE[E]: (Task ~> ETask[E, ?]) = {
+    type G[F[_], A] = EitherT[F, E, A]
+    liftMT[Task, G]
   }
 
   def convertError[E, F](f: E => F) = new (ETask[E, ?] ~> ETask[F, ?]) {

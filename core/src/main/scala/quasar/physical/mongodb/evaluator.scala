@@ -30,6 +30,8 @@ import scalaz.concurrent._
 import scalaz.stream._
 
 trait Executor[F[_], C] {
+  import MapReduce._
+
   def generateTempName(dbName: String): F[Collection]
 
   def version: F[List[Int]]
@@ -41,7 +43,7 @@ trait Executor[F[_], C] {
 
   def insert(dst: Collection, value: Bson.Doc): F[Unit]
   def aggregate(source: Collection, pipeline: workflowtask.Pipeline): F[Unit]
-  def mapReduce(source: Collection, dst: Collection, mr: MapReduce): F[Unit]
+  def mapReduce(source: Collection, dst: OutputCollection, mr: MapReduce): F[Unit]
   def drop(coll: Collection): F[Unit]
   def exists(coll: Collection): F[Unit]
 
@@ -167,6 +169,8 @@ object MongoDbEvaluator {
 }
 
 trait MongoDbEvaluatorImpl[F[_], C] {
+  import MapReduce._
+
   implicit def F: Monad[F]
 
   protected[mongodb] def executor: Executor[F, C]
@@ -231,9 +235,13 @@ trait MongoDbEvaluatorImpl[F[_], C] {
         _   <- emit(executor.aggregate(src.collection, pipeline :+ $Out[Unit]((), out.collection)))
       } yield out
 
-      case MapReduceTask(source, mapReduce) => for {
+      case MapReduceTask(source, mapReduce, oact) => for {
         src <- execSource(source)
-        _   <- emit(executor.mapReduce(src.collection, out.collection, mapReduce))
+        act  = oact getOrElse Action.Replace
+        _   <- emit(executor.mapReduce(
+                 src.collection,
+                 outputCollection(out.collection, act),
+                 mapReduce))
       } yield out
 
       case FoldLeftTask(head, tail) =>
@@ -244,9 +252,12 @@ trait MongoDbEvaluatorImpl[F[_], C] {
             case _           => ().point[F]
           })
           _    <- tail.traverse[W, Unit] {
-            case MapReduceTask(source, mapReduce) => for {
+            case MapReduceTask(source, mapReduce, Some(act)) => for {
               src <- execSource(source)
-              _   <- emit(executor.mapReduce(src.collection, out.collection, mapReduce))
+              _   <- emit(executor.mapReduce(
+                       src.collection,
+                       outputCollection(out.collection, act),
+                       mapReduce))
             } yield ()
             case t => emit(fail(InvalidTask("un-mergable FoldLeft input: " + t)))
           }
@@ -289,9 +300,8 @@ trait MongoDbEvaluatorImpl[F[_], C] {
       case PipelineTask(ReadTask(src), pipeline) =>
         executor.exists(src) *> executor.aggregateCursor(Col.User(src), pipeline)
 
-      case MapReduceTask(ReadTask(src), mapReduce) =>
+      case MapReduceTask(ReadTask(src), mapReduce, _) =>
         executor.exists(src) *> executor.mapReduceCursor(Col.User(src), mapReduce)
-
 
       case PipelineTask(src, pipeline) => for {
         t   <- tempGen.flatMap(tmp => execute0(src, tmp, tempGen)).run
@@ -300,7 +310,7 @@ trait MongoDbEvaluatorImpl[F[_], C] {
         cur <- executor.aggregateCursor(dstCol, pipeline)
       } yield cur
 
-      case MapReduceTask(src, mapReduce) => for {
+      case MapReduceTask(src, mapReduce, _) => for {
         t <- tempGen.flatMap(tmp => execute0(src, tmp, tempGen)).run
         (temps, dstCol) = t
         _   <- cleanup(temps, dstCol)
@@ -317,6 +327,13 @@ trait MongoDbEvaluatorImpl[F[_], C] {
       } yield cur
     }
   }
+
+  ////
+
+  private def outputCollection(c: Collection, a: Action) =
+    OutputCollection(
+      c.collectionName,
+      Some(ActionedOutput(a, Some(c.databaseName), None)))
 }
 
 object MongoDbEvaluatorImpl {
@@ -354,6 +371,8 @@ class MongoDbExecutor[S](client: MongoClient,
                          val defaultWritableDB: Option[String])
     extends Executor[StateT[EvaluationTask, S, ?], Process[EvaluationTask, Data]] {
 
+  import MapReduce._
+
   type MT[F[_], A] = StateT[F, S, A]
   type M[A]        = MT[EvaluationTask, A]
 
@@ -371,20 +390,20 @@ class MongoDbExecutor[S](client: MongoClient,
         "pipeline" -> Bson.Arr(pipeline.map(_.bson)),
         "allowDiskUse" -> Bson.Bool(true))))
 
-  def mapReduce(source: Collection, dst: Collection, mr: MapReduce): M[Unit] =
+  def mapReduce(source: Collection, dst: OutputCollection, mr: MapReduce): M[Unit] =
     // FIXME: check same db
     runMongoCommand(
       source.databaseName,
-      Bson.Doc(
-        ListMap(
-          "mapReduce" -> Bson.Text(source.collectionName),
-          "map"       -> Bson.JavaScript(mr.map),
-          "reduce"    -> Bson.JavaScript(mr.reduce))
-        ++ mr.bson(Some(dst)).value)).mapK(_.leftMap{
-          case CommandFailed(s) if s.contains("ns doesn't exist" ) =>
-            EvalPathError(NonexistentPathError(source.asPath.asAbsolute,None))
-          case other => other
-        }: EvaluationTask[(S, Unit)])
+      Bson.Doc(ListMap(
+        "mapReduce" -> Bson.Text(source.collectionName),
+        "map"       -> Bson.JavaScript(mr.map),
+        "reduce"    -> Bson.JavaScript(mr.reduce)
+      ) ++ mr.toCollBson(dst).value)
+    ) mapK (_ leftMap {
+      case CommandFailed(s) if s.contains("ns doesn't exist") =>
+        EvalPathError(NonexistentPathError(source.asPath.asAbsolute, None))
+      case other => other
+    }: EvaluationTask[(S, Unit)])
 
   def drop(coll: Collection) = liftMongo(mongoCol(coll).drop())
 
@@ -490,6 +509,7 @@ class JSExecutor[F[_]: Monad](nameGen: NameGenerator[F])
     extends Executor[LoggerT[F]#Rec, Unit] {
   import Js._
   import JSExecutor._
+  import MapReduce._
 
   type M0[A] = EvalErrT[F, A]
   type M[A]  = WriterT[M0, Vector[Js.Stmt], A]
@@ -504,9 +524,9 @@ class JSExecutor[F[_]: Monad](nameGen: NameGenerator[F])
       AnonElem(pipeline.map(_.bson.toJs)),
       AnonObjDecl(List("allowDiskUse" -> Bool(true))))))
 
-  def mapReduce(source: Collection, dst: Collection, mr: MapReduce) =
+  def mapReduce(source: Collection, dst: OutputCollection, mr: MapReduce) =
     write(Call(Select(toJsRef(source), "mapReduce"),
-      List(mr.map, mr.reduce, mr.bson(Some(dst)).toJs)))
+      List(mr.map, mr.reduce, mr.toCollBson(dst).toJs)))
 
   def drop(coll: Collection) =
     write(Call(Select(toJsRef(coll), "drop"), Nil))
@@ -519,7 +539,7 @@ class JSExecutor[F[_]: Monad](nameGen: NameGenerator[F])
     aggregate(source.collection, pipeline)
   def mapReduceCursor(source: Col, mr: MapReduce) =
     write(Call(Select(toJsRef(source.collection), "mapReduce"),
-      List(mr.map, mr.reduce, mr.bson(None).toJs)))
+      List(mr.map, mr.reduce, mr.inlineBson.toJs)))
 
   def fail[A](e: EvaluationError) =
     WriterT[LoggerT[F]#EitherF, Vector[Js.Stmt], A](

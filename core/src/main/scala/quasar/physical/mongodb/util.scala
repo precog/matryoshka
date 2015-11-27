@@ -35,7 +35,7 @@ object util {
   private val mongoClient: ConnectionString => Task[MongoClient] = {
     val memo = Memo.mutableHashMapMemo[ConnectionString, MongoClient] { (uri: ConnectionString) =>
       new MongoClient(
-        new MongoClientURI(uri.getURI, new MongoClientOptions.Builder(DefaultOptions)))
+        new MongoClientURI(uri.getConnectionString, new MongoClientOptions.Builder(DefaultOptions)))
     }
 
     uri => Task.delay { memo(uri) }

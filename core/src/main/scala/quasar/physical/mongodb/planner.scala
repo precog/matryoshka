@@ -32,20 +32,13 @@ import Workflow._
 import org.threeten.bp.{Duration, Instant}
 import scalaz._, Scalaz._
 
-trait Conversions {
-  import jscore._
-
-  def jsDate(value: Bson.Date)         = New(Name("Date"), List(Literal(Js.Str(value.value.toString))))
-  def jsObjectId(value: Bson.ObjectId) = New(Name("ObjectId"), List(Literal(Js.Str(value.str))))
-}
-object Conversions extends Conversions
-
-object MongoDbPlanner extends Planner[Crystallized] with Conversions {
+object MongoDbPlanner extends Planner[Crystallized] with JsConversions {
   import LogicalPlan._
   import Planner._
   import WorkflowBuilder._
 
-  import quasar.recursionschemes._, Recursive.ops._, TraverseT.ops._
+  import quasar.recursionschemes._, cofree._, Fix._
+  import Recursive.ops._, TraverseT.ops._
 
   import agg._
   import array._
@@ -1067,34 +1060,25 @@ object MongoDbPlanner extends Planner[Crystallized] with Conversions {
   }
 
   def plan(logical: Fix[LogicalPlan]): EitherWriter[PlannerError, Crystallized] = {
-    // NB: locally add state on top of the result monad so everything
-    // can be done in a single for comprehension.
-    type M[A] = StateT[EitherT[(Vector[PhaseResult], ?), PlannerError, ?], NameGen, A]
-    // NB: cannot resolve the implicits, for mysterious reasons (H-K type inference)
-    implicit val F: Monad[EitherT[(Vector[PhaseResult], ?), PlannerError, ?]] =
-      EitherT.eitherTMonad[(Vector[PhaseResult], ?), PlannerError]
-    implicit val A: Applicative[StateT[EitherT[(Vector[PhaseResult], ?), PlannerError, ?], NameGen, ?]] =
-      StateT.stateTMonadState[NameGen, EitherT[(Vector[PhaseResult], ?), PlannerError, ?]]
+    // NB: Locally add state on top of the result monad so everything
+    //     can be done in a single for comprehension.
+    type PlanT[X[_], A] = EitherT[X, PlannerError, A]
+    type GenT[X[_], A]  = StateT[X, NameGen, A]
+    type W[A]           = (PhaseResults, A)
+    type F[A]           = PlanT[W, A]
+    type M[A]           = GenT[F, A]
 
     def log[A: RenderTree](label: String)(ma: M[A]): M[A] =
-      ma.flatMap { a =>
+      ma flatMap { a =>
         val result = PhaseResult.Tree(label, RenderTree[A].render(a))
-        StateT[EitherT[(Vector[PhaseResult], ?), PlannerError, ?], NameGen, A]((ng: NameGen) =>
-          EitherT[(Vector[PhaseResult], ?), PlannerError, (NameGen, A)](
-            (Vector(result), \/-(ng -> a))))
+        ((Vector(result), a): W[A]).liftM[PlanT].liftM[GenT]
       }
 
     def swizzle[A](sa: StateT[PlannerError \/ ?, NameGen, A]): M[A] =
-      StateT[EitherT[(Vector[PhaseResult], ?), PlannerError, ?], NameGen, A] { (ng: NameGen) =>
-        EitherT[(Vector[PhaseResult], ?), PlannerError, (NameGen, A)](
-          (Vector.empty, sa.run(ng)))
-      }
-
-    def stateT[F[_]: Functor, S, A](fa: F[A]) =
-      StateT[F, S, A](s => fa.map((s, _)))
+      StateT[F, NameGen, A](ng => EitherT(sa.run(ng).point[W]))
 
     def liftError[A](ea: PlannerError \/ A): M[A] =
-      swizzle(stateT[PlannerError \/ ?, NameGen, A](ea))
+      EitherT(ea.point[W]).liftM[GenT]
 
     val wfƒ = workflowƒ ⋙ (_ ∘ (_ ∘ (_ ∘ normalize)))
 

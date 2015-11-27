@@ -3,17 +3,13 @@ scala:
 - 2.11.7
 jdk: oraclejdk8
 sudo: false
-before_install:
-- "./scripts/installMongo mongodb-linux-x86_64-2.6.9 mongo2.6 27018"
-- "./scripts/installMongo mongodb-linux-x86_64-3.0.4 mongo3.0 27019 --auth"
-script: "./scripts/build"
-after_success:
-- "./scripts/publishJarIfMaster"
-# Upload coverage information to coveralls.io
-- "./sbt 'project core' coveralls"
-# Upload coverage information to codecov.io (BETA)
-# Unsure about whether it will do coverage for all the code base as opposed to just core
-- pip install --user codecov && codecov
+script:
+  - export MONGO_LINUX="MONGO_${MONGO_RELEASE}_LINUX"
+  - export MONGO_PORT="MONGO_${MONGO_RELEASE}_PORT"
+  - export MONGO_AUTH="MONGO_${MONGO_RELEASE}_AUTH"
+  - ./scripts/installMongo mongodb-linux-x86_64-${!MONGO_LINUX} mongo ${!MONGO_PORT} ${!MONGO_AUTH}
+  - ./scripts/build $MONGO_RELEASE
+after_success: ./scripts/afterSuccess
 notifications:
   irc:
     template:
@@ -22,6 +18,19 @@ notifications:
   slack:
     secure: KPCXtCAjtlpRQcH7TQtprrf67yIqPVpht9L6/+wbbNd14Tj3x53fiZ3OTabHVx3SL2ZWxbWq+FJGxdIFMyxC/fC0bV9flB7PlRtqHJV1Q7g49odAMAZL7syWr7vFP5bJt+TXuxHvMBihDHFk1Cehy4a1cnrOMReDgqGIFCwQtbI=
 env:
+  matrix:
+  - MONGO_RELEASE=2_6
+  - MONGO_RELEASE=3_0
+  - MONGO_RELEASE=3_0_RO
   global:
   - LOCAL_MONGODB=true
   - ISOLATED_ENV=true
+  - MONGO_2_6_LINUX=2.6.11
+  - MONGO_2_6_PORT=27018
+  - MONGO_2_6_AUTH=""
+  - MONGO_3_0_LINUX=3.0.7
+  - MONGO_3_0_PORT=27019
+  - MONGO_3_0_AUTH=""
+  - MONGO_3_0_RO_LINUX=3.0.7
+  - MONGO_3_0_RO_PORT=27019
+  - MONGO_3_0_RO_AUTH="--auth"

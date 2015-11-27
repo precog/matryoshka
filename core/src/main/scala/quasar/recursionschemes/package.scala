@@ -26,46 +26,7 @@ import scalaz.{Tree => ZTree, Node => _, _}, Id.Id, Scalaz._
 import simulacrum.typeclass
 
 /** Generalized folds, unfolds, and refolds. */
-package object recursionschemes {
-  implicit def RecCorecTraverseT[T[_[_]]: Recursive: Corecursive]: TraverseT[T] =
-    new TraverseT[T] {
-      def traverse[M[_]: Applicative, F[_], G[_]](t: T[F])(f: F[T[F]] => M[G[T[G]]]) =
-        f(t.project).map(Corecursive[T].embed)
-    }
-
-  final case class Fix[F[_]](unFix: F[Fix[F]]) {
-    override def toString = unFix.toString
-  }
-  implicit val FixRecursive: Recursive[Fix] = new Recursive[Fix] {
-    def project[F[_]](t: Fix[F]) = t.unFix
-  }
-  implicit val FixCorecursive: Corecursive[Fix] = new Corecursive[Fix] {
-    def embed[F[_]](t: F[Fix[F]]) = Fix(t)
-  }
-
-  implicit def CofreeRecursive[A]: Recursive[Cofree[?[_], A]] =
-    new Recursive[Cofree[?[_], A]] {
-      def project[F[_]](t: Cofree[F, A]) = t.tail
-    }
-  implicit def CofreeTraverseT[A]: TraverseT[Cofree[?[_], A]] =
-    new TraverseT[Cofree[?[_], A]] {
-      def traverse[M[_]: Applicative, F[_], G[_]](t: Cofree[F, A])(f: F[Cofree[F, A]] => M[G[Cofree[G, A]]]) =
-        f(t.tail).map(Cofree(t.head, _))
-    }
-
-  // NB: Not currently possible because this requires `Functor[F]` and that
-  //     cascades to break other things (for the time being).
-  // implicit def FreeCorecursive[A]: Corecursive[Free [?[_], A]] =
-  //   new Corecursive[Free [?[_], A]] {
-  //     def embed[F[_]: Functor](t: F[Free[F, A]]) = Free.liftF(t).join
-  //   }
-  // implicit def FreeTraverseT[A]: TraverseT[Free[?[_], A]] =
-  //   new TraverseT[Free[?[_], A]] {
-  //     def traverse[M[_]: Applicative, F[_], G[_]](t: Free[F, A])(f: F[Free[F, A]] => M[G[Free[G, A]]]) =
-  //       t.fold(
-  //         _.point[Free[F, ?]].point[M],
-  //         f(_).map(Free.liftF(_).join))
-  //   }
+package object recursionschemes extends CofreeInstances with FreeInstances {
 
   def cofCataM[S[_]: Traverse, M[_]: Monad, A, B](t: Cofree[S, A])(f: (A, S[B]) => M[B]): M[B] =
     t.tail.traverse(cofCataM(_)(f)).flatMap(f(t.head, _))
@@ -189,21 +150,6 @@ package object recursionschemes {
           F.lift(Free.point[H, α](_)),
           as => F.lift(Free.liftF(_: H[Free[H, α]]).join)(k(H.lift(distGFutu(k)(H, F)(_: Free[H, F[α]]))(as))))
     }
-
-  implicit def FixRenderTree[F[_]](implicit RF: RenderTree ~> λ[α => RenderTree[F[α]]]):
-      RenderTree[Fix[F]] =
-    new RenderTree[Fix[F]] {
-      def render(v: Fix[F]) =
-        RF(FixRenderTree[F]).render(v.unFix).relabel("Fix(" + _ + ")")
-    }
-
-  implicit def FixShow[F[_]](implicit F: Show ~> λ[α => Show[F[α]]]):
-      Show[Fix[F]] =
-    Show.show(f => F(FixShow[F]).show(f.unFix))
-
-  implicit def FixEqual[F[_]](implicit F: Equal ~> λ[α => Equal[F[α]]]):
-      Equal[Fix[F]] =
-    Equal.equal((a, b) => F(FixEqual[F]).equal(a.unFix, b.unFix))
 
   sealed trait Hole
   val Hole = new Hole{}

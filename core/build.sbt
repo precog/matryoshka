@@ -8,15 +8,13 @@ connectInput in run := true
 
 outputStrategy := Some(StdoutOutput)
 
-import ScoverageSbtPlugin._
+import scoverage._
 
 ScoverageKeys.coverageExcludedPackages := "quasar.repl;.*RenderTree"
 
 ScoverageKeys.coverageMinimum := 79
 
 ScoverageKeys.coverageFailOnMinimum := true
-
-ScoverageKeys.coverageHighlighting := true
 
 sbtbuildinfo.BuildInfoPlugin.projectSettings
 

@@ -154,7 +154,7 @@ object NonTerminal {
 @typeclass trait RenderTree[A] {
   def render(a: A): RenderedTree
 }
-object RenderTree {
+object RenderTree extends RenderTreeInstances {
   def fromToString[A](simpleType: String) = new RenderTree[A] {
     val nodeType = simpleType :: Nil
     def render(v: A) = Terminal(nodeType, Some(v.toString))
@@ -339,4 +339,10 @@ object RenderTree {
   }
 
   val windowCount = new java.util.concurrent.atomic.AtomicInteger()
+}
+
+sealed abstract class RenderTreeInstances {
+  implicit val renderTreeUnit = new RenderTree[Unit] {
+    def render(v: Unit) = Terminal(List("()", "Unit"), None)
+  }
 }

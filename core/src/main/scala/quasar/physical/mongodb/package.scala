@@ -16,12 +16,21 @@
 
 package quasar.physical
 
+import quasar.Predef.Vector
+import quasar.javascript.Js
 import quasar.namegen._
-import quasar.jscore
 
+import com.mongodb.MongoException
 import scalaz._
 
 package object mongodb {
+  type MongoErrT[F[_], A] = EitherT[F, MongoException, A]
+
+  type WorkflowExecErrT[F[_], A] = EitherT[F, WorkflowExecutionError, A]
+
+  type JavaScriptPrg    = Vector[Js.Stmt]
+  type JavaScriptLog[A] = Writer[JavaScriptPrg, A]
+
   // TODO: parameterize over label (SD-512)
   def freshName: State[NameGen, BsonField.Name] =
     quasar.namegen.freshName("tmp").map(BsonField.Name)

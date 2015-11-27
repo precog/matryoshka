@@ -1,7 +1,7 @@
 package quasar.physical.mongodb
 
 import quasar.Predef._
-import quasar._
+import quasar.fs.Path
 import quasar.javascript._
 
 import scala.collection.immutable.ListMap
@@ -14,7 +14,6 @@ import org.specs2.scalaz._
 class EvaluatorSpec extends Specification with DisjunctionMatchers {
   "evaluate" should {
     import Workflow._
-    import fs.Path
 
     "write trivial workflow to JS" in {
       val wf = $read(Collection("db", "zips"))
@@ -128,7 +127,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |        this))
           |  },
           |  function (key, values) { return Array.sum(values) },
-          |  {  });
+          |  { "out": { "inline": NumberLong(1) } });
           |""".stripMargin)
     }
 
@@ -145,7 +144,10 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |      (function (key, value) { return [key, value] })(this._id, this))
           |  },
           |  function (key, values) { return values[0] },
-          |  { "query": { "$where": function () { return foo } } });
+          |  {
+          |    "out": { "inline": NumberLong(1) },
+          |    "query": { "$where": function () { return foo } }
+          |  });
           |""".stripMargin)
     }
 
@@ -187,7 +189,7 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |  },
           |  function (key, values) { return Array.sum(values) },
           |  {
-          |    "out": { "reduce": "tmp.gen_0", "nonAtomic": true },
+          |    "out": { "reduce": "tmp.gen_0", "db": "db", "nonAtomic": true },
           |    "query": { "pop": { "$lte": NumberLong(1000) } }
           |  });
           |db.tmp.gen_0.find();

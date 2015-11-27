@@ -3,7 +3,6 @@ package quasar.sql
 import quasar.Predef._
 import quasar.RenderTree.ops._
 import quasar.fp._
-import quasar.recursionschemes._
 import quasar.specs2._
 
 import org.specs2.mutable._
