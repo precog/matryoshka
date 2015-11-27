@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-package quasar.recursionschemes
+package quasar
+package recursionschemes
 
 import quasar.Predef._
 
@@ -45,5 +46,13 @@ import simulacrum.typeclass
       M[T[F]] =
     f(a, t).flatMap { case (a, tf) =>
       traverse(tf)(_.traverse(topDownCataM(_, a)(f)))
+    }
+}
+
+object TraverseT {
+  implicit def recCorecTraverseT[T[_[_]]: Recursive: Corecursive]: TraverseT[T] =
+    new TraverseT[T] {
+      def traverse[M[_]: Applicative, F[_], G[_]](t: T[F])(f: F[T[F]] => M[G[T[G]]]) =
+        f(Recursive[T].project(t)).map(Corecursive[T].embed)
     }
 }

@@ -3,7 +3,7 @@ package quasar.recursionschemes
 import quasar.Predef._
 import quasar.{RenderTree, Terminal, NonTerminal}
 import quasar.fp._
-import Recursive.ops._, FunctorT.ops._
+import Recursive.ops._, FunctorT.ops._, Fix._
 
 import org.scalacheck._
 import org.specs2.ScalaCheck
