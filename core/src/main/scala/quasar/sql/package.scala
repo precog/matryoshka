@@ -17,7 +17,7 @@
 package quasar
 
 import quasar.Predef._
-import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
+import quasar.recursionschemes._, Recursive.ops._, TraverseT.ops._
 import quasar.fs._
 
 import scalaz._, Scalaz._
@@ -71,18 +71,18 @@ package object sql {
   def relativizePaths(q: Expr, basePath: Path): Path.PathError \/ Expr =
     q.cataM[Path.PathError \/ ?, Expr](mapPathsEƒ(_.from(basePath)))
 
-  def rewriteRelations(q: Expr)(f: SqlRelation[Expr] => Option[SqlRelation[Expr]]): Expr = {
-    def rewrite(r: SqlRelation[Expr]): Option[SqlRelation[Expr]] =
+  def rewriteRelationsM[F[_]: Monad](q: Expr)(f: SqlRelation[Expr] => OptionT[F, SqlRelation[Expr]]): F[Expr] = {
+    def rewrite(r: SqlRelation[Expr]): OptionT[F, SqlRelation[Expr]] =
       f(r).orElse(r match {
         case JoinRelation(left, right, tpe, clause) =>
           (rewrite(left) |@| rewrite(right))((l,r) => sql.JoinRelation(l, r, tpe, clause))
-        case _ => None
+        case _ => OptionT.none
       })
-    q.transAnaT(x => x match {
+    q.transAnaTM {
       case Fix(sel @ ExprF.SelectF(_, _, Some(rel), _, _, _)) =>
-        rewrite(rel).fold(x)(r => Fix(sel.copy(relations = Some(r))))
-      case _ => x
-    })
+        rewrite(rel).fold(r => Fix(sel.copy(relations = Some(r))), Fix(sel))
+      case x => x.point[F]
+    }
   }
 
   def pprint(sql: Expr) = sql.para(pprintƒ)

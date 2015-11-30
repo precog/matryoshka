@@ -18,6 +18,8 @@ import scalaz.stream._
 class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserEnv {
   import Backend._
   import Path.PathError._
+  import Planner.CompilationError._
+  import SemanticError._
   import Evaluator.EvalPathError
 
   def parse(query: String) =
@@ -32,14 +34,30 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
     val nested = NestedBackend(Map(DirNode("mnt") -> backend))
 
     val views = Map(
-      Path("/view/simpleZips") -> config.ViewConfig(parse("select _id as zip, city, state from  \"/" + ZipsPath.simplePathname + "\"")),
-      Path("/view/a/smallCities") -> config.ViewConfig(parse("select city as City, state as St, sum(pop) as Size from \"/" + ZipsPath.simplePathname + "\" group by city, state having sum(pop) <= 1000 order by city, state")),
+      Path("/view/simpleZips") -> config.ViewConfig(
+        parse("select _id as zip, city, state from  \"/" + ZipsPath.simplePathname + "\""),
+        Variables(Map())),
+      Path("/view/a/smallCities") -> config.ViewConfig(
+        parse("select city as City, state as St, sum(pop) as Size from \"/" + ZipsPath.simplePathname + "\" " +
+              "group by city, state having sum(pop) <= :cutoff order by city, state"),
+        Variables(Map(VarName("cutoff") -> VarValue("1000")))),
       // NB: this view refers to the previous view using a relative path
-      Path("/view/a/smallCityCounts1") -> config.ViewConfig(parse("select St, count(*) from smallCities group by St order by count(*) desc, St")),
+      Path("/view/a/smallCityCounts1") -> config.ViewConfig(
+        parse("select St, count(*) from smallCities group by St order by count(*) desc, St"),
+        Variables(Map())),
       // ...and this one uses an absolute path, and lives in a different dir:
-      Path("/view/b/smallCityCounts2") -> config.ViewConfig(parse("select St, count(*) from \"/view/a/smallCities\" group by St order by count(*) desc, St")),
-      Path("/view/badRef") -> config.ViewConfig(parse("""select foo from "/mnt/test/nonexistent"""")),
-      Path("/mnt/overlayed") -> config.ViewConfig(parse("select * from \"/" + ZipsPath.simplePathname + "\"")))
+      Path("/view/b/smallCityCounts2") -> config.ViewConfig(
+        parse("select St, count(*) from \"/view/a/smallCities\" group by St order by count(*) desc, St"),
+        Variables(Map())),
+      Path("/view/badRef") -> config.ViewConfig(
+        parse("""select foo from "/mnt/test/nonexistent""""),
+        Variables(Map())),
+      Path("/view/unboundVar") -> config.ViewConfig(
+        parse("""select foo from "/mnt/test/nonexistent" where bar < :baz"""),
+        Variables(Map())),
+      Path("/mnt/overlayed") -> config.ViewConfig(
+        parse("select * from \"/" + ZipsPath.simplePathname + "\""),
+        Variables(Map())))
 
     val root = ViewBackend(nested, views)
 
@@ -86,6 +104,11 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
         PEvalError(EvalPathError(NonexistentPathError(Path("/test/nonexistent"), None))))
     }
 
+    "count view with unbound variable" in {
+      root.count(Path("/view/unboundVar")).run.run must beLeftDisjunction(
+        ViewCompilationError(CSemanticError(UnboundVariable(VarName("baz")))))
+    }
+
     "scan non-view" in {
       root.scan(ZipsPath, 0, Some(10)).map(κ(1)).sum.runLast.run.run must
         beRightDisjunction(Some(10))
@@ -124,6 +147,11 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
     "scan view with bad reference" in {
       root.scan(Path("/view/badRef"), 0, None).runLog.run.run must beLeftDisjunction(
         ResultProcessingError(PEvalError(EvalPathError(NonexistentPathError(Path("/test/nonexistent"), None)))))
+    }
+
+    "scan view with unbound variable" in {
+      root.scan(Path("/view/unboundVar"), 0, None).runLog.run.run must beLeftDisjunction(
+        ResultCompilationError(CSemanticError(UnboundVariable(VarName("baz")))))
     }
 
     "trivial query referring to a view" in {
@@ -182,6 +210,12 @@ class ViewSpecs extends BackendTest with DisjunctionMatchers with SkippedOnUserE
         e => failure(e.toString),
         _.runLog.run.run must beLeftDisjunction(
           PEvalError(EvalPathError(NonexistentPathError(Path("/test/nonexistent"), None)))))
+    }
+
+    "query with view with unbound variable" in {
+      val query = """select * from "/view/unboundVar""""
+      root.evalResults(QueryRequest(parse(query), Variables(Map.empty))) must beLeftDisjunction(
+          CSemanticError(UnboundVariable(VarName("baz"))))
     }
 
     val oneDoc = Process.emit(Data.Obj(ListMap("a" -> Data.Int(0))))

@@ -1,6 +1,6 @@
 import quasar.Predef.{Long, String, Vector}
 import quasar.fp._
-import quasar.recursionschemes._, Fix._, Recursive.ops._, FunctorT.ops._
+import quasar.recursionschemes._, Fix._, FunctorT.ops._
 import quasar.sql._
 
 import scalaz._
@@ -38,7 +38,7 @@ package object quasar {
     for {
       ast         <- phase("SQL AST", query.right)
       substAst    <- phase("Variables Substituted",
-                           ast.cataM[SemanticError \/ ?, Expr](Variables.substVarsƒ(vars)) leftMap (_.wrapNel))
+                        Variables.substVars(ast, vars) leftMap (_.wrapNel))
       annTree     <- phase("Annotated Tree", AllPhases(substAst))
       logical     <- phase("Logical Plan", Compiler.compile(annTree) leftMap (_.wrapNel))
       simplified  <- phase("Simplified", logical.transCata(repeatedly(Optimizer.simplifyƒ)).right)

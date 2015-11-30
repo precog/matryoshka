@@ -16,14 +16,15 @@
 
 package quasar.config
 
-import com.mongodb.ConnectionString
 import quasar.Predef._
+import quasar._, Evaluator._, Errors._
 import quasar.config.FsPath.NonexistentFileError
 import quasar.fp._
-import quasar._, Evaluator._, Errors._
 import quasar.Evaluator.EnvironmentError.EnvFsPathError
+import quasar.Planner.CompilationError.CSemanticError
 import quasar.fs.{Path => EnginePath, _}
 
+import com.mongodb.ConnectionString
 import java.io.{File => JFile}
 import scala.util.Properties._
 import argonaut._, Argonaut._
@@ -61,26 +62,48 @@ object MongoDbConfig {
     casecodec1(MongoDbConfig.apply, MongoDbConfig.unapply)("connectionUri")
 }
 
-final case class ViewConfig(query: sql.Expr) extends MountConfig {
-  def validate(path: EnginePath) =
-    if (path.relative) -\/(InvalidConfig("Not an absolute path: " + path))
-    else if (path.pureDir) -\/(InvalidConfig("Not a file path: " + path))
-    else \/-(())
+final case class ViewConfig(query: sql.Expr, variables: Variables) extends MountConfig {
+  def validate(path: EnginePath) = for {
+    _ <- if (path.relative) -\/(InvalidConfig("Not an absolute path: " + path))
+          else if (path.pureDir) -\/(InvalidConfig("Not a file path: " + path))
+          else \/-(())
+    _ <- Variables.substVars(query, variables).leftMap(e => EnvCompError(CSemanticError(e)))
+  } yield ()
 }
 object ViewConfig {
-  private val UriPattern = "([a-z][a-z0-9+-.]*):///\\?q=(.+)".r
+  private val VarPrefix = "var."
 
-  private def fromUri(uri: String): String \/ ViewConfig = for {
-    gs       <- UriPattern.unapplySeq(uri) \/> ("could not parse URI: " + uri)
-    scheme   <- nonEmpty(gs(0))            \/> ("missing URI scheme: " + uri)
-    _        <- if (scheme == "sql2") \/-(()) else -\/("unrecognized scheme: " + scheme)
-    queryEnc <- nonEmpty(gs(1))            \/> ("missing query: " + uri)
-    queryStr <- \/.fromTryCatchNonFatal(java.net.URLDecoder.decode(queryEnc, "UTF-8")).leftMap(_.getMessage + "; " + queryEnc)
-    query <- new sql.SQLParser().parse(sql.Query(queryStr)).leftMap(_.message)
-  } yield ViewConfig(query)
+  private def fromUri(uri: String): String \/ ViewConfig = {
+    import org.http4s._, util._
 
-  private def toUri(cfg: ViewConfig) =
-    "sql2:///?q=" + java.net.URLEncoder.encode(sql.pprint(cfg.query), "UTF-8")
+    for {
+      parsed <- Uri.fromString(uri).leftMap(_.sanitized)
+      _      <- parsed.scheme.fold[String \/ Unit](-\/("missing URI scheme: " + parsed))(
+                  scheme => if (scheme == CaseInsensitiveString("sql2")) \/-(()) else -\/("unrecognized scheme: " + scheme))
+      queryStr <- parsed.params.get("q") \/> ("missing query: " + uri)
+      query <- new sql.SQLParser().parse(sql.Query(queryStr)).leftMap(_.message)
+      vars = Variables(parsed.multiParams.collect {
+              case (n, vs) if n.startsWith(VarPrefix) =>
+                VarName(n.substring(VarPrefix.length)) -> VarValue(vs.lastOption.getOrElse(""))
+            })
+    } yield ViewConfig(query, vars)
+  }
+
+  private def toUri(cfg: ViewConfig): String = {
+    import org.http4s._, util._
+
+    // NB: host and path are specified here just to force the URI to have
+    // all three slashes, as the documentation shows it. The current parser
+    // will accept any number of slashes, actually, since we're ignoring
+    // the host and path for now.
+    Uri(
+      scheme = Some(CaseInsensitiveString("sql2")),
+      authority = Some(Uri.Authority(host = Uri.RegName(CaseInsensitiveString("")))),
+      path = "/",
+      query = Query.fromMap(
+        Map("q" -> List(sql.pprint(cfg.query))) ++
+          cfg.variables.value.map { case (n, v) => (VarPrefix + n.value) -> List(v.value) })).renderString
+  }
 
   implicit def Codec = CodecJson[ViewConfig](
     cfg => Json("connectionUri" := toUri(cfg)),
@@ -100,7 +123,7 @@ object MountConfig {
   implicit val Codec = CodecJson[MountConfig](
     encoder = _ match {
       case x @ MongoDbConfig(_) => ("mongodb", MongoDbConfig.Codec.encode(x)) ->: jEmptyObject
-      case x @ ViewConfig(_)    => ("view", ViewConfig.Codec.encode(x)) ->: jEmptyObject
+      case x @ ViewConfig(_, _) => ("view", ViewConfig.Codec.encode(x)) ->: jEmptyObject
     },
     decoder = c => (c.fields match {
       case Some("mongodb" :: Nil) => c.get[MongoDbConfig]("mongodb")

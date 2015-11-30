@@ -52,7 +52,7 @@ object Mounter {
     }
 
     val (views, nonViews) = unzipDisj(mountings.toList.map {
-      case (path, cfg @ ViewConfig(_)) => -\/((path, cfg));
+      case (path, cfg @ ViewConfig(_, _)) => -\/((path, cfg));
       case pair => \/-(pair)
     })
     nonViews.foldLeftM(NestedBackend(Map()): Backend)(rec).map(root =>

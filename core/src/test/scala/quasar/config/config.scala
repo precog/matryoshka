@@ -99,33 +99,55 @@ abstract class ConfigSpec[Config: CodecJson] extends Specification with Disjunct
   }
 
   "View encoding" should {
+    import quasar.{Variables, VarName, VarValue}
     import quasar.sql
     import argonaut._, Argonaut._
 
     val read = sql.Select(sql.SelectAll, List(sql.Proj(sql.Splice(None), None)), Some(sql.TableRelationAST("zips", None)), None, None, None)
 
     "encode" in {
-      ViewConfig.Codec.encode(ViewConfig(read)) must_==
-        Json("connectionUri" := "sql2:///?q=%28select+*+from+zips%29")
+      ViewConfig.Codec.encode(ViewConfig(read, Variables(Map()))) must_==
+        Json("connectionUri" := "sql2:///?q=%28select%20%2A%20from%20zips%29")
+    }
+
+    "encode with var" in {
+      ViewConfig.Codec.encode(ViewConfig(read, Variables(Map(VarName("a") -> VarValue("1"))))) must_==
+        Json("connectionUri" := "sql2:///?q=%28select%20%2A%20from%20zips%29&var.a=1")
     }
 
     def decode(js: Json) = ViewConfig.Codec.decode(js.hcursor).result
 
     "decode" in {
       decode(Json("connectionUri" := "sql2:///?q=%28select+*+from+zips%29")) must beRightDisjunction(
-        ViewConfig(read))
+        ViewConfig(read, Variables(Map())))
+    }
+
+    "decode with var" in {
+      // NB: the _last_ value for a given var name is used.
+      decode(Json("connectionUri" := "sql2:///?q=%28select+*+from+zips%29&var.a=1&var.b=2&var.b=3")) must beRightDisjunction(
+        ViewConfig(read, Variables(Map(
+          VarName("a") -> VarValue("1"),
+          VarName("b") -> VarValue("3")))))
+    }
+
+    "decode with missing query" in {
+      decode(Json("connectionUri" := "sql2:///?p=foo")).leftMap(_._1) must
+        beLeftDisjunction("missing query: sql2:///?p=foo")
     }
 
     "decode with bad scheme" in {
-      decode(Json("connectionUri" := "foo:///?q=%28select+*+from+zips%29")) must beLeftDisjunction
+      decode(Json("connectionUri" := "foo:///?q=%28select+*+from+zips%29")).leftMap(_._1) must
+        beLeftDisjunction("unrecognized scheme: foo")
     }
 
     "decode with unparseable URI" in {
-      decode(Json("connectionUri" := "?")) must beLeftDisjunction
+      decode(Json("connectionUri" := "?")).leftMap(_._1) must
+        beLeftDisjunction("missing URI scheme: ?")
     }
 
     "decode with bad encoding" in {
-      decode(Json("connectionUri" := "sql2:///?q=%28select+*+from+zips%29%")) must beLeftDisjunction
+      decode(Json("connectionUri" := "sql2:///?q=%F%28select+*+from+zips%29")).leftMap(_._1) must
+        beLeftDisjunction
     }
   }
 
@@ -236,6 +258,7 @@ class CoreConfigSpec extends ConfigSpec[CoreConfig] with ScalaCheck {
 }
 
 object CoreConfigGen {
+  import quasar.{Variables, VarName, VarValue}
   import quasar.sql
   import Arbitrary._
   import Gen._
@@ -259,5 +282,10 @@ object CoreConfigGen {
     Some(sql.TableRelationAST("foo", None)),
     None, None, None)
 
-  def viewCfgGen = Gen.const(ViewConfig(SimpleQuery))
+  def viewCfgGen = for {
+    vars <- listOf(for {
+      n <- alphaChar
+      x <- choose(0, 100)
+    } yield VarName(n.toString) -> VarValue(x.toString))
+  } yield ViewConfig(SimpleQuery, Variables(vars.toMap))
 }
