@@ -1,13 +1,9 @@
 import sbt._
 import Keys._
+import CustomKeys._
 import de.heikoseeberger.sbtheader.license.Apache2_0
 import de.heikoseeberger.sbtheader.HeaderPlugin
 import scoverage._
-
-val scalazVersion  = "7.1.4"
-val slcVersion     = "0.4"
-val monocleVersion = "1.1.1"
-val pathyVersion   = "0.0.3"
 
 // Exclusive execution settings
 lazy val ExclusiveTests = config("exclusive") extend Test
@@ -81,29 +77,37 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   ),
   console <<= console in Test, // console alias test:console
   initialCommands in (Test, console) := """ammonite.repl.Repl.run("prompt.update(\"λ \")")""",
+
+  scalazVersion  := "7.1.4",
+  slcVersion     := "0.4",
+  monocleVersion := "1.1.1",
+  pathyVersion   := "0.0.3",
+  http4sVersion  := "0.10.1",
+
   libraryDependencies ++= Seq(
-    "org.scalaz"        %% "scalaz-core"               % scalazVersion  % "compile, test",
-    "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion  % "compile, test",
-    "org.scalaz.stream" %% "scalaz-stream"             % "0.7.3a"       % "compile, test",
-    "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion % "compile, test",
-    "com.github.julien-truffaut" %% "monocle-generic"  % monocleVersion % "compile, test",
-    "com.github.julien-truffaut" %% "monocle-macro"    % monocleVersion % "compile, test",
-    "com.github.scopt"  %% "scopt"                     % "3.3.0"        % "compile, test",
-    "org.threeten"      %  "threetenbp"                % "1.2"          % "compile, test",
-    "org.mongodb"       %  "mongo-java-driver"         % "3.1.0"        % "compile, test",
-    "org.mongodb"       %  "mongodb-driver-async"      % "3.1.0"        % "compile, test",
-    "io.argonaut"       %% "argonaut"                  % "6.1"          % "compile, test",
-    "org.jboss.aesh"    %  "aesh"                      % "0.55"         % "compile, test",
-    "org.typelevel"     %% "shapeless-scalaz"          % slcVersion     % "compile, test",
-    "com.slamdata"      %% "pathy-core"                % pathyVersion   % "compile",
-    "com.github.mpilquist" %% "simulacrum"             % "0.4.0"        % "compile, test",
-    "com.slamdata"      %% "pathy-scalacheck"          % pathyVersion   % "test",
-    "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion  % "test",
-    "org.specs2"        %% "specs2-core"               % "2.4"          % "test",
-    "org.scalacheck"    %% "scalacheck"                % "1.11.6"       % "test" force(),
-    "org.typelevel"     %% "scalaz-specs2"             % "0.3.0"        % "test",
-    "org.typelevel"     %% "shapeless-scalacheck"      % slcVersion     % "test",
-    "net.databinder.dispatch" %% "dispatch-core"       % "0.11.1"       % "test"),
+    "org.scalaz"        %% "scalaz-core"               % scalazVersion.value  % "compile, test",
+    "org.scalaz"        %% "scalaz-concurrent"         % scalazVersion.value  % "compile, test",
+    "org.scalaz.stream" %% "scalaz-stream"             % "0.7.3a"             % "compile, test",
+    "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion.value % "compile, test",
+    "com.github.julien-truffaut" %% "monocle-generic"  % monocleVersion.value % "compile, test",
+    "com.github.julien-truffaut" %% "monocle-macro"    % monocleVersion.value % "compile, test",
+    "com.github.scopt"  %% "scopt"                     % "3.3.0"              % "compile, test",
+    "org.threeten"      %  "threetenbp"                % "1.2"                % "compile, test",
+    "org.mongodb"       %  "mongo-java-driver"         % "3.1.0"              % "compile, test",
+    "org.mongodb"       %  "mongodb-driver-async"      % "3.1.0"              % "compile, test",
+    "io.argonaut"       %% "argonaut"                  % "6.1"                % "compile, test",
+    "org.jboss.aesh"    %  "aesh"                      % "0.55"               % "compile, test",
+    "org.typelevel"     %% "shapeless-scalaz"          % slcVersion.value     % "compile, test",
+    "com.slamdata"      %% "pathy-core"                % pathyVersion.value   % "compile",
+    "com.github.mpilquist" %% "simulacrum"             % "0.4.0"              % "compile, test",
+    "org.http4s"        %% "http4s-core"               % http4sVersion.value  % "compile",
+    "com.slamdata"      %% "pathy-scalacheck"          % pathyVersion.value   % "test",
+    "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion.value  % "test",
+    "org.specs2"        %% "specs2-core"               % "2.4"                % "test",
+    "org.scalacheck"    %% "scalacheck"                % "1.11.6"             % "test" force(),
+    "org.typelevel"     %% "scalaz-specs2"             % "0.3.0"              % "test",
+    "org.typelevel"     %% "shapeless-scalacheck"      % slcVersion.value     % "test",
+    "net.databinder.dispatch" %% "dispatch-core"       % "0.11.1"             % "test"),
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")))
 
 // Using a Seq of desired warts instead of Warts.allBut due to an incremental compilation issue.
