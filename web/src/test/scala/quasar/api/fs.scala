@@ -3,7 +3,7 @@ package quasar.api
 import quasar.Predef._
 import quasar.RenderTree.ops._
 import quasar.api.Mock.ActionType
-import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
+import quasar.recursionschemes._, Fix._, Recursive.ops._, FunctorT.ops._
 import quasar.fp._
 import quasar._, Backend._, Evaluator._
 import quasar.config._
