@@ -1,9 +1,9 @@
 package quasar.api
 
-import com.mongodb.ConnectionString
 import quasar.Predef._
+import quasar.RenderTree.ops._
 import quasar.api.Mock.ActionType
-import quasar.recursionschemes.Fix
+import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._
 import quasar.fp._
 import quasar._, Backend._, Evaluator._
 import quasar.config._
@@ -14,6 +14,7 @@ import scala.concurrent.duration._
 import scala.collection.mutable
 
 import argonaut._, Argonaut._
+import com.mongodb.ConnectionString
 import com.ning.http.client.Response
 import dispatch._
 import org.specs2.mutable._
@@ -122,13 +123,13 @@ object Mock {
     private val pastActions = scala.collection.mutable.ListBuffer[Action]()
 
     val planner = new Planner[Plan] {
-      def plan(logical: Fix[LogicalPlan]) = Planner.emit(Vector.empty, \/-(Plan("logical: " + logical.toString)))
+      def plan(logical: Fix[LogicalPlan]) = Planner.emit(Vector.empty, \/-(Plan(logical.toString)))
     }
     val evaluator = new Evaluator[Plan] {
       val name = "Stub"
       def executeTo(physical: Plan, out: Path) =
         EitherT.right(Task.now(ResultPath.User(out)))
-      def evaluate(physical: Plan) = Process.emit(Data.Obj(ListMap("7" -> Data.Str("ok"))))
+      def evaluate(physical: Plan) = Process.emit(Data.Obj(ListMap("__plan" -> Data.Str(physical.description))))
       def compile(physical: Plan) = "Stub" -> Cord(physical.toString)
     }
     val RP = PlanRenderTree
@@ -281,6 +282,19 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       body(mock, client)
     }
   }
+
+
+  def toAST(q: String): Json =
+    implicitly[EncodeJson[RenderedTree]].encode(
+      (new sql.SQLParser()).parse(sql.Query(q)).toOption.get.render)
+  def toLP(q: String): Fix[LogicalPlan] = (for {
+    ast        <- (new sql.SQLParser()).parse(sql.Query(q)).toOption
+    annotated  <- SemanticAnalysis.AllPhases(ast).toOption
+    logical    <- Compiler.compile(annotated).toOption
+    simplified <- logical.transCata(repeatedly(Optimizer.simplifyƒ)).toOption
+    checked    <- LogicalPlan.ensureCorrectTypes(simplified).toOption
+  } yield checked).getOrElse(scala.sys.error("could not compile: " + q))
+
 
   "OPTIONS" should {
 
@@ -1132,12 +1146,16 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
       "execute simple query" in {
         withServer(backends1, config1) { client =>
-          val path = query(client) / "foo" / "" <<? Map("q" -> "select * from bar")
+          val path = query(client) / "foo" / "" <<? Map(
+                      "q" -> "select * from zips where pop < :cutoff",
+                      "offset" -> "10",
+                      "limit" -> "20",
+                      "var.cutoff" -> "1000")
           val result = Http(path OK asJson)
 
           result() must beRightDisjunction((
             readableContentType,
-            List(Json("7" := "ok"))))
+            List(Json("__plan" := toLP("select * from zips where pop < 1000 offset 10 limit 20").toString))))
         }
       }
 
@@ -1191,8 +1209,15 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
       }
 
       "execute simple query" in {
+        val qStr = "select city from zips where pop < :cutoff"
+        val actual = "select city from \"./zips\" where pop < 1000"
+
         withServer(backends1, config1) { client =>
-          val req = (query(client) / "foo" / "").POST.setBody("select * from bar").setHeader("Destination", "/foo/tmp/gen0")
+          val req = (query(client) / "foo" / "" <<? Map(
+                      "var.cutoff" -> "1000"))
+                    .POST
+                    .setBody(qStr)
+                    .setHeader("Destination", "/foo/tmp/gen0")
 
           val meta = Http(req)
           val resp = meta()
@@ -1201,8 +1226,10 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
           (for {
             json   <- Parse.parse(resp.getResponseBody).toOption
             out    <- json.field("out")
+            ast    <- ((json.hcursor --\ "phases" =\ 1) --\ "tree").focus
             outStr <- out.string
-          } yield outStr) must beSome("/foo/tmp/gen0")
+          } yield (outStr, ast)) must beSome(
+            ("/foo/tmp/gen0", toAST(actual)))
         }
       }
 
@@ -1251,10 +1278,12 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
       "plan simple query" in {
         withServer(backends1, config1) { client =>
-          val path = compile(client) / "foo" / "" <<? Map("q" -> "select * from bar")
+          val path = compile(client) / "foo" / "" <<? Map(
+                      "q" -> "select * from zips where pop < :cutoff",
+                      "var.cutoff" -> "1000")
           val result = Http(path OK as.String)
 
-          result() must_== "Stub\nPlan(logical: Squash(Read(Path(\"bar\"))))"
+          result() must_== "Stub\nPlan(" + toLP("select * from zips where pop < 1000") + ")"
         }
       }
 
@@ -1297,10 +1326,13 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
 
       "plan simple query" in {
         withServer(backends1, config1) { client =>
-          val path = (compile(client) / "foo" / "").POST.setBody("select * from bar")
+          val path = (compile(client) / "foo" / "" <<? Map(
+                        "var.cutoff" -> "1000"))
+                      .POST
+                      .setBody("select * from zips where pop < :cutoff")
           val result = Http(path OK as.String)
 
-          result() must_== "Stub\nPlan(logical: Squash(Read(Path(\"bar\"))))"
+          result() must_== "Stub\nPlan(" + toLP("select * from zips where pop < 1000") + ")"
         }
       }
 
