@@ -284,6 +284,29 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
         ArrayLiteral(List(StringLiteral("X"), StringLiteral("Y"))))
     }
 
+    "parse empty set literal" in {
+      parser.parse("()") must beRightDisjunction(
+        SetLiteral(Nil))
+    }
+
+    "parse parenthesized simple expression (which is syntactically identical to a 1-element set literal)" in {
+      parser.parse("(a)") must beRightDisjunction(
+        Ident("a"))
+    }
+
+    "parse 2-element set literal" in {
+      parser.parse("(a, b)") must beRightDisjunction(
+        SetLiteral(List(Ident("a"), Ident("b"))))
+    }
+
+    "parse deeply nested parens" in {
+      // NB: Just a stress-test that the parser can handle a deeply
+      // left-recursive expression with many unneeded parenes, which
+      // happens to be exactly what pprint produces.
+      val q = """(select distinct topArr, topObj from "/demo/demo/nested" where (((((((((((((((search((((topArr)[*])[*])[*], '^.*$', true)) or (search((((topArr)[*])[*]).a, '^.*$', true))) or (search((((topArr)[*])[*]).b, '^.*$', true))) or (search((((topArr)[*])[*]).c, '^.*$', true))) or (search((((topArr)[*]).botObj).a, '^.*$', true))) or (search((((topArr)[*]).botObj).b, '^.*$', true))) or (search((((topArr)[*]).botObj).c, '^.*$', true))) or (search((((topArr)[*]).botArr)[*], '^.*$', true))) or (search((((topObj).midArr)[*])[*], '^.*$', true))) or (search((((topObj).midArr)[*]).a, '^.*$', true))) or (search((((topObj).midArr)[*]).b, '^.*$', true))) or (search((((topObj).midArr)[*]).c, '^.*$', true))) or (search((((topObj).midObj).botArr)[*], '^.*$', true))) or (search((((topObj).midObj).botObj).a, '^.*$', true))) or (search((((topObj).midObj).botObj).b, '^.*$', true))) or (search((((topObj).midObj).botObj).c, '^.*$', true)))"""
+      parser.parse(q).map(pprint) must beRightDisjunction(q)
+    }
+
     "round-trip to SQL and back" ! prop { (node: Expr) =>
       val parsed = parser.parse(pprint(node))
 
