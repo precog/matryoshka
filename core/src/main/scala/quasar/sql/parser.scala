@@ -185,17 +185,8 @@ class SQLParser extends StandardTokenParsers {
     }
   }
 
-  def rep2sep[T, U](p: => Parser[T], s: => Parser[U]) =
-    p ~ rep1(s ~> p) ^^ { case x ~ y => x :: y }
-
-  def set_literal: Parser[Expr] =
-    op("(") ~ op(")") ^^^ SetLiteral(Nil) |
-    (op("(") ~> rep2sep(expr, op(",")) <~ op(")")) ^^ (SetLiteral(_))
-
   def array_literal: Parser[Expr] =
     (op("[") ~> repsep(expr, op(",")) <~ op("]")) ^^ (ArrayLiteral(_))
-
-  def set_expr: Parser[Expr] = select | set_literal
 
   def cmp_expr: Parser[Expr] =
     default_expr ~ rep(relational_suffix | negatable_suffix | is_suffix) ^^ {
@@ -268,8 +259,11 @@ class SQLParser extends StandardTokenParsers {
     } |
     ident ^^ (Ident(_)) |
     array_literal |
-    set_expr |
-    op("(") ~> expr <~ op(")") |
+    op("(") ~> repsep(expr, op(",")) <~ op(")") ^^ {
+      case Nil      => SetLiteral(Nil)
+      case x :: Nil => x
+      case xs       => SetLiteral(xs)
+    } |
     unary_operator ~ primary_expr ^^ {
       case op ~ expr => op(expr)
     } |
