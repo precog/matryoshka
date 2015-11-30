@@ -541,7 +541,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("db", "zips")),
         // FIXME: Inline this $simpleMap with the $match (SD-456)
         $simpleMap(NonEmptyList(MapExpr(JsFn(Name("x"), obj(
-          "__tmp4" -> Select(Select(ident("x"), "city"), "length"),
+          "__tmp4" ->
+            Call(ident("NumberLong"),
+              List(Select(Select(ident("x"), "city"), "length"))),
           "__tmp5" -> ident("x"))))),
           ListMap()),
         $match(Selector.And(
@@ -561,7 +563,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
         $read(Collection("db", "zips")),
         // FIXME: Inline this $simpleMap with the $match (SD-456)
         $simpleMap(NonEmptyList(MapExpr(JsFn(Name("x"), obj(
-          "__tmp8" -> Select(Select(ident("x"), "city"), "length"),
+          "__tmp8" ->
+            Call(ident("NumberLong"),
+              List(Select(Select(ident("x"), "city"), "length"))),
           "__tmp9" -> ident("x"),
           "__tmp10" -> Select(ident("x"), "pop"))))),
           ListMap()),
@@ -1439,7 +1443,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $simpleMap(NonEmptyList(MapExpr(JsFn(Name("x"), obj(
               "1" ->
                 If(Call(ident("isString"), List(Select(ident("x"), "city"))),
-                  Select(Select(ident("x"), "city"), "length"),
+                  Call(ident("NumberLong"),
+                    List(Select(Select(ident("x"), "city"), "length"))),
                   ident("undefined")))))),
               ListMap()),
             $group(
@@ -1846,7 +1851,9 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $simpleMap(NonEmptyList(
             MapExpr(JsFn(Name("x"), obj(
               "state" -> Select(ident("x"), "state"),
-              "shortest" -> Select(Select(ident("x"), "__tmp6"), "length"))))),
+              "shortest" ->
+                Call(ident("NumberLong"),
+                  List(Select(Select(ident("x"), "__tmp6"), "length"))))))),
             ListMap()),
           $project(
             reshape(
@@ -1864,7 +1871,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               obj(
                 "__tmp10" ->
                   If(Call(ident("isString"), List(Select(ident("x"), "city"))),
-                    Select(Select(ident("x"), "city"), "length"),
+                    Call(ident("NumberLong"),
+                      List(Select(Select(ident("x"), "city"), "length"))),
                     ident("undefined")))))),
             ListMap()),
           $group(
@@ -1882,7 +1890,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             "0" ->
               If(Call(ident("isString"), List(Select(ident("x"), "city"))),
                 BinOp(jscore.Add,
-                  Select(Select(ident("x"), "city"), "length"),
+                  Call(ident("NumberLong"),
+                    List(Select(Select(ident("x"), "city"), "length"))),
                   jscore.Literal(Js.Num(1, false))),
                 ident("undefined")))))),
             ListMap()),
@@ -2537,7 +2546,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             "pop"    -> Select(ident("x"), "pop"),
             "__tmp6" ->
               If(Call(ident("isString"), List(Select(ident("x"), "city"))),
-                Select(Select(ident("x"), "city"), "length"),
+                Call(ident("NumberLong"),
+                  List(Select(Select(ident("x"), "city"), "length"))),
                 ident("undefined")))))),
             ListMap()),
           $sort(NonEmptyList(BsonField.Name("__tmp6") -> Ascending)),
@@ -2555,7 +2565,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $simpleMap(NonEmptyList(MapExpr(JsFn(Name("x"), obj(
             "0" ->
               If(Call(ident("isString"), List(Select(ident("x"), "city"))),
-                Select(Select(ident("x"), "city"), "length"),
+                Call(ident("NumberLong"),
+                  List(Select(Select(ident("x"), "city"), "length"))),
                 ident("undefined")))))),
             ListMap()),
           $project(
@@ -2571,7 +2582,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           "city" -> Select(ident("x"), "city"),
           "1" ->
             If(Call(ident("isString"), List(Select(ident("x"), "city"))),
-              Select(Select(ident("x"), "city"), "length"),
+              Call(ident("NumberLong"),
+                List(Select(Select(ident("x"), "city"), "length"))),
               ident("undefined")))))),
           ListMap()),
         $project(
@@ -2741,7 +2753,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                 obj(
                   "0" ->
                     If(Call(ident("isString"), List(Select(ident("x"), "city"))),
-                      Select(Select(ident("x"), "city"), "length"),
+                      Call(ident("NumberLong"),
+                        List(Select(Select(ident("x"), "city"), "length"))),
                       ident("undefined")),
                   "1" ->
                     BinOp(jscore.Eq,
@@ -2784,7 +2797,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             NonEmptyList(MapExpr(JsFn(Name("x"), obj(
               "0" ->
                 If(Call(ident("isString"), List(Select(ident("x"), "name"))),
-                  Select(Select(ident("x"), "name"), "length"),
+                  Call(ident("NumberLong"),
+                    List(Select(Select(ident("x"), "name"), "length"))),
                   ident("undefined")),
               "1" ->
                 If(
