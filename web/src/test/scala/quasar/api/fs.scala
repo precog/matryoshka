@@ -17,6 +17,8 @@ import argonaut._, Argonaut._
 import com.mongodb.ConnectionString
 import com.ning.http.client.Response
 import dispatch._
+import org.http4s._, dsl.{Path => _, _}, client._
+import org.http4s.client.blaze.SimpleHttp1Client
 import org.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.concurrent._
@@ -64,11 +66,39 @@ object Utils {
     val srv = Server.createServers(
       Server.webConfigLens.wcPort.set(port)(config),
       5.seconds,
+      api,
       api.AllServices.map(_.toList)).run.run
     try { body(client, () => reloads.toList) } finally {
       Traverse[EnvironmentError \/ ?].compose[List].compose[(Int, ?)].compose[Throwable \/ ?]
         .traverse(srv)(_.shutdown).void.run
     }
+  }
+
+  val http = "http"
+  val https = "https"
+
+  def serverURI(scheme: String, port: Int, path: String) =
+    Uri(scheme = Some(scheme.ci), authority = Some(Uri.Authority(port = Some(port)))) / "server" / path
+
+  val httpClient = SimpleHttp1Client()
+
+  def expectingRestart[A, B, WC, SC, S <: ServerOps[WC, SC]]
+    (server: S)
+    (config: WC, timeoutMillis: Long = 10000)
+    (causeRestart: => A)(afterRestart: => B): B = {
+
+    val (servers, forCfg) = server.servers(Nil, None, Duration(1, SECONDS), κ(EitherT(Task.now(().right))),
+      κ(EitherT(Task.now(NestedBackend(Map()).right[EnvironmentError]))), κ(Task.now(())))
+
+    val channel = Process[ServerOps.Servers => Task[Option[B]]](
+      (_: ServerOps.Servers) => Task.delay { causeRestart; None },
+      (_: ServerOps.Servers) => Task.delay(Some(afterRestart)).onFinish(_ => forCfg(None)))
+
+    val exec = servers.through(channel).runLast.map(_.flatten).flatMap(_.cata(
+      Task.now(_),
+      Task.fail(new RuntimeException("impossible!"))))
+
+    (forCfg(Some(config)) *> exec).runFor(timeoutMillis)
   }
 
   /** Handler for response bodies containing newline-separated JSON documents, for use with Dispatch. */
@@ -1928,25 +1958,11 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
   }
 
   "/server" should {
-    def withServerExpectingRestart[A, B](backend: Backend, config: WebConfig, timeoutMillis: Long = 10000, port: Int = 8888)
-                                        (causeRestart: Req => A)(afterRestart: => B): B = {
-      type S = ServerOps.Servers
-
-      val client = dispatch.host("localhost", port)
-
-      val (servers, forCfg) = Server.servers(Nil, None, 1.seconds, tester, mounter(backend), _ => Task.now(()))
-
-      val channel = Process[S => Task[A \/ B]](
-        κ(Task.delay(\/.left(causeRestart(client)))),
-        κ(Task.delay(\/.right(afterRestart)).onFinish(_ => forCfg(None))))
-
-      val exec = servers.through(channel).runLast.flatMap(
-        _.flatMap(_.toOption).cata[Task[B]](
-          Task.now(_),
-          Task.fail(new RuntimeException("impossible!"))))
-
-      (forCfg(Some(Server.webConfigLens.wcPort.set(port)(config))) *> exec).runFor(timeoutMillis)
-    }
+    def withServerExpectingRestart[A, B]
+      (config: WebConfig)
+      (causeRestart: => A)(afterRestart: => B): B =
+      expectingRestart[A, B, WebConfig, ServerConfig, ServerOps[WebConfig, ServerConfig]](
+        Server)(config)(causeRestart)(afterRestart)
 
     "be capable of providing its name and version" in {
       withServer(noBackends, config1) { client =>
@@ -1958,37 +1974,34 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     }
 
     "restart on new port when PUT /port succeeds" in {
-      val newPort = 8889
+      val port = Server.anyAvailablePort.run
+      val newPort = Server.anyAvailablePort.run
 
-      withServerExpectingRestart(noBackends, config1)({ client =>
-        val result1 = Http((client / "server" / "info") > code)
-        result1() must_== 200
+      withServerExpectingRestart(Server.webConfigLens.wcPort.set(port)(config1)) {
+        httpClient(serverURI(http, port, "info")).attemptRun.map(_.status) must
+          beRightDisjunction(Ok)
 
-        val req2 = (client / "server" / "port").PUT.setBody(newPort.toString)
-        val result2 = Http(req2 > code)
-
-        result2() must_== 200
-      })({
-        val req3 = dispatch.host("localhost", newPort) / "server" / "info"
-        val result3 = Http(req3 > code)
-        result3() must_== 200
-      })
+        httpClient(PUT(serverURI(http, port, "port"), newPort.toString)).attemptRun.map(_.status) must
+          beRightDisjunction(Ok)
+      } {
+        httpClient(serverURI(http, newPort, "info")).attemptRun.map(_.status) must
+          beRightDisjunction(Ok)
+      }
     }
 
     "restart on default port when DELETE /port successful" in {
-      withServerExpectingRestart(noBackends, config1)({ client =>
-        val result1 = Http((client / "server" / "info") > code)
-        result1() must_== 200
+      val port = Server.anyAvailablePort.run
 
-        val req2 = (client / "server" / "port").DELETE
-        val result2 = Http(req2 > code)
+      withServerExpectingRestart(Server.webConfigLens.wcPort.set(port)(config1)) {
+        httpClient(serverURI(http, port, "info")).attemptRun.map(_.status) must
+          beRightDisjunction(Ok)
 
-        result2() must_== 200
-      })({
-        val req3 = dispatch.host("localhost", ServerConfig.DefaultPort) / "server" / "info"
-        val result3 = Http(req3 > code)
-        result3() must_== 200
-      })
+        httpClient(DELETE(serverURI(http, port, "port"))).attemptRun.map(_.status) must
+          beRightDisjunction(Ok)
+      } {
+        httpClient(serverURI(http, ServerConfig.DefaultPort, "info")).attemptRun.map(_.status) must
+          beRightDisjunction(Ok)
+      }
     }
   }
 

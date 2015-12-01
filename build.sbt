@@ -101,6 +101,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "com.slamdata"      %% "pathy-core"                % pathyVersion.value   % "compile",
     "com.github.mpilquist" %% "simulacrum"             % "0.4.0"              % "compile, test",
     "org.http4s"        %% "http4s-core"               % http4sVersion.value  % "compile",
+    "org.http4s"        %% "http4s-blaze-client"       % http4sVersion.value  % "test",
     "com.slamdata"      %% "pathy-scalacheck"          % pathyVersion.value   % "test",
     "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion.value  % "test",
     "org.specs2"        %% "specs2-core"               % "2.4"                % "test",

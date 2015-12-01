@@ -22,6 +22,8 @@ import quasar.api.ServerOps._
 import quasar.console._
 import quasar._, Errors._, Evaluator._
 import quasar.config._
+import quasar.Evaluator.EnvironmentError.EnvPathError
+import quasar.fs.Path.PathError.InvalidPathError
 
 import java.io.File
 import java.lang.System
@@ -34,6 +36,7 @@ import scalaz.stream._
 
 import org.http4s.server.{Server => Http4sServer, HttpService}
 import org.http4s.server.blaze.BlazeBuilder
+import shapeless._, nat._, ops.nat._
 
 object ServerOps {
   type Builders = List[(Int, BlazeBuilder)]
@@ -80,11 +83,14 @@ abstract class ServerOps[WC: CodecJson, SC](
     })
 
   /** An available port number. */
-  def anyAvailablePort: Task[Int] = Task.delay {
-    val s = new java.net.ServerSocket(0)
-    val p = s.getLocalPort
-    s.close()
-    p
+  def anyAvailablePort: Task[Int] = anyAvailablePorts[_1].map(_.head)
+
+  /** Available port numbers. */
+  def anyAvailablePorts[A <: Nat: ToInt]: Task[Sized[IndexedSeq[Int], A]] = Task.delay {
+    Sized.wrap(
+      (1 to toInt[A])
+        .map(_ => { val s = new java.net.ServerSocket(0); (s, s.getLocalPort) })
+        .map { case (s, p) => { s.close; p } })
   }
 
   /** Returns the requested port if available, or the next available port. */
@@ -94,9 +100,10 @@ abstract class ServerOps[WC: CodecJson, SC](
                        anyAvailablePort)
       .getOrElse(requested)
 
-  def builders(config: WC, idleTimeout: Duration): Task[Builders]
+  // TODO: InvalidPathError too specific?
+  def builders(config: WC, idleTimeout: Duration, fsApi: FileSystemApi[WC, SC]): ETask[InvalidPathError, Builders]
 
-  def createServers(config: WC, idleTimeout: Duration, svcs: EnvTask[Services])
+  def createServers(config: WC, idleTimeout: Duration, fsApi: FileSystemApi[WC, SC], svcs: EnvTask[Services])
     : EnvTask[ServersErrors] = {
 
     def servicesBuilder(services: Services, builders: Builders): Builders =
@@ -110,7 +117,7 @@ abstract class ServerOps[WC: CodecJson, SC](
       }
     }
 
-    (svcs ⊛ EitherT.right(builders(config, idleTimeout)))(servicesBuilder) >>= startBuilder
+    (svcs ⊛ builders(config, idleTimeout, fsApi).leftMap(EnvPathError(_)))(servicesBuilder) >>= startBuilder
   }
 
   case class StaticContent(loc: String, path: String)
@@ -144,7 +151,7 @@ abstract class ServerOps[WC: CodecJson, SC](
         port <- choosePort(wcPort.get(config)).liftM[EnvErrT]
         fsApi = fileSystemApi(config, mounter, tester, reload, configWriter, webConfigLens)
         updCfg =  wcPort.set(port)(config)
-        serversErrors <- createServers(updCfg, idleTimeout, fsApi.AllServices.map(_.toList ++ fileSvcs ++ redirSvc))
+        serversErrors <- createServers(updCfg, idleTimeout, fsApi, fsApi.AllServices.map(_.toList ++ fileSvcs ++ redirSvc))
         servers <- serversErrors.traverseM {
           case (p, -\/(ex)) => Task.now(List()) <* stdout(s"Server failed to start listening on port $p. ${ex.getMessage}")
           case (p, \/-(s)) => Task.now(List((p, s))) <* stdout(s"Server started listening on port $p")
@@ -270,9 +277,11 @@ object Server extends ServerOps(
     ServerConfig.port)) {
   import webConfigLens._
 
-  def builders(config: WebConfig, idleTimeout: Duration): Task[Builders] = Task.now(List(
-    wcPort.get(config) -> BlazeBuilder
-      .withIdleTimeout(idleTimeout)
-      .bindHttp(wcPort.get(config), "0.0.0.0")))
+  def builders(config: WebConfig, idleTimeout: Duration, fsApi: FileSystemApi[WebConfig, ServerConfig])
+    : ETask[InvalidPathError, Builders] =
+    liftE(Task.now(List(
+      wcPort.get(config) -> BlazeBuilder
+        .withIdleTimeout(idleTimeout)
+      . bindHttp(wcPort.get(config), "0.0.0.0"))))
 
 }
