@@ -1,0 +1,20 @@
+{
+    "name": "filter, sort, and limit",
+
+    "data": "zips.data",
+
+    "query": "select * from zips where city like 'BOU%' order by pop limit 10",
+
+    "predicate": "equalsExactly",
+    "expected": [
+        { "city": "BOULDER",          "state": "WY", "pop":  112, "loc": [-109.540105, 42.688146] },
+        { "city": "BOULDER",          "state": "UT", "pop":  131, "loc": [-111.426646, 37.916606] },
+        { "city": "BOUTON",           "state": "IA", "pop":  552, "loc": [ -93.996286, 41.828432] },
+        { "city": "BOULDER JUNCTION", "state": "WI", "pop":  563, "loc": [ -89.632454, 46.111183] },
+        { "city": "BOUCKVILLE",       "state": "NY", "pop":  650, "loc": [ -75.567841, 42.894024] },
+        { "city": "BOULEVARD",        "state": "CA", "pop": 1163, "loc": [-116.319982, 32.671934] },
+        { "city": "BOULDER",          "state": "MT", "pop": 1737, "loc": [-112.113757, 46.230647] },
+        { "city": "BOUTTE",           "state": "LA", "pop": 2432, "loc": [ -90.393396, 29.897319] },
+        { "city": "BOURBON",          "state": "IN", "pop": 2976, "loc": [ -86.117438, 41.309785] },
+        { "city": "BOURBON",          "state": "MO", "pop": 4456, "loc": [ -91.22254,  38.172039] }]
+}

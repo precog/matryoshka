@@ -22,6 +22,8 @@ import quasar.recursionschemes._, Recursive.ops._
 import quasar._, Errors._, Evaluator._
 import quasar.fs.Path, Path.PathError.NonexistentPathError
 import quasar.javascript._
+import quasar.physical.mongodb.accumulator._
+import quasar.physical.mongodb.expression._
 import Workflow._
 
 import com.mongodb._
@@ -48,11 +50,16 @@ trait Executor[F[_], C] {
   def exists(coll: Collection): F[Unit]
 
   def pureCursor(values: List[Bson]): F[C]
-  def readCursor(source: Col): F[C]
+  def wrappedCount(field: BsonField.Name, source: Col, count: Count): F[C]
+  def find(source: Col, find: Find): F[C]
   def aggregateCursor(source: Col, pipeline: workflowtask.Pipeline): F[C]
   def mapReduceCursor(source: Col, mr: MapReduce): F[C]
 
   def fail[A](e: EvaluationError): F[A]
+
+  protected implicit class CursorOp[A](a: A) {
+    def app[F[_]: Foldable, B](b: F[B])(f: (A, B) => A) = b.foldLeft(a)(f)
+  }
 }
 
 sealed trait Col {
@@ -62,6 +69,18 @@ object Col {
   final case class Tmp(collection: Collection) extends Col
   final case class User(collection: Collection) extends Col
 }
+
+final case class Find(
+  query:      Option[Selector],
+  projection: Option[Bson.Doc],
+  sort:       Option[NonEmptyList[(BsonField, SortType)]],
+  skip:       Option[Long],
+  limit:      Option[Long])
+
+final case class Count(
+  query:      Option[Selector],
+  skip:       Option[Long],
+  limit:      Option[Long])
 
 class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[
     StateT[EvaluationTask, SequenceNameGenerator.EvalState, ?],
@@ -222,11 +241,10 @@ trait MongoDbEvaluatorImpl[F[_], C] {
         emit(executor.exists(value).as(Col.User(value): Col))
 
       case QueryTask(source, query, skip, limit) =>
-        // TODO: This is an approximation since we're ignoring all fields of "Query" except the selector.
         execute0(
           PipelineTask(
             source,
-            $Match((), query.query) ::
+            $Match((), query) ::
               skip.map($Skip((), _) :: Nil).getOrElse(Nil) :::
               limit.map($Limit((), _) :: Nil).getOrElse(Nil)), out, tempCol)
 
@@ -278,6 +296,81 @@ trait MongoDbEvaluatorImpl[F[_], C] {
       case Col.Tmp(coll) => ResultPath.Temp(coll.asPath)
     }
 
+  /** Extractor to determine whether a `$Group` represents a simple `count()`.
+    */
+  private object Countable {
+    def unapply(op: PipelineOp): Option[BsonField.Name] = op match {
+      case $Group((), Grouped(map), \/-($literal(Bson.Null)))
+          if map.size ≟ 1 =>
+        map.headOption.fold[Option[BsonField.Name]](None)(head =>
+          if (head._2 == $sum($literal(Bson.Int32(1))))
+            head._1.some
+          else None)
+      case _ => None
+    }
+  }
+
+  private object Projectable {
+    def unapply(op: PipelineOp): Option[Bson.Doc] = op match {
+      case proj @ $Project((), Reshape(map), _)
+          if map.all(_ == \/-($include())) =>
+        proj.rhs.some
+      case _ => None
+    }
+  }
+
+  private def extractRange(pipeline: workflowtask.Pipeline):
+      ((workflowtask.Pipeline, workflowtask.Pipeline),
+        (Option[Long], Option[Long])) =
+    pipeline match {
+      case Nil                                => ((Nil, Nil), (None,   None))
+      case $Limit((), l) :: $Skip((), s) :: t => ((Nil, t),   (s.some, (l - s).some))
+      case $Limit((), l)                 :: t => ((Nil, t),   (None,   l.some))
+      case                  $Skip((), s) :: t => ((Nil, t),   (s.some, None))
+      case h                             :: t => (h :: (_: workflowtask.Pipeline)).first.first(extractRange(t))
+    }
+
+  /** This tries to turn a Pipline into a simpler operation (eg, `count()` or
+    * `find()`) and falls back to a pipeline if it can’t.
+    */
+  // TODO: This should really be handled when building the WorkflowTask, but
+  //       currently that phase knows neither whether the DB is read-only, nor
+  //       if the user wants a cursor.
+  private def evalPipeline(source: Col, pipeline: workflowtask.Pipeline) = {
+    val (pl, (skip, limit)) = extractRange(pipeline)
+    pl match {
+      case (Nil, Nil) =>
+        executor.find(source, Find(None, None, None, skip, limit))
+      case (List($Match((), sel)), Nil) =>
+        executor.find(source, Find(sel.some, None, None, skip, limit))
+      case (List(Projectable(bson)), Nil) =>
+        executor.find(source, Find(None, bson.some, None, skip, limit))
+      case (Nil, List(Projectable(bson))) =>
+        executor.find(source, Find(None, bson.some, None, skip, limit))
+      case (List($Sort((), keys)), Nil) =>
+        executor.find(source, Find(None, None, keys.some, skip, limit))
+      case (List($Match((), sel), Projectable(bson)), Nil) =>
+        executor.find(source, Find(sel.some, bson.some, None, skip, limit))
+      case (List($Match((), sel)), List(Projectable(bson))) =>
+        executor.find(source, Find(sel.some, bson.some, None, skip, limit))
+      case (List($Match((), sel), $Sort((), keys)), Nil) =>
+        executor.find(source, Find(sel.some, None, keys.some, skip, limit))
+      case (List(Projectable(bson), $Sort((), keys)), Nil) =>
+        executor.find(source, Find(None, bson.some, keys.some, skip, limit))
+      case (List($Match((), sel), Projectable(bson), $Sort((), keys)), Nil) =>
+        executor.find(source, Find(sel.some, bson.some, keys.some, skip, limit))
+      case (List(Countable(field)), Nil) if skip ≟ None && limit ≟ None =>
+        executor.wrappedCount(field, source, Count(None, None, None))
+      case (Nil, List(Countable(field))) =>
+        executor.wrappedCount(field, source, Count(None, skip, limit))
+      case (List($Match((), sel), Countable(field)), Nil) if skip ≟ None && limit ≟ None =>
+        executor.wrappedCount(field, source, Count(sel.some, None, None))
+      case (List($Match((), sel)), List(Countable(field))) =>
+        executor.wrappedCount(field, source, Count(sel.some, skip, limit))
+      case _ => executor.aggregateCursor(source, pipeline)
+    }
+  }
+
   def evaluate(physical: Crystallized): F[C] = {
     import quasar.physical.mongodb.workflowtask._
 
@@ -295,10 +388,11 @@ trait MongoDbEvaluatorImpl[F[_], C] {
         executor.pureCursor(bson :: Nil)
 
       case ReadTask(src) =>
-        executor.exists(src) *> executor.readCursor(Col.User(src))
+        executor.exists(src) *>
+          executor.find(Col.User(src), Find(None, None, None, None, None))
 
       case PipelineTask(ReadTask(src), pipeline) =>
-        executor.exists(src) *> executor.aggregateCursor(Col.User(src), pipeline)
+        executor.exists(src) *> evalPipeline(Col.User(src), pipeline)
 
       case MapReduceTask(ReadTask(src), mapReduce, _) =>
         executor.exists(src) *> executor.mapReduceCursor(Col.User(src), mapReduce)
@@ -307,7 +401,7 @@ trait MongoDbEvaluatorImpl[F[_], C] {
         t   <- tempGen.flatMap(tmp => execute0(src, tmp, tempGen)).run
         (temps, dstCol) = t
         _   <- cleanup(temps, dstCol)
-        cur <- executor.aggregateCursor(dstCol, pipeline)
+        cur <- evalPipeline(dstCol, pipeline)
       } yield cur
 
       case MapReduceTask(src, mapReduce, _) => for {
@@ -323,7 +417,7 @@ trait MongoDbEvaluatorImpl[F[_], C] {
         t <- tempGen.flatMap(tmp => execute0(task, tmp, tempGen)).run
         (temps, dstCol) = t
         _   <- cleanup(temps, dstCol)
-        cur <- executor.readCursor(dstCol)
+        cur <- executor.find(dstCol, Find(None, None, None, None, None))
       } yield cur
     }
   }
@@ -410,25 +504,43 @@ class MongoDbExecutor[S](client: MongoClient,
   def pureCursor(values: List[Bson]) =
     liftTask(Task.now(Process.emitAll(values.map(BsonCodec.toData))))
 
-  def readCursor(source: Col) =
-    fromCursor(Task.delay { mongoCol(source.collection).find() }, source)
+  def count0(source: Col, count: Count) =
+    Process.emit(
+      mongoCol(source.collection).count(
+        count.query.fold(Bson.Doc(ListMap()).repr)(_.bson.repr),
+        new com.mongodb.client.model.CountOptions()
+          .app(count.skip)((c, count) => c.skip(count.toInt))
+          .app(count.limit)((c, count) => c.limit(count.toInt))))
+
+  def wrappedCount(field: BsonField.Name, source: Col, count: Count) =
+    liftTask(
+      Task.delay(count0(source, count).map(n =>
+        Data.Obj(ListMap(field.asText -> Data.Int(n))))))
+
+  def find(source: Col, find: Find) =
+    fromCursor(Task.delay(
+      mongoCol(source.collection)
+        .find()
+        .app(find.query)((c, sel) => c.filter(sel.bson.repr))
+        .app(find.projection)((c, proj) => c.projection(proj.repr))
+        .app(find.sort)((c, sort) => c.sort($Sort.keyBson(sort).repr))
+        .app(find.skip)((c, count) => c.skip(count.toInt))
+        .app(find.limit)((c, count) => c.limit(count.toInt))),
+      source)
 
   def aggregateCursor(source: Col, pipeline: workflowtask.Pipeline) = {
     import scala.collection.JavaConverters._
     import scala.Predef.boolean2Boolean
 
-    fromCursor(Task.delay {
-      mongoCol(source.collection)
-        .aggregate(pipeline.map(_.bson.repr).asJava)
-        .allowDiskUse(true)
-    }, source)
+    fromCursor(
+      Task.delay(
+        mongoCol(source.collection)
+          .aggregate(pipeline.map(_.bson.repr).asJava)
+          .allowDiskUse(true)),
+      source)
   }
 
   def mapReduceCursor(source: Col, mr: MapReduce) = {
-    implicit class CursorOp[A](a: A) {
-      def app[B](b: Option[B])(f: (A, B) => A) = b.fold(a)(f(a, _))
-    }
-
     fromCursor(Task.delay {
       mongoCol(source.collection)
         .mapReduce(mr.map.pprint(0), mr.reduce.pprint(0))
@@ -533,8 +645,25 @@ class JSExecutor[F[_]: Monad](nameGen: NameGenerator[F])
 
   def pureCursor(values: List[Bson]) =
     write(Bson.Arr(values).toJs)
-  def readCursor(source: Col) =
-    write(Call(Select(toJsRef(source.collection), "find"), Nil))
+
+  def count0(source: Col, count: Count) =
+    Call(Select(toJsRef(source.collection), "count"), count.query.toList.map(_.bson.toJs))
+      .app(count.skip)((c, count) => Call(Select(c, "limit"), List(Num(count, false))))
+      .app(count.limit)((c, count) => Call(Select(c, "skip"), List(Num(count, false))))
+
+  def wrappedCount(field: BsonField.Name, source: Col, count: Count) =
+    write(AnonElem(List(AnonObjDecl(List(field.asText -> count0(source, count))))))
+
+  def find(source: Col, find: Find) =
+    write(
+      Call(Select(toJsRef(source.collection), "find"),
+        find.query.foldRight(
+          find.projection.foldRight[List[Js.Expr]](Nil)(_.toJs :: _))(
+          _.bson.toJs :: _))
+        .app(find.sort)((c, keys) => Call(Select(c, "sort"), List($Sort.keyBson(keys).toJs)))
+        .app(find.skip)((c, count) => Call(Select(c, "skip"), List(Num(count, false))))
+        .app(find.limit)((c, count) => Call(Select(c, "limit"), List(Num(count, false)))))
+
   def aggregateCursor(source: Col, pipeline: workflowtask.Pipeline) =
     aggregate(source.collection, pipeline)
   def mapReduceCursor(source: Col, mr: MapReduce) =

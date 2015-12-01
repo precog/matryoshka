@@ -39,7 +39,7 @@ object WorkflowTaskF {
 
   /** A task that executes a Mongo read query. */
   final case class QueryTaskF[A](
-    source: A, query: FindQuery, skip: Option[Int], limit: Option[Int])
+    source: A, query: Selector, skip: Option[Int], limit: Option[Int])
       extends WorkflowTaskF[A]
 
   /** A task that executes a Mongo pipeline aggregation. */
@@ -65,22 +65,21 @@ object WorkflowTaskF {
   // final case class EvalTaskF[A](source: A, code: Js.FuncDecl)
   //     extends WorkflowTaskF[A]
 
-  // NB: currently unused, and hurts coverage
-  // implicit def WorkflowTaskFTraverse: Traverse[WorkflowTaskF] =
-  //   new Traverse[WorkflowTaskF] {
-  //     def traverseImpl[G[_], A, B](fa: WorkflowTaskF[A])(f: A => G[B])(implicit G: Applicative[G]):
-  //         G[WorkflowTaskF[B]] =
-  //       fa match {
-  //         case PureTaskF(bson) => G.point(PureTaskF[B](bson))
-  //         case ReadTaskF(coll) => G.point(ReadTaskF[B](coll))
-  //         case QueryTaskF(src, query, skip, limit) =>
-  //           f(src).map(QueryTaskF(_, query, skip, limit))
-  //         case PipelineTaskF(src, pipe) => f(src).map(PipelineTaskF(_, pipe))
-  //         case MapReduceTaskF(src, mr, oa) => f(src).map(MapReduceTaskF(_, mr, oa))
-  //         case FoldLeftTaskF(h, t) =>
-  //           (f(h) |@| t.traverse(f))(FoldLeftTaskF(_, _))
-  //       }
-  //   }
+  implicit def WorkflowTaskFTraverse: Traverse[WorkflowTaskF] =
+    new Traverse[WorkflowTaskF] {
+      def traverseImpl[G[_], A, B](fa: WorkflowTaskF[A])(f: A => G[B])(implicit G: Applicative[G]):
+          G[WorkflowTaskF[B]] =
+        fa match {
+          case PureTaskF(bson) => G.point(PureTaskF[B](bson))
+          case ReadTaskF(coll) => G.point(ReadTaskF[B](coll))
+          case QueryTaskF(src, query, skip, limit) =>
+            f(src).map(QueryTaskF(_, query, skip, limit))
+          case PipelineTaskF(src, pipe) => f(src).map(PipelineTaskF(_, pipe))
+          case MapReduceTaskF(src, mr, oa) => f(src).map(MapReduceTaskF(_, mr, oa))
+          case FoldLeftTaskF(h, t) =>
+            (f(h) |@| t.traverse(f))(FoldLeftTaskF(_, _))
+        }
+    }
 
   implicit def WorkflowTaskRenderTree: RenderTree ~> λ[α => RenderTree[WorkflowTaskF[α]]] =
     new (RenderTree ~> λ[α => RenderTree[WorkflowTaskF[α]]]) {
@@ -101,7 +100,7 @@ object WorkflowTaskF {
             val nt = "PipelineTask" :: WorkflowTaskNodeType
             NonTerminal(nt, (skip.shows + ", " + limit.shows).some,
               ra.render(source) ::
-                Terminal("Query" :: nt, query.toString.some) ::
+                Terminal("Selector" :: nt, query.toString.some) ::
                 Nil)
 
           case PipelineTaskF(source, pipeline) =>
@@ -154,11 +153,11 @@ object ReadTaskF {
 
 object QueryTaskF {
   def apply[A](
-    source: A, query: FindQuery, skip: Option[Int], limit: Option[Int]):
+    source: A, query: Selector, skip: Option[Int], limit: Option[Int]):
       WorkflowTaskF[A] =
     WorkflowTaskF.QueryTaskF[A](source, query, skip, limit)
   def unapply[A](obj: WorkflowTaskF[A]):
-      Option[(A, FindQuery, Option[Int], Option[Int])] =
+      Option[(A, Selector, Option[Int], Option[Int])] =
     obj match {
       case WorkflowTaskF.QueryTaskF(source, query, skip, limit) =>
         Some((source, query, skip, limit))

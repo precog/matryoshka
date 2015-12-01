@@ -31,6 +31,31 @@ package object workflowtask {
 
   type Pipeline = List[PipelineOp]
 
+  // TODO: This should work for any WorkflowF that contains $Project – data
+  //       types a la carte.
+  val simplifyProject: PipelineF ~> PipelineF =
+    new (PipelineF ~> PipelineF) {
+      def apply[α](op: PipelineF[α]) = op match {
+        case $Project(src, Reshape(cont), id) =>
+          $Project(src,
+            Reshape(cont.map {
+              case (k, \/-($var(DocField(v)))) if k == v => k -> $include().right
+              case x                                     => x
+            }),
+            id)
+        case _ => op
+      }
+    }
+
+  val normalize: WorkflowTaskF ~> WorkflowTaskF =
+    new (WorkflowTaskF ~> WorkflowTaskF) {
+      def apply[α](wt: WorkflowTaskF[α]) = wt match {
+        case PipelineTaskF(src, pipeline) =>
+          PipelineTaskF(src, pipeline.map(simplifyProject(_)))
+        case x => x
+      }
+    }
+
   /** Run once a task is known to be completely built. */
   def finish(base: DocVar, task: WorkflowTask):
       (DocVar, WorkflowTask) = task match {
@@ -56,7 +81,7 @@ package object workflowtask {
               src,
               pipeline :+
               $Project((),
-                Reshape(names.map(n => n -> $var(DocField(n)).right).toListMap),
+                Reshape(names.map(_ -> $include().right).toListMap),
                 ExcludeId)))
 
         case None =>

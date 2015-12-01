@@ -422,7 +422,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
         beTree(Crystallized(chain(
           $read(Collection("db", "zips")),
           $project(Reshape(ListMap(
-              BsonField.Name("loc") -> \/-($var(DocField(BsonField.Name("loc")))))),
+              BsonField.Name("loc") -> \/-($field("loc")))),
             IgnoreId),
           $unwind(DocField(BsonField.Name("loc"))),
           $simpleMap(
@@ -480,7 +480,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       beTree(Crystallized(chain(
         $read(Collection("db", "foo")),
         $project(Reshape(ListMap(
-            BsonField.Name("loc") -> \/-($var(DocField(BsonField.Name("loc")))))),
+            BsonField.Name("loc") -> \/-($field("loc")))),
           IgnoreId),
         $unwind(DocField(BsonField.Name("bar"))),
         $unwind(DocField(BsonField.Name("baz"))),
@@ -549,8 +549,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
               \/-($literal(Bson.Null))),
             $Project((),
               Reshape(ListMap(
-                BsonField.Name("a")      -> \/-($field("a")),
-                BsonField.Name("b")      -> \/-($field("b")),
+                BsonField.Name("a")      -> \/-($include()),
+                BsonField.Name("b")      -> \/-($include()),
                 BsonField.Name("equal?") -> \/-($eq($field("a"), $field("b"))))),
               IncludeId),
             $Match((),
@@ -561,8 +561,8 @@ class WorkflowSpec extends Specification with TreeMatchers {
             $Skip((), 5),
             $Project((),
               Reshape(ListMap(
-                BsonField.Name("a") -> \/-($field("a")),
-                BsonField.Name("b") -> \/-($field("b")))),
+                BsonField.Name("a") -> \/-($include()),
+                BsonField.Name("b") -> \/-($include()))),
               IncludeId))))
     }
 

@@ -2331,7 +2331,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
           $group(
             grouped("__tmp0" -> $first($$ROOT)),
             -\/(reshape(
-              "0"  -> $field("city"),
+              "0" -> $field("city"),
               "1" -> $field("state")))),
           $project(
             reshape(
