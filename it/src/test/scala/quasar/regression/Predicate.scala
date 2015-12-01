@@ -4,14 +4,12 @@ package regression
 import quasar.Predef._
 
 import argonaut._, Argonaut._
-
+import org.specs2.execute._
+import org.specs2.matcher._
 import scalaz.{Failure => _, _}
 import scalaz.syntax.apply._
 import scalaz.std.option._
 import scalaz.stream._
-
-import org.specs2.execute._
-import org.specs2.matcher._
 
 sealed trait Predicate {
   def apply[F[_]: Catchable: Monad](
@@ -55,7 +53,7 @@ object Predicate {
       }
       .dropWhile(_.size > 0).take(1)
       .map(xs => xs aka "unmatched expected values" must beEmpty : Result)
-      .runLastOr(failure)
+      .runLastOr(Failure("no results matched any expected value"))
   }
 
   /** Must contain ALL and ONLY the elements in some order. */
@@ -77,7 +75,7 @@ object Predicate {
           (extra aka "unexpected values" must beEmpty) and
           (exp aka "unmatched expected values" must beEmpty): Result
         }
-        .runLastOr(failure)
+        .runLastOr(Failure("no results"))
   }
 
   /** Must EXACTLY match the elements, in order. */

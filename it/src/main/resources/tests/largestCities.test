@@ -1,21 +1,16 @@
 {
     "name": "largest cities",
-
     "data": "zips.data",
-
     "query": "select city, state, sum(pop) from zips group by city, state order by sum(pop) desc limit 10",
-
     "predicate": "equalsExactly",
-    "expected": [
-      { "city": "CHICAGO",      "state": "IL", "2": 2452177 },
-      { "city": "BROOKLYN",     "state": "NY", "2": 2300504 },
-      { "city": "LOS ANGELES",  "state": "CA", "2": 2102295 },
-      { "city": "HOUSTON",      "state": "TX", "2": 2095918 },
-      { "city": "PHILADELPHIA", "state": "PA", "2": 1610956 },
-      { "city": "NEW YORK",     "state": "NY", "2": 1476790 },
-      { "city": "BRONX",        "state": "NY", "2": 1209548 },
-      { "city": "SAN DIEGO",    "state": "CA", "2": 1049298 },
-      { "city": "DETROIT",      "state": "MI", "2":  963243 },
-      { "city": "DALLAS",       "state": "TX", "2":  940191 }
-    ]
+    "expected": [{ "2": 2452177, "city": "CHICAGO",      "state": "IL" },
+                 { "2": 2300504, "city": "BROOKLYN",     "state": "NY" },
+                 { "2": 2102295, "city": "LOS ANGELES",  "state": "CA" },
+                 { "2": 2095918, "city": "HOUSTON",      "state": "TX" },
+                 { "2": 1610956, "city": "PHILADELPHIA", "state": "PA" },
+                 { "2": 1476790, "city": "NEW YORK",     "state": "NY" },
+                 { "2": 1209548, "city": "BRONX",        "state": "NY" },
+                 { "2": 1049298, "city": "SAN DIEGO",    "state": "CA" },
+                 { "2":  963243, "city": "DETROIT",      "state": "MI" },
+                 { "2":  940191, "city": "DALLAS",       "state": "TX" }]
 }

@@ -78,6 +78,45 @@ package object optimize {
 
     def deleteUnusedFields(op: Workflow) = deleteUnusedFields0(op, None)
 
+    /** Converts a \$group with fields that duplicate keys into a \$group
+      * without those fields followed by a \$project that projects those fields
+      * from the key.
+      */
+    val simplifyGroupƒ:
+        WorkflowF[Workflow] => Option[WorkflowF[Workflow]] = {
+      case $Group(src, Grouped(cont), id) =>
+        val (newCont, proj) =
+          cont.foldLeft[(ListMap[BsonField.Name, Accumulator], ListMap[BsonField.Name, Reshape.Shape])](
+            (ListMap(), ListMap())) {
+            case ((newCont, proj), (k, v)) =>
+              lazy val default =
+                (newCont + (k -> v), proj + (k -> $include().right))
+              def maybeSimplify(loc: Option[DocVar]) =
+                loc.fold(
+                  default)(
+                  l => v match {
+                    case $addToSet(_) | $push(_) => default
+                    case _ => (newCont, proj + (k -> $var(l).right))
+                  })
+
+              id.fold(
+                re => maybeSimplify(re.find(v.copoint).map(f => DocField(BsonField.Name("_id") \ f))),
+                expr =>
+                  maybeSimplify(
+                    if (v.copoint == expr) DocField(BsonField.Name("_id")).some
+                    else None))
+          }
+
+        if (newCont == cont)
+          None
+        else
+          $Project(
+            Fix($Group(src, Grouped(newCont), id)),
+            Reshape(proj),
+            IgnoreId).some
+      case _ => None
+    }
+
     private val reorderOpsƒ: WorkflowF[Workflow] => Option[WorkflowF[Workflow]] = {
       def rewriteSelector(sel: Selector, defs: Map[DocVar, DocVar]): Option[Selector] =
         sel.mapUpFieldsM { f =>
@@ -102,7 +141,8 @@ package object optimize {
 
         case $Match(Fix(p @ $Project(src0, shape, id)), sel) =>
           val defs = p.getAll.collect {
-            case (n, $var(x)) => DocField(n) -> x
+            case (n, $var(x))    => DocField(n) -> x
+            case (n, $include()) => DocField(n) -> DocField(n)
           }.toMap
           rewriteSelector(sel, defs).map(sel =>
             $Project(Fix($Match(src0, sel)), shape, id))
@@ -132,7 +172,7 @@ package object optimize {
       if (reordered == wf) wf else reorderOps(reordered)
     }
 
-    def get0(leaves: List[BsonField.Leaf], rs: List[Reshape]): Option[Reshape.Shape] = {
+    def get0(leaves: List[BsonField.Name], rs: List[Reshape]): Option[Reshape.Shape] = {
       (leaves, rs) match {
         case (_, Nil) => Some(\/-($var(BsonField(leaves).map(DocVar.ROOT(_)).getOrElse(DocVar.ROOT()))))
 
@@ -196,7 +236,7 @@ package object optimize {
       for {
         names   <- renameProjectGroup(r, g)
         values1 = names.flatMap {
-          case (oldName, ts) => ts.map((_: BsonField.Leaf) -> g.value(oldName))
+          case (oldName, ts) => ts.map((_: BsonField.Name) -> g.value(oldName))
         }
       } yield Grouped(values1)
     }
@@ -212,7 +252,7 @@ package object optimize {
           case _ => None
         }
         values1 = names.flatMap {
-          case (oldName, ts) => ts.map((_: BsonField.Leaf) -> g.value(oldName))
+          case (oldName, ts) => ts.map((_: BsonField.Name) -> g.value(oldName))
         }
       } yield unwound1 -> Grouped(values1)
     }

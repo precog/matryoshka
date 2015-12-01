@@ -1,14 +1,11 @@
 package quasar.physical.mongodb
 
 import quasar.Predef._
+import quasar.TreeMatchers
+import quasar.recursionschemes._, FunctorT.ops._
 
 import org.specs2.mutable._
-
-import scala.collection.immutable.ListMap
-
-import scalaz._
-
-import quasar.{TreeMatchers}
+import scalaz._, Scalaz._
 
 class OptimizeSpecs extends Specification with TreeMatchers {
   import quasar.physical.mongodb.accumulator._
@@ -17,6 +14,63 @@ class OptimizeSpecs extends Specification with TreeMatchers {
   import IdHandling._
 
   import optimize.pipeline._
+
+  "simplifyGroupƒ" should {
+    "elide useless reduction" in {
+      chain(
+        $read(Collection("db", "zips")),
+        $group(
+          Grouped(ListMap(
+            BsonField.Name("city") -> $last($field("city")))),
+          $field("city").right))
+        .transCata(once(simplifyGroupƒ)) must
+      beTree(chain(
+        $read(Collection("db", "zips")),
+        $group(
+          Grouped(ListMap()),
+          $field("city").right),
+        $project(
+          Reshape(ListMap(
+            BsonField.Name("city") -> $field("_id").right)),
+          IgnoreId)))
+    }
+
+    "elide useless reduction with complex id" in {
+      chain(
+        $read(Collection("db", "zips")),
+        $group(
+          Grouped(ListMap(
+            BsonField.Name("city") -> $max($field("city")))),
+          Reshape(ListMap(
+            BsonField.Name("0") -> $field("city").right,
+            BsonField.Name("1") -> $field("state").right)).left))
+        .transCata(once(simplifyGroupƒ)) must
+      beTree(chain(
+        $read(Collection("db", "zips")),
+        $group(
+          Grouped(ListMap()),
+          Reshape(ListMap(
+            BsonField.Name("0") -> $field("city").right,
+            BsonField.Name("1") -> $field("state").right)).left),
+        $project(
+          Reshape(ListMap(
+            BsonField.Name("city") -> $field("_id", "0").right)),
+          IgnoreId)))
+    }
+
+    "preserve useless-but-array-creating reduction" in {
+      val lp = chain(
+        $read(Collection("db", "zips")),
+        $group(
+          Grouped(ListMap(
+            BsonField.Name("city") -> $push($field("city")))),
+          Reshape(ListMap(
+            BsonField.Name("0") -> $field("city").right)).left))
+
+      lp.transCata(once(simplifyGroupƒ)) must beTree(lp)
+    }
+
+  }
 
   "reorder" should {
     "push $skip before $project" in {

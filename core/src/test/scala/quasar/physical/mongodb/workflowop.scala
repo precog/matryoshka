@@ -193,7 +193,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
     }
   }
 
-  "finalize" should {
+  "crystallize" should {
     import quasar.jscore, jscore._
 
     "coalesce previous projection into a map" in {
@@ -570,7 +570,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       task(crystallize(chain(
         $read(Collection("db", "zips")),
         $match(Selector.Doc(
-          BsonField.Name("loc") \ BsonField.Index(0) ->
+          BsonField.Name("loc") \ BsonField.Name("0") ->
             Selector.Lt(Bson.Int64(-73)))),
         $sort(NonEmptyList(BsonField.Name("city") -> Descending)),
         $limit(100),
@@ -587,7 +587,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
               Js.Access(Js.Ident("value"), Js.Num(0, false)))),
             $Reduce.reduceFoldLeft,
             selection = Some(Selector.Doc(
-              BsonField.Name("loc") \ BsonField.Index(0) ->
+              BsonField.Name("loc") \ BsonField.Name("0") ->
                 Selector.Lt(Bson.Int64(-73)))),
             inputSort =
               Some(NonEmptyList(BsonField.Name("city") -> Descending)),
@@ -601,7 +601,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       task(crystallize(chain(
         $read(Collection("db", "zips")),
         $match(Selector.Doc(
-          BsonField.Name("loc") \ BsonField.Index(0) ->
+          BsonField.Name("loc") \ BsonField.Name("0") ->
             Selector.Lt(Bson.Int64(-73)))),
         $sort(NonEmptyList(BsonField.Name("city") -> Descending)),
         $limit(100),
@@ -620,7 +620,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
                 Js.AnonElem(List(Js.Ident("key"), Js.Ident("value")))))))),
             $Reduce.reduceFoldLeft,
             selection = Some(Selector.Doc(
-              BsonField.Name("loc") \ BsonField.Index(0) ->
+              BsonField.Name("loc") \ BsonField.Name("0") ->
                 Selector.Lt(Bson.Int64(-73)))),
             inputSort =
               Some(NonEmptyList(BsonField.Name("city") -> Descending)),
@@ -634,7 +634,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
       task(crystallize(chain(
         $read(Collection("db", "zips")),
         $match(Selector.Doc(
-          BsonField.Name("loc") \ BsonField.Index(0) ->
+          BsonField.Name("loc") \ BsonField.Name("0") ->
             Selector.Lt(Bson.Int64(-73)))),
         $sort(NonEmptyList(BsonField.Name("city") -> Descending)),
         $limit(100),
@@ -647,7 +647,7 @@ class WorkflowSpec extends Specification with TreeMatchers {
             $Map.mapFn($Map.mapNOP),
             $Reduce.reduceFoldLeft,
             selection = Some(Selector.Doc(
-              BsonField.Name("loc") \ BsonField.Index(0) ->
+              BsonField.Name("loc") \ BsonField.Name("0") ->
                 Selector.Lt(Bson.Int64(-73)))),
             inputSort =
               Some(NonEmptyList(BsonField.Name("city") -> Descending)),

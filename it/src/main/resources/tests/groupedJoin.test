@@ -4,7 +4,7 @@
     "data": "slamengine_commits.data",
     "query": "SELECT p.author.login, COUNT(*) FROM slamengine_commits p INNER JOIN slamengine_commits c ON p.sha = c.sha GROUP BY p.author.login",
     "predicate": "containsExactly",
-    "expected": [{ "login": "mossprescott", "1": 15 },
-                 { "login": "sellout",      "1":  9 },
-                 { "login": "jdegoes",      "1":  6 }]
+    "expected": [{ "1": 15, "login": "mossprescott" },
+                 { "1":  9, "login": "sellout"      },
+                 { "1":  6, "login": "jdegoes"      }]
 }

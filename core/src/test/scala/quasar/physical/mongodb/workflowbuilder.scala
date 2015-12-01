@@ -240,7 +240,7 @@ class WorkflowBuilderSpec
           $group(
             Grouped(ListMap(
               BsonField.Name("__tmp0") -> $first($$ROOT))),
-            -\/(Reshape(ListMap(BsonField.Name("") -> \/-($field("city")))))),
+            -\/(Reshape(ListMap(BsonField.Name("0") -> \/-($field("city")))))),
           $project(Reshape(ListMap(
             BsonField.Name("city") -> \/-($field("__tmp0", "city")))),
             ExcludeId)))
@@ -266,7 +266,7 @@ class WorkflowBuilderSpec
           Grouped(ListMap(
             BsonField.Name("total") -> $sum($$ROOT),
             BsonField.Name("city")  -> $push($field("city")))),
-          -\/(Reshape(ListMap(BsonField.Name("") -> \/-($field("city")))))),
+          -\/(Reshape(ListMap(BsonField.Name("0") -> \/-($field("city")))))),
         $unwind(DocField(BsonField.Name("city"))),
         $group(
           Grouped(ListMap(BsonField.Name("__tmp0") -> $first($$ROOT))),
@@ -393,7 +393,7 @@ class WorkflowBuilderSpec
           $group(
             Grouped(ListMap(
               BsonField.Name("total") -> $sum($field("pop")))),
-            -\/(Reshape(ListMap(BsonField.Name("") -> \/-($field("city"))))))))
+            -\/(Reshape(ListMap(BsonField.Name("0") -> \/-($field("city"))))))))
     }
 
     "group on a field, with un-grouped projection" in {
@@ -416,7 +416,7 @@ class WorkflowBuilderSpec
             Grouped(ListMap(
               BsonField.Name("total") -> $sum($field("pop")),
               BsonField.Name("city")  -> $push($field("city")))),
-            -\/(Reshape(ListMap(BsonField.Name("") -> \/-($field("city")))))),
+            -\/(Reshape(ListMap(BsonField.Name("0") -> \/-($field("city")))))),
           $unwind(DocField(BsonField.Name("city")))))
     }
 

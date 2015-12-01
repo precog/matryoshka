@@ -17,7 +17,6 @@
 package quasar.physical.mongodb
 
 import quasar.Predef._
-import quasar.RenderTree
 import quasar.recursionschemes.Recursive.ops._
 import quasar.physical.mongodb.expression._
 
@@ -42,22 +41,4 @@ package object accumulator {
   }
 
   def groupBson(g: Accumulator) = groupBsonƒ(g.map(_.cata(bsonƒ)))
-
-  implicit val AccumOpTraverse: Traverse[AccumOp] = new Traverse[AccumOp] {
-    def traverseImpl[G[_], A, B](fa: AccumOp[A])(f: A => G[B])(implicit G: Applicative[G]):
-        G[AccumOp[B]] =
-      fa match {
-        case $addToSet(value) => G.map(f(value))($addToSet(_))
-        case $avg(value)      => G.map(f(value))($avg(_))
-        case $first(value)    => G.map(f(value))($first(_))
-        case $last(value)     => G.map(f(value))($last(_))
-        case $max(value)      => G.map(f(value))($max(_))
-        case $min(value)      => G.map(f(value))($min(_))
-        case $push(value)     => G.map(f(value))($push(_))
-        case $sum(value)      => G.map(f(value))($sum(_))
-      }
-  }
-
-  implicit val AccumOpRenderTree: RenderTree[Accumulator] =
-    RenderTree.fromToString[Accumulator]("AccumOp")
 }

@@ -26,7 +26,7 @@ import quasar.physical.mongodb.expression._
 
 import scalaz._, Scalaz._
 
-final case class Grouped(value: ListMap[BsonField.Leaf, Accumulator]) {
+final case class Grouped(value: ListMap[BsonField.Name, Accumulator]) {
   def bson = Bson.Doc(value.map(t => t._1.asText -> groupBson(t._2)))
 
   def rewriteRefs(f: PartialFunction[DocVar, DocVar]): Grouped =
@@ -60,7 +60,7 @@ final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
     case (field, either) => field.asText -> either.fold(_.bson, _.cata(bsonƒ))
   })
 
-  private def projectSeq(fs: NonEmptyList[BsonField.Leaf]): Option[Shape] =
+  private def projectSeq(fs: NonEmptyList[BsonField.Name]): Option[Shape] =
     fs.foldLeftM[Option, Shape](-\/(this))((rez, leaf) =>
       rez.fold(
         r => leaf match {
@@ -82,21 +82,27 @@ final case class Reshape(value: ListMap[BsonField.Name, Reshape.Shape]) {
   def get(field: BsonField): Option[Shape] =
     field.flatten.foldLeftM[Option, Shape](
       -\/(this))(
-      (rez, elem) => rez.fold(_.value.get(elem.toName), κ(None)))
+      (rez, elem) => rez.fold(_.value.get(elem), κ(None)))
+
+  def find(expr: Expression): Option[BsonField] =
+    value.foldLeft[Option[BsonField]](
+      None) {
+      case (acc, (field, value)) =>
+        acc.orElse(value.fold(
+          _.find(expr).map(field \ _),
+          ex => if (ex == expr) field.some else None))
+    }
 
   def set(field: BsonField, newv: Shape): Reshape = {
     def getOrDefault(o: Option[Shape]): Reshape = {
       o.map(_.fold(ι, κ(Reshape.EmptyDoc))).getOrElse(Reshape.EmptyDoc)
     }
 
-    def set0(cur: Reshape, els: List[BsonField.Leaf]): Reshape = els match {
+    def set0(cur: Reshape, els: List[BsonField.Name]): Reshape = els match {
       case Nil => ??? // TODO: Refactor els to be NonEmptyList
       case (x @ BsonField.Name(_)) :: Nil => Reshape(cur.value + (x -> newv))
-      case (x @ BsonField.Index(_)) :: Nil => Reshape(cur.value + (x.toName -> newv))
       case (x @ BsonField.Name(_)) :: xs =>
         Reshape(cur.value + (x -> -\/(set0(getOrDefault(cur.value.get(x)), xs))))
-      case (x @ BsonField.Index(_)) :: xs =>
-        Reshape(cur.value + (x.toName -> -\/(set0(getOrDefault(cur.value.get(x.toName)), xs))))
     }
 
     set0(this, field.flatten.toList)
@@ -144,10 +150,7 @@ object Reshape {
 
   private[mongodb] def renderReshape(shape: Reshape): List[RenderedTree] = {
     def renderField(field: BsonField, value: Shape) = {
-      val (label, typ) = field match {
-        case BsonField.Index(value) => value.toString -> "Index"
-        case _ => field.bson.toJs.pprint(0) -> "Name"
-      }
+      val (label, typ) = field.bson.toJs.pprint(0) -> "Name"
       value match {
         case -\/ (shape)  => NonTerminal(typ :: ProjectNodeType, Some(label), renderReshape(shape))
         case  \/-(exprOp) => Terminal(typ :: ProjectNodeType, Some(label + " -> " + exprOp.cata(bsonƒ).toJs.pprint(0)))

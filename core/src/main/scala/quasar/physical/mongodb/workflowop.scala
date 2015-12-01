@@ -450,16 +450,20 @@ object Workflow {
   }
 
   def rewrite[A <: WorkflowF[_]](op: A, base: DocVar): (A, DocVar) =
-    (rewriteRefs(op, prefixBase(base)) -> (op match {
-      case $Group(_, _, _)   => DocVar.ROOT()
-      case $Project(_, _, _) => DocVar.ROOT()
-      case _                 => base
-    }))
+    (rewriteRefs(op, prefixBase(base)),
+      op match {
+        case $Group(_, _, _)   => DocVar.ROOT()
+        case $Project(_, _, _) => DocVar.ROOT()
+        case _                 => base
+      })
 
-  def simpleShape(op: Workflow): Option[List[BsonField.Leaf]] = op.unFix match {
-    case $Pure(Bson.Doc(value))             => value.keys.toList.map(BsonField.Name).some
-    case $Project(_, Reshape(value), _)     => value.keys.toList.some
-    case sm @ $SimpleMap(_, _, _) =>
+  def simpleShape(op: Workflow): Option[List[BsonField.Name]] = op.unFix match {
+    case $Pure(Bson.Doc(value))          =>
+      value.keys.toList.map(BsonField.Name).some
+    case $Project(_, Reshape(value), id) =>
+      (if (id == IncludeId) BsonField.Name("_id") :: value.keys.toList
+      else value.keys.toList).some
+    case sm @ $SimpleMap(_, _, _)        =>
       def loop(expr: JsCore): Option[List[jscore.Name]] =
         expr.simplify match {
           case jscore.Obj(value)      => value.keys.toList.some
@@ -467,10 +471,11 @@ object Workflow {
           case _ => None
         }
       loop(sm.simpleExpr.expr).map(_.map(n => BsonField.Name(n.value)))
-    case $Group(_, Grouped(value), _)       => value.keys.toList.some
-    case $Unwind(src, _)                    => simpleShape(src)
-    case sp: ShapePreservingF[_]            => simpleShape(sp.src)
-    case _                                  => None
+    case $Group(_, Grouped(value), _)    =>
+      (BsonField.Name("_id") :: value.keys.toList).some
+    case $Unwind(src, _)                 => simpleShape(src)
+    case sp: ShapePreservingF[_]         => simpleShape(sp.src)
+    case _                               => None
   }
 
   /** Operations without an input. */
@@ -571,12 +576,13 @@ object Workflow {
       case op => op
     }
 
-    val finished = deleteUnusedFields(reorderOps(op))
+    val finished =
+      deleteUnusedFields(reorderOps(op.transCata(once(simplifyGroupƒ))))
 
     def fixShape(wf: Workflow) =
       Workflow.simpleShape(wf).fold(
         finished)(
-        n => $project(Reshape(n.map(_.toName -> \/-($include())).toListMap), IgnoreId)(finished))
+        n => $project(Reshape(n.map(_ -> \/-($include())).toListMap), IgnoreId)(finished))
 
     def promoteKnownShape(wf: Workflow): Workflow = wf.unFix match {
       case $SimpleMap(_, _, _)     => fixShape(wf)
@@ -775,20 +781,17 @@ object Workflow {
 
     def empty = copy(grouped = Grouped(ListMap()))
 
-    def getAll: List[(BsonField.Leaf, Accumulator)] =
+    def getAll: List[(BsonField.Name, Accumulator)] =
       grouped.value.toList
 
-    def deleteAll(fields: List[BsonField.Leaf]): Workflow.$Group[A] = {
+    def deleteAll(fields: List[BsonField.Name]): Workflow.$Group[A] = {
       empty.setAll(getAll.filterNot(t => fields.contains(t._1)))
     }
 
-    def setAll(vs: Seq[(BsonField.Leaf, Accumulator)]) = copy(grouped = Grouped(ListMap(vs: _*)))
+    def setAll(vs: Seq[(BsonField.Name, Accumulator)]) = copy(grouped = Grouped(ListMap(vs: _*)))
   }
   object $Group {
-    def make(
-      grouped: Grouped, by: Reshape.Shape)(
-      src: Workflow):
-        Workflow =
+    def make(grouped: Grouped, by: Reshape.Shape)(src: Workflow): Workflow =
       Fix(coalesce($Group(src, grouped, by)))
   }
   val $group = $Group.make _
@@ -945,7 +948,7 @@ object Workflow {
     }
 
     def deleteAll(fields: List[BsonField]): $SimpleMap[A] = {
-      def loop(x: JsCore, fields: List[List[BsonField.Leaf]]): Option[JsCore] = x match {
+      def loop(x: JsCore, fields: List[List[BsonField.Name]]): Option[JsCore] = x match {
         case jscore.Obj(values) => Some(jscore.Obj(
           values.collect(Function.unlift[(jscore.Name, JsCore), (jscore.Name, JsCore)] { t =>
             val (k, v) = t
