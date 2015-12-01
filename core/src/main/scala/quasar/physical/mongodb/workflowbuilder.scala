@@ -1275,11 +1275,11 @@ object WorkflowBuilder {
     impl(left, right, unflipped)
   }
 
-  def flattenObject(wb: WorkflowBuilder): WorkflowBuilder = wb.unFix match {
+  def flattenMap(wb: WorkflowBuilder): WorkflowBuilder = wb.unFix match {
     case ShapePreservingBuilderF(src, inputs, op) =>
-      ShapePreservingBuilder(flattenObject(src), inputs, op)
+      ShapePreservingBuilder(flattenMap(src), inputs, op)
     case GroupBuilderF(src, keys, Expr(\/-($var(DocVar.ROOT(None))))) =>
-      GroupBuilder(flattenObject(src), keys, Expr(\/-($$ROOT)))
+      GroupBuilder(flattenMap(src), keys, Expr(\/-($$ROOT)))
     case _ => FlatteningBuilder(wb, Set(StructureType.Object(DocVar.ROOT())))
   }
 

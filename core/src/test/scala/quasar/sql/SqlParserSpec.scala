@@ -303,7 +303,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
       // NB: Just a stress-test that the parser can handle a deeply
       // left-recursive expression with many unneeded parenes, which
       // happens to be exactly what pprint produces.
-      val q = """(select distinct topArr, topObj from "/demo/demo/nested" where (((((((((((((((search((((topArr)[*])[*])[*], '^.*$', true)) or (search((((topArr)[*])[*]).a, '^.*$', true))) or (search((((topArr)[*])[*]).b, '^.*$', true))) or (search((((topArr)[*])[*]).c, '^.*$', true))) or (search((((topArr)[*]).botObj).a, '^.*$', true))) or (search((((topArr)[*]).botObj).b, '^.*$', true))) or (search((((topArr)[*]).botObj).c, '^.*$', true))) or (search((((topArr)[*]).botArr)[*], '^.*$', true))) or (search((((topObj).midArr)[*])[*], '^.*$', true))) or (search((((topObj).midArr)[*]).a, '^.*$', true))) or (search((((topObj).midArr)[*]).b, '^.*$', true))) or (search((((topObj).midArr)[*]).c, '^.*$', true))) or (search((((topObj).midObj).botArr)[*], '^.*$', true))) or (search((((topObj).midObj).botObj).a, '^.*$', true))) or (search((((topObj).midObj).botObj).b, '^.*$', true))) or (search((((topObj).midObj).botObj).c, '^.*$', true)))"""
+      val q = """(select distinct topArr, topObj from "/demo/demo/nested" where (((((((((((((((search((((topArr)[:*])[:*])[:*], '^.*$', true)) or (search((((topArr)[:*])[:*]).a, '^.*$', true))) or (search((((topArr)[:*])[:*]).b, '^.*$', true))) or (search((((topArr)[:*])[:*]).c, '^.*$', true))) or (search((((topArr)[:*]).botObj).a, '^.*$', true))) or (search((((topArr)[:*]).botObj).b, '^.*$', true))) or (search((((topArr)[:*]).botObj).c, '^.*$', true))) or (search((((topArr)[:*]).botArr)[:*], '^.*$', true))) or (search((((topObj).midArr)[:*])[:*], '^.*$', true))) or (search((((topObj).midArr)[:*]).a, '^.*$', true))) or (search((((topObj).midArr)[:*]).b, '^.*$', true))) or (search((((topObj).midArr)[:*]).c, '^.*$', true))) or (search((((topObj).midObj).botArr)[:*], '^.*$', true))) or (search((((topObj).midObj).botObj).a, '^.*$', true))) or (search((((topObj).midObj).botObj).b, '^.*$', true))) or (search((((topObj).midObj).botObj).c, '^.*$', true)))"""
       parser.parse(q).map(pprint) must beRightDisjunction(q)
     }
 
@@ -441,7 +441,10 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
         op <- Gen.oneOf(
           Not, Exists, Positive, Negative, Distinct,
           ToDate, ToInterval,
-          ObjectFlatten, ArrayFlatten,
+          FlattenMapKeys,   FlattenArrayIndices,
+          FlattenMapValues, FlattenArrayValues,
+          ShiftMapKeys,     ShiftArrayIndices,
+          ShiftMapValues,   ShiftArrayValues,
           IsNull)
       } yield Unop(x, op)),
       2 -> (for {
