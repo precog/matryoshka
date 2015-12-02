@@ -150,7 +150,7 @@ For example, given the above MongoDB mount, an additional view could be defined 
     ...,
     "/simpleZips": {
       "view": {
-        "connectionUri": "sql2:///?q=select+_id+as+zip,+city,+state+from+\"/local/test/zips\""
+        "connectionUri": "sql2:///?q=select%20_id%20as%20zip%2C%20city%2C%20state%20from%20%22%2Flocal%2Ftest%2Fzips%22%20where%20pop%20%3C%20%3Acutoff&var.cutoff=1000"
       }
     }
   }
@@ -158,6 +158,7 @@ For example, given the above MongoDB mount, an additional view could be defined 
 
 A view can be mounted at any file path. If a view's path is nested inside the path of a database mount, it will appear alongside the other files in the database. A view will "shadow" any actual file that would otherwise be mapped to the same path. Any attempt to write data to a view will result in an error.
 
+SQL<sup>2</sup> supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as additional parameters in the connectionUri using the variable name prefixed by `var.` (e.g. `var.cutoff=1000`). Failure to specify valid values for all variables used inside a query will result in an error when the mount is created or used. These values use the same syntax as the query itself; notably, strings should be surrounded by single quotes. Some acceptable values are `123`, `'CO'`, and `DATE '2015-07-06'`.
 
 ## REPL Usage
 

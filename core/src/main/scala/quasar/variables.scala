@@ -17,7 +17,7 @@
 package quasar
 
 import quasar.Predef._
-import quasar.recursionschemes._
+import quasar.recursionschemes._, Recursive.ops._
 import quasar.SemanticError._
 import quasar.sql._
 
@@ -40,4 +40,7 @@ object Variables {
           .leftMap(VariableParseError(VarName(name), varValue, _)))
     case x => Fix(x).right
   }
+
+  def substVars(expr: Expr, variables: Variables): SemanticError \/ Expr =
+    expr.cataM[SemanticError \/ ?, Expr](substVarsƒ(variables))
 }

@@ -18,6 +18,7 @@ package quasar
 
 import quasar.Predef._
 import quasar.Backend.ResultError
+import quasar.Planner.CompilationError
 import quasar.config.FsPath.FsPathError
 import quasar.fs._, Path._
 import quasar.Errors._
@@ -96,6 +97,9 @@ object Evaluator {
       def message = error.message
     }
     final case class EnvEvalError(error: EvaluationError) extends EnvironmentError {
+      def message = error.message
+    }
+    final case class EnvCompError(error: CompilationError) extends EnvironmentError {
       def message = error.message
     }
     final case class EnvWriteError(error: Backend.ProcessingError) extends EnvironmentError {
@@ -187,6 +191,13 @@ object Evaluator {
     def apply(error: EvaluationError): EnvironmentError = EnvironmentError.EnvEvalError(error)
     def unapply(obj: EnvironmentError): Option[EvaluationError] = obj match {
       case EnvironmentError.EnvEvalError(error) => Some(error)
+      case _                       => None
+    }
+  }
+  object EnvCompError {
+    def apply(error: CompilationError): EnvironmentError = EnvironmentError.EnvCompError(error)
+    def unapply(obj: EnvironmentError): Option[CompilationError] = obj match {
+      case EnvironmentError.EnvCompError(error) => Some(error)
       case _                       => None
     }
   }

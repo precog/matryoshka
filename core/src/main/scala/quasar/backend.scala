@@ -262,18 +262,21 @@ final case class ViewBackend(backend: Backend, views0: Map[Path, ViewConfig]) ex
   // arrive to the `0` methods of the trait), and all paths inside the
   // queries are interpreted relative to each view's parent dir (and as
   // absolute, because at least that way they're all consistent).
-  val views: Map[Path, sql.Expr] =
-    views0.map { case (p, ViewConfig(q)) =>
-      p.asRelative -> sql.relativizePaths(q, p.parent.asAbsolute).valueOr(κ(q))
+  val views: Map[Path, SemanticError \/ sql.Expr] =
+    views0.map { case (p, ViewConfig(q, vars)) =>
+      p.asRelative -> Variables.substVars(q, vars).map(q =>
+        sql.relativizePaths(q, p.parent.asAbsolute).valueOr(κ(q)))
     }
 
   def tableName(path: Path) = "__sd__" + path.filename
 
-  def expand(query: sql.Expr): sql.Expr = sql.rewriteRelations(query) {
+  def expand(query: sql.Expr): SemanticError \/ sql.Expr = sql.rewriteRelationsM[SemanticError \/ ?](query) {
     case sql.TableRelationAST(name, alias) =>
       val p = Path(name)
-      views.get(p.asRelative).map(sql.ExprRelationAST(_, alias.getOrElse(tableName(p))))
-    case _ => None
+      val query = views.get(p.asRelative)
+      def embed(q: sql.Expr) = sql.ExprRelationAST(q, alias.getOrElse(tableName(p)))
+      OptionT[SemanticError \/ ?, sql.Expr](query.sequenceU).map(embed)
+    case _ => OptionT.none[SemanticError \/ ?, sql.SqlRelation[sql.Expr]]
   }
 
   def ls0(dir: Path) = {
@@ -301,42 +304,49 @@ final case class ViewBackend(backend: Backend, views0: Map[Path, ViewConfig]) ex
   }
 
   def count0(path: Path) =
-    views.get(path).fold(backend.count(path)) { query =>
-      val countQuery = sql.Select(
-          sql.SelectAll,
-          List(sql.Proj(sql.InvokeFunction(quasar.std.StdLib.agg.Count.name, List(sql.Splice(None))), Some("0"))),
-          Some(sql.ExprRelationAST(expand(query), tableName(path))),
-          None, None, None)
+    views.get(path).fold(backend.count(path))(_.flatMap(expand).fold(
+      err => EitherT.left(Task.now(ProcessingError.ViewCompilationError(CSemanticError(err)))),
+      { exp =>
+        val countQuery = sql.Select(
+            sql.SelectAll,
+            List(sql.Proj(sql.InvokeFunction(quasar.std.StdLib.agg.Count.name, List(sql.Splice(None))), Some("0"))),
+            Some(sql.ExprRelationAST(exp, tableName(path))),
+            None, None, None)
 
-      backend.eval(QueryRequest(countQuery, Variables(Map.empty))).run._2.fold[ProcessingTask[Long]](
-        e => EitherT.left(Task.now(ProcessingError.ViewCompilationError(e))),
-        p => EitherT(p.runLog.run).flatMap {
-          case Vector(obj @ Data.Obj(fields)) =>
-            fields.toList match {
-              case ("0", Data.Int(count)) :: Nil => EitherT.right(Task.now(count.toLong))
-              case _ => EitherT.left(Task.now(ViewUnexpectedError(Some("unexpected result for count: " + obj.toString))))
-            }
-          case Vector() => EitherT.right(Task.now(0))  // See SD-1095
-          case ds => EitherT.left(Task.now(ViewUnexpectedError(Some("unexpected result for count: " + ds))))
-        })
-    }
+        backend.eval(QueryRequest(countQuery, Variables(Map.empty))).run._2.fold[ProcessingTask[Long]](
+          e => EitherT.left(Task.now(ProcessingError.ViewCompilationError(e))),
+          p => EitherT(p.runLog.run).flatMap {
+            case Vector(obj @ Data.Obj(fields)) =>
+              fields.toList match {
+                case ("0", Data.Int(count)) :: Nil => EitherT.right(Task.now(count.toLong))
+                case _ => EitherT.left(Task.now(ViewUnexpectedError(Some("unexpected result for count: " + obj.toString))))
+              }
+            case Vector() => EitherT.right(Task.now(0))  // See SD-1095
+            case ds => EitherT.left(Task.now(ViewUnexpectedError(Some("unexpected result for count: " + ds))))
+          })
+      }))
 
   def scan0(path: Path, offset: Long, limit: Option[Long]) =
-    views.get(path).fold(backend.scan0(path, offset, limit)) { query =>
-      val q1 = expand(query)
-      val q2 = if (offset == 0) q1 else sql.Offset(q1, sql.IntLiteral(offset))
+    views.get(path).fold(backend.scan0(path, offset, limit))(_.flatMap(expand).fold(
+      err => Process.eval[ResTask, Data](EitherT.left(Task.now(ResultCompilationError(CSemanticError(err))))),
+      { query =>
+      val q2 = if (offset == 0) query else sql.Offset(query, sql.IntLiteral(offset))
       val scanQuery = limit.fold(q2)(l => sql.Limit(q2, sql.IntLiteral(l)))
 
       backend.eval(QueryRequest(scanQuery, Variables(Map.empty))).run._2.fold[Process[ResTask, Data]](
         e => Process.eval[ResTask, Data](EitherT.left(Task.now(ResultCompilationError(e)))),
         p => p.translate[Backend.ResTask](Errors.convertError(ResultProcessingError(_))))
-    }
+    }))
 
-  def run0(req: QueryRequest, out: Path) =
-    backend.run(req.copy(query = expand(req.query)), out)
+  def run0(req: QueryRequest, out: Path) = expand(req.query).fold(
+    err => EitherT.left[(Vector[PhaseResult], ?), CompilationError, ETask[EvaluationError, ResultPath]](
+            (Vector.empty, CSemanticError(err))),
+    query => backend.run(req.copy(query = query), out))
 
-  def eval0(req: QueryRequest) =
-    backend.eval(req.copy(query = expand(req.query)))
+  def eval0(req: QueryRequest) = expand(req.query).fold(
+    err => EitherT.left[(Vector[PhaseResult], ?), CompilationError, Process[ProcessingTask, Data]](
+            (Vector.empty, CSemanticError(err))),
+    query => backend.eval(req.copy(query = query)))
 
   // NB: the remainder are data-mutating, and don't apply to views:
 
@@ -492,7 +502,7 @@ object Backend {
 
   def test(config: MountConfig): ETask[EnvironmentError, Unit] = config match {
     // NB: can't meaningfully test the view query in isolation
-    case ViewConfig(_) => liftE(Task.now(()))
+    case ViewConfig(_, _) => liftE(Task.now(()))
 
     case _ =>
       for {
