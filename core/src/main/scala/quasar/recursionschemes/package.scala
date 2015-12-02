@@ -302,6 +302,7 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
 
   @typeclass trait Binder[F[_]] {
     type G[A]
+    def G: Traverse[G]
 
     def initial[A]: G[A]
 
@@ -320,6 +321,21 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
 
     loop(t.unFix, B.initial)
   }
+
+  def boundParaM[M[_]: Monad, F[_]: Traverse, A](t: Fix[F])(f: F[(Fix[F], A)] => M[A])(implicit B: Binder[F]): M[A] = {
+    def loop(t: F[Fix[F]], b: B.G[A]): M[A] = {
+      Applicative[M].sequence(B.bindings[M[A]](t, B.G.map(b)(_.point[M]))(s => loop(s, b)))(B.G).flatMap { newB =>
+        B.subst(t, newB).cata[M[A]](
+          _.point[M],
+          t.traverse(x => loop(x.unFix, newB).map((x, _))).flatMap(f))
+      }
+    }
+
+    loop(t.unFix, B.initial)
+  }
+
+  def boundParaS[F[_]: Traverse, S, A](t: Fix[F])(f: F[(Fix[F], A)] => State[S, A])(implicit B: Binder[F]): State[S, A] =
+    boundParaM[State[S, ?], F, A](t)(f)
 
   def boundPara[F[_]: Functor, A](t: Fix[F])(f: F[(Fix[F], A)] => A)(implicit B: Binder[F]): A = {
     def loop(t: F[Fix[F]], b: B.G[A]): A = {
