@@ -58,6 +58,8 @@ object TraverseT {
 
   /** Import from this object instead of `ops._` to get just ops for the
     * methods of TraverseT, and not those inherited from FunctorT.
+    * Otherwise, importing both leads to ambiguous implicits.
+    * See https://github.com/mpilquist/simulacrum/issues/46.
     */
   object ownOps extends ToTraverseTOps
 }

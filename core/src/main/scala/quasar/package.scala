@@ -1,6 +1,6 @@
 import quasar.Predef.{Long, String, Vector}
 import quasar.fp._
-import quasar.recursionschemes._, Fix._, FunctorT.ops._
+import quasar.recursionschemes._, Fix._
 import quasar.sql._
 
 import scalaz._
@@ -41,8 +41,8 @@ package object quasar {
                         Variables.substVars(ast, vars) leftMap (_.wrapNel))
       annTree     <- phase("Annotated Tree", AllPhases(substAst))
       logical     <- phase("Logical Plan", Compiler.compile(annTree) leftMap (_.wrapNel))
-      simplified  <- phase("Simplified", logical.transCata(repeatedly(Optimizer.simplifyƒ)).right)
-      typechecked <- phase("Typechecked", LogicalPlan.ensureCorrectTypes(simplified).disjunction)
+      optimized   <- phase("Optimized", \/-(Optimizer.optimize(logical)))
+      typechecked <- phase("Typechecked", LogicalPlan.ensureCorrectTypes(optimized).disjunction)
     } yield typechecked
   }
 }

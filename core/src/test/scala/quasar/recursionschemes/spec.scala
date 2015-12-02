@@ -106,6 +106,7 @@ object Exp {
 
   implicit val ExpBinder: Binder[Exp] = new Binder[Exp] {
     type G[A] = Map[Symbol, A]
+    val G = implicitly[Traverse[G]]
 
     def initial[A] = Map[Symbol, A]()
 
@@ -662,6 +663,42 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
       "produce correct annotations when used in let expression" in {
         boundCata(Example2)(example1ƒ) must beSome(10)
+      }
+
+      val inlineMulBy1: Exp[(Fix[Exp], Fix[Exp])] => Fix[Exp] = {
+        case Mul((_, Fix(Num(1))), (x, _)) => x  // actually, either `x` is the same here
+        case t                             => Fix(t.map { case (src, bnd) =>
+          src.unFix match {
+            case Var(_) => src
+            case _      => bnd
+          }
+        })
+      }
+
+      "rewrite with bound value" in {
+        val source =
+          let('x, num(1),
+            let('y, mul(num(2), num(3)),
+              mul(vari('x), vari('y))))
+        val exp =
+          let('x, num(1),
+            let('y, mul(num(2), num(3)),
+              vari('y)))
+        boundPara(source)(inlineMulBy1) must_== exp
+        boundParaM[Id, Exp, Fix[Exp]](source)(inlineMulBy1) must_== exp
+      }
+
+      "rewrite under a binding" in {
+        val source =
+          let('x, num(1),
+            let('y, mul(vari('x), num(2)),
+              mul(vari('y), vari('y))))
+        val exp =
+          let('x, num(1),
+            let('y, num(2),              // Want this simplifed...
+              mul(vari('y), vari('y))))  // ...but not this.
+        boundPara(source)(inlineMulBy1) must_== exp
+        boundParaM[Id, Exp, Fix[Exp]](source)(inlineMulBy1) must_== exp
       }
 
       "annotate source nodes using bound nodes" in {

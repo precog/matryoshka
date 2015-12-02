@@ -3,7 +3,7 @@ package quasar.physical.mongodb
 import quasar.Predef._
 import quasar.RenderTree, RenderTree.ops._
 import quasar.fp._
-import quasar.recursionschemes._, Recursive.ops._, FunctorT.ops._, Fix._
+import quasar.recursionschemes._, Recursive.ops._, Fix._
 import quasar._
 import quasar.fs.Path
 import quasar.javascript._
@@ -58,7 +58,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
 
   def plan(logical: Fix[LogicalPlan]): Either[PlannerError, Crystallized] =
     (for {
-      simplified <- emit(Vector.empty, \/-(logical.transCata(repeatedly(Optimizer.simplifyƒ))))
+      simplified <- emit(Vector.empty, \/-(Optimizer.simplify(logical)))
       phys       <- MongoDbPlanner.plan(simplified)
     } yield phys).run._2.toEither
 
@@ -3207,7 +3207,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     }
 
     "plan simple cross" in {
-      plan("select zips2.city from zips, zips2 where zips._id = zips2._id") must
+      plan("select zips2.city from zips, zips2 where zips.pop < zips2.pop") must
       beWorkflow(
         joinStructure(
           $read(Collection("db", "zips")), "__tmp0", $$ROOT,
@@ -3229,18 +3229,32 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
                       $lt($field("right"), $literal(Bson.Arr(Nil)))),
                     $field("right", "city"),
                     $literal(Bson.Undefined)),
-                "__tmp7" -> $field("right"),
-                "__tmp8" -> $field("left"),
-                "__tmp9" -> $eq($field("left", "_id"), $field("right", "_id"))),
+                "__tmp11" -> $field("right"),
+                "__tmp12" -> $field("right", "pop"),
+                "__tmp13" -> $field("left"),
+                "__tmp14" -> $field("left", "pop"),
+                "__tmp15" -> $lt($field("left", "pop"), $field("right", "pop"))),
               IgnoreId),
             $match(Selector.And(
+              Selector.Doc(BsonField.Name("__tmp11") -> Selector.Type(BsonType.Doc)),
+              Selector.Or(
+                Selector.Doc(BsonField.Name("__tmp12") -> Selector.Type(BsonType.Int32)),
+                Selector.Doc(BsonField.Name("__tmp12") -> Selector.Type(BsonType.Int64)),
+                Selector.Doc(BsonField.Name("__tmp12") -> Selector.Type(BsonType.Dec)),
+                Selector.Doc(BsonField.Name("__tmp12") -> Selector.Type(BsonType.Text)),
+                Selector.Doc(BsonField.Name("__tmp12") -> Selector.Type(BsonType.Date)),
+                Selector.Doc(BsonField.Name("__tmp12") -> Selector.Type(BsonType.Bool))),
               Selector.Doc(
-                BsonField.Name("__tmp7") -> Selector.Type(BsonType.Doc)),
-              Selector.And(
-                Selector.Doc(
-                  BsonField.Name("__tmp8") -> Selector.Type(BsonType.Doc)),
-                Selector.Doc(
-                  BsonField.Name("__tmp9") -> Selector.Eq(Bson.Bool(true)))))),
+                BsonField.Name("__tmp13") -> Selector.Type(BsonType.Doc)),
+              Selector.Or(
+                Selector.Doc(BsonField.Name("__tmp14") -> Selector.Type(BsonType.Int32)),
+                Selector.Doc(BsonField.Name("__tmp14") -> Selector.Type(BsonType.Int64)),
+                Selector.Doc(BsonField.Name("__tmp14") -> Selector.Type(BsonType.Dec)),
+                Selector.Doc(BsonField.Name("__tmp14") -> Selector.Type(BsonType.Text)),
+                Selector.Doc(BsonField.Name("__tmp14") -> Selector.Type(BsonType.Date)),
+                Selector.Doc(BsonField.Name("__tmp14") -> Selector.Type(BsonType.Bool))),
+              Selector.Doc(
+                BsonField.Name("__tmp15") -> Selector.Eq(Bson.Bool(true))))),
             $project(
               reshape("city" -> $field("city")),
               ExcludeId)),
@@ -3672,7 +3686,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       planLog("select city from zips").map(_.map(_.name)) must
         beRightDisjunction(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree",
-          "Logical Plan", "Simplified", "Typechecked",
+          "Logical Plan", "Optimized", "Typechecked",
           "Logical Plan (reduced typechecks)", "Logical Plan (aligned joins)",
           "Logical Plan (projections preferred)", "Workflow Builder",
           "Workflow (raw)", "Workflow (crystallized)", "Physical Plan", "Mongo"))
@@ -3682,14 +3696,14 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       planLog("select 'a' + 0 from zips").map(_.map(_.name)) must
         beRightDisjunction(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree", "Logical Plan",
-          "Simplified"))
+          "Optimized"))
     }
 
     "include correct phases with alignment error" in {
       planLog("select * from a join b on a.foo + b.bar < b.baz").map(_.map(_.name)) must
         beRightDisjunction(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree",
-          "Logical Plan", "Simplified", "Typechecked",
+          "Logical Plan", "Optimized", "Typechecked",
           "Logical Plan (reduced typechecks)"))
     }
 
@@ -3697,7 +3711,7 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       planLog("select date_part('foo', bar) from zips").map(_.map(_.name)) must
         beRightDisjunction(Vector(
           "SQL AST", "Variables Substituted", "Annotated Tree",
-          "Logical Plan", "Simplified", "Typechecked",
+          "Logical Plan", "Optimized", "Typechecked",
           "Logical Plan (reduced typechecks)", "Logical Plan (aligned joins)",
           "Logical Plan (projections preferred)"))
     }

@@ -1,0 +1,13 @@
+{
+  "name": "simple join written in 'cross join' form (must be optimized to an inner join or else the join explodes, taking several minutes to complete)",
+  "backends": { "mongodb_read_only": "pending" },
+
+  "data": "largeZips.data",
+
+  "query": "select a.city, b.state from largeZips a, largeZips b where a._id = b._id",
+
+  "predicate": "containsAtLeast",
+  "expected": [
+    { "city": "REDONDO BEACH", "state": "CA" }
+  ]
+}

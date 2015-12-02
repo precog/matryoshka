@@ -17,7 +17,7 @@
 package quasar
 
 import quasar.Predef._
-import quasar.recursionschemes._, cofree._, Recursive.ops._
+import quasar.recursionschemes._, cofree._, Recursive.ops._, FunctorT.ops._
 import quasar.fp._
 import quasar.fs.Path
 import quasar.namegen._
@@ -180,6 +180,7 @@ object LogicalPlan {
 
   implicit val LogicalPlanBinder: Binder[LogicalPlan] = new Binder[LogicalPlan] {
       type G[A] = Map[Symbol, A]
+      val G = implicitly[Traverse[G]]
 
       def initial[A] = Map[Symbol, A]()
 
@@ -198,6 +199,40 @@ object LogicalPlan {
 
   def freshName(prefix: String): State[NameGen, Symbol] =
     quasar.namegen.freshName(prefix).map(Symbol(_))
+
+  // NB: this can't currently be generalized to Binder, because the key type isn't exposed there.
+  def renameƒ[M[_]: Monad](f: Symbol => M[Symbol]):
+      ((Map[Symbol, Symbol], Fix[LogicalPlan])) =>
+        M[LogicalPlan[(Map[Symbol, Symbol], Fix[LogicalPlan])]] =
+  { case (bound, t) =>
+    t.unFix match {
+      case LetF(sym, expr, body) =>
+        f(sym).map(sym1 =>
+          LetF(sym1,
+            (bound, expr),
+            (bound + (sym -> sym1), body)))
+      case FreeF(sym) =>
+        val v: LogicalPlan[(Map[Symbol, Symbol], Fix[LogicalPlan])] =
+          FreeF(bound.get(sym).getOrElse(sym))
+        v.point[M]
+      case t =>
+        t.strengthL(bound).point[M]
+    }
+  }
+
+  def rename[M[_]: Monad](f: Symbol => M[Symbol])(t: Fix[LogicalPlan]): M[Fix[LogicalPlan]] =
+    Corecursive[Fix].anaM[LogicalPlan, M, (Map[Symbol, Symbol], Fix[LogicalPlan])](
+      (Map(), t))(renameƒ(f))
+
+  def normalizeTempNames(t: Fix[LogicalPlan]) =
+    rename[State[NameGen, ?]](κ(freshName("tmp")))(t).evalZero
+
+  val normalizeLetsƒ: LogicalPlan[Fix[LogicalPlan]] => Option[LogicalPlan[Fix[LogicalPlan]]] = {
+      case LetF(b, Fix(LetF(a, x1, x2)), x3) => LetF(a, x1, Let(b, x2, x3)).some
+      case t => None
+  }
+
+  def normalizeLets(t: Fix[LogicalPlan]) = t.transAna(repeatedly(normalizeLetsƒ))
 
   type Typed[F[_]] = Cofree[F, Type]
   final case class NamedConstraint(name: Symbol, inferred: Type, term: Fix[LogicalPlan])

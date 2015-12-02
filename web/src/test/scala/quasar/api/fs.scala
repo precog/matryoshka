@@ -321,8 +321,8 @@ class ApiSpecs extends Specification with DisjunctionMatchers with PendingWithAc
     ast        <- (new sql.SQLParser()).parse(sql.Query(q)).toOption
     annotated  <- SemanticAnalysis.AllPhases(ast).toOption
     logical    <- Compiler.compile(annotated).toOption
-    simplified <- logical.transCata(repeatedly(Optimizer.simplifyƒ)).toOption
-    checked    <- LogicalPlan.ensureCorrectTypes(simplified).toOption
+    optimized  <- Optimizer.optimize(logical).toOption
+    checked    <- LogicalPlan.ensureCorrectTypes(optimized).toOption
   } yield checked).getOrElse(scala.sys.error("could not compile: " + q))
 
 
