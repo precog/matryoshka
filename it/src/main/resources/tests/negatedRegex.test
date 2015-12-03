@@ -1,18 +1,18 @@
 {
     "name": "negate matches in filter and projection",
     "backends": { "mongodb_read_only": "pending" },
-    "data": "zips.data",
-    "query": "select city, city !~ 'A' from zips where city !~ 'CHI'",
+    "data": "largeZips.data",
+    "query": "select city, city !~ 'A' from largeZips where city !~ 'CHI'",
     "predicate": "containsAtLeast",
     "expected": [
-        { "city": "AGAWAM",       "1": false },
-        { "city": "CUSHMAN",      "1": false },
-        { "city": "BARRE",        "1": false },
-        { "city": "BELCHERTOWN",  "1": true  },
-        { "city": "BLANDFORD",    "1": false },
-        { "city": "BRIMFIELD",    "1": true  },
-        { "city": "CHESTER",      "1": true  },
-        { "city": "CHESTERFIELD", "1": true  },
-        { "city": "WESTOVER AFB", "1": false },
-        { "city": "CUMMINGTON",   "1": true  }]
+        { "city": "CUSHMAN",     "1": false },
+        { "city": "WORCESTER",   "1":  true },
+        { "city": "FRAMINGHAM",  "1": false },
+        { "city": "MARLBOROUGH", "1": false },
+        { "city": "MILFORD",     "1":  true },
+        { "city": "NATICK",      "1": false },
+        { "city": "WOBURN",      "1":  true },
+        { "city": "ANDOVER",     "1": false },
+        { "city": "BILLERICA",   "1": false },
+        { "city": "DRACUT",      "1": false }]
 }

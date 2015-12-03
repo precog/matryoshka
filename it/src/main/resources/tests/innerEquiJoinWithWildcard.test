@@ -1,18 +1,18 @@
 {
     "name": "perform inner equi-join with wildcard",
     "backends": { "mongodb_read_only": "pending" },
-    "data": "zips.data",
-    "query": "select * from zips join zips z2 on zips._id = z2._id",
+    "data": "largeZips.data",
+    "query": "select * from largeZips join largeZips z2 on largeZips._id = z2._id",
     "predicate": "containsAtLeast",
     "expected": [
-        {"value": {"_id": "99578", "city": "EEK", "loc": [-162.032341, 60.215058], "pop": 254.0, "state": "AK"}},
-        {"value": {"_id": "99180", "city": "USK", "loc": [-117.318947, 48.295969], "pop": 501.0, "state": "WA"}},
-        {"value": {"_id": "99009", "city": "ELK", "loc": [-117.296253, 48.020523], "pop": 2386.0, "state": "WA"}},
-        {"value": {"_id": "98580", "city": "ROY", "loc": [-122.448271, 46.956048], "pop": 7730.0, "state": "WA"}},
-        {"value": {"_id": "98232", "city": "BOW", "loc": [-122.413438, 48.562037], "pop": 3245.0, "state": "WA"}},
-        {"value": {"_id": "95432", "city": "ELK", "loc": [-123.723961, 39.160402], "pop": 199.0, "state": "CA"}},
-        {"value": {"_id": "89301", "city": "ELY", "loc": [-114.878011, 39.309356], "pop": 8558.0, "state": "NV"}},
-        {"value": {"_id": "88126", "city": "PEP", "loc": [-103.327208, 33.897032], "pop": 369.0, "state": "NM"}},
-        {"value": {"_id": "83657", "city": "OLA", "loc": [-116.290915, 44.235026], "pop": 159.0, "state": "ID"}},
-        {"value": {"_id": "83342", "city": "NAF", "loc": [-113.448656, 42.364652], "pop": 2315.0, "state": "ID"}}]
+        {"value": {"_id": "31794", "city": "ABAC",        "loc": [ -83.498867, 31.451722], "pop": 27906, "state": "GA"}},
+        {"value": {"_id": "60064", "city": "ABBOTT PARK", "loc": [ -87.847819, 42.318901], "pop": 26542, "state": "IL"}},
+        {"value": {"_id": "57401", "city": "ABERDEEN",    "loc": [ -98.485642, 45.466109], "pop": 28786, "state": "SD"}},
+        {"value": {"_id": "79605", "city": "ABILENE",     "loc": [ -99.772374, 32.431987], "pop": 29862, "state": "TX"}},
+        {"value": {"_id": "24210", "city": "ABINGDON",    "loc": [ -82.019989, 36.691644], "pop": 25429, "state": "VA"}},
+        {"value": {"_id": "30101", "city": "ACWORTH",     "loc": [ -84.647741, 34.075627], "pop": 37976, "state": "GA"}},
+        {"value": {"_id": "60101", "city": "ADDISON",     "loc": [   -88.0054, 41.933509], "pop": 35140, "state": "IL"}},
+        {"value": {"_id": "93446", "city": "ADELAIDE",    "loc": [-120.670676, 35.635248], "pop": 29255, "state": "CA"}},
+        {"value": {"_id": "20783", "city": "ADELPHI",     "loc": [  -76.97472, 38.993751], "pop": 40007, "state": "MD"}},
+        {"value": {"_id": "49221", "city": "ADRIAN",      "loc": [ -84.044556, 41.900516], "pop": 33769, "state": "MI"}}]
 }

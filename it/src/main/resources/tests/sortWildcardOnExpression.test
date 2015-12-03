@@ -1,8 +1,8 @@
 {
     "name": "sort wildcard on expression",
     "backends": { "mongodb_read_only": "pending" },
-    "data": "zips.data",
-    "query": "select * from zips order by pop/10 desc",
+    "data": "largeZips.data",
+    "query": "select * from largeZips order by pop/10 desc",
     "predicate": "equalsInitial",
     "expected": [
         {"value": {"_id": "60623", "city": "CHICAGO",      "loc": [ -87.7157,   41.849015], "pop": 112047.0, "state": "IL"}},

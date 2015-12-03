@@ -1,24 +1,24 @@
 {
     "name": "count occurrences of each value of length(city), with filtering",
     "backends": { "mongodb_read_only": "pending" },
-    "data": "zips.data",
+    "data": "largeZips.data",
     "query": "select length(city) as len, count(*) as cnt
-                from zips
+                from largeZips
                 where state != 'MI'
                 group by length(city)",
     "predicate": "containsExactly",
-    "expected": [{ "cnt":  127, "len":  3 },
-                 { "cnt":  927, "len":  4 },
-                 { "cnt": 2181, "len":  5 },
-                 { "cnt": 4239, "len":  6 },
-                 { "cnt": 4450, "len":  7 },
-                 { "cnt": 3776, "len":  8 },
-                 { "cnt": 3387, "len":  9 },
-                 { "cnt": 2999, "len": 10 },
-                 { "cnt": 2269, "len": 11 },
-                 { "cnt": 1509, "len": 12 },
-                 { "cnt": 1037, "len": 13 },
-                 { "cnt":  623, "len": 14 },
-                 { "cnt":  369, "len": 15 },
-                 { "cnt":  584, "len": 16 }]
+    "expected": [{ "cnt":   2, "len":  3 },
+                 { "cnt":  65, "len":  4 },
+                 { "cnt": 206, "len":  5 },
+                 { "cnt": 446, "len":  6 },
+                 { "cnt": 553, "len":  7 },
+                 { "cnt": 482, "len":  8 },
+                 { "cnt": 438, "len":  9 },
+                 { "cnt": 376, "len": 10 },
+                 { "cnt": 340, "len": 11 },
+                 { "cnt": 215, "len": 12 },
+                 { "cnt": 141, "len": 13 },
+                 { "cnt":  89, "len": 14 },
+                 { "cnt":  65, "len": 15 },
+                 { "cnt": 122, "len": 16 }]
 }
