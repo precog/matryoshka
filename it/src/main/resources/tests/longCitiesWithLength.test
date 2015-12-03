@@ -1,8 +1,8 @@
 {
     "name": "long city names in Colorado",
     "backends": { "mongodb_read_only": "pending" },
-    "data": "zips.data",
-    "query": "select distinct city, length(city) from zips where state='CO' and length(city) >= 10",
+    "data": "largeZips.data",
+    "query": "select distinct city, length(city) from largeZips where state='CO' and length(city) >= 10",
     "predicate": "containsAtLeast",
     "expected": [{ "city": "GRAND LAKE",       "1": 10 },
                  { "city": "MONTE VISTA",      "1": 11 },

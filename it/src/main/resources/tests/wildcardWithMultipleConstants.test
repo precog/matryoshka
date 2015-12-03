@@ -1,17 +1,17 @@
 {
     "name": "splice a wildcard with multiple constants",
 
-    "data": "zips.data",
+    "data": "largeZips.data",
 
-    "query": "select *, '1', '2' from zips",
+    "query": "select *, '1', '2' from largeZips",
 
     "predicate": "containsAtLeast",
     "expected": [
-        { "value": { "_id": "01001", "1": "1", "2": "2", "city": "AGAWAM", "loc": [-72.622739, 42.070206], "pop": 15338, "state": "MA" } },
-        { "value": { "_id": "01008", "1": "1", "2": "2", "city": "BLANDFORD", "loc": [-72.936114, 42.182949], "pop": 1240, "state": "MA" } },
-        { "value": { "_id": "01010", "1": "1", "2": "2", "city": "BRIMFIELD", "loc": [-72.188455, 42.116543], "pop": 3706, "state": "MA" } },
-        { "value": { "_id": "01011", "1": "1", "2": "2", "city": "CHESTER", "loc": [-72.988761, 42.279421], "pop": 1688, "state": "MA" } },
-        { "value": { "_id": "01012", "1": "1", "2": "2", "city": "CHESTERFIELD", "loc": [-72.833309, 42.38167], "pop": 177, "state": "MA" } },
-        { "value": { "_id": "01013", "1": "1", "2": "2", "city": "CHICOPEE", "loc": [-72.607962, 42.162046], "pop": 23396, "state": "MA" } },
-        { "value": { "_id": "01020", "1": "1", "2": "2", "city": "CHICOPEE", "loc": [-72.576142, 42.176443], "pop": 31495, "state": "MA" } }]
+        { "value": { "_id": "01002", "1": "1", "2": "2", "city": "CUSHMAN",          "loc": [ -72.51565, 42.377017], "pop": 36963, "state": "MA" } },
+        { "value": { "_id": "01020", "1": "1", "2": "2", "city": "CHICOPEE",         "loc": [-72.576142, 42.176443], "pop": 31495, "state": "MA" } },
+        { "value": { "_id": "01040", "1": "1", "2": "2", "city": "HOLYOKE",          "loc": [-72.626193, 42.202007], "pop": 43704, "state": "MA" } },
+        { "value": { "_id": "01060", "1": "1", "2": "2", "city": "FLORENCE",         "loc": [-72.654245, 42.324662], "pop": 27939, "state": "MA" } },
+        { "value": { "_id": "01085", "1": "1", "2": "2", "city": "MONTGOMERY",       "loc": [-72.754318, 42.129484], "pop": 40117, "state": "MA" } },
+        { "value": { "_id": "01089", "1": "1", "2": "2", "city": "WEST SPRINGFIELD", "loc": [-72.641109, 42.115066], "pop": 27537, "state": "MA" } },
+        { "value": { "_id": "01108", "1": "1", "2": "2", "city": "SPRINGFIELD",      "loc": [-72.558432, 42.085314], "pop": 25519, "state": "MA" } }]
 }

@@ -2,11 +2,11 @@
   "name": "regexes in expressions and filter, with fields and constants providing the pattern",
   "backends": { "mongodb_read_only": "pending" },
 
-  "data": "zips.data",
+  "data": "largeZips.data",
 
   "query":
     "select distinct city, city ~ 'OUL', 'some text with BOULDER in it' ~ city
-      from zips
+      from largeZips
       where city ~ '^B[^ ]+ER$' and 'BOULDER or BEELER' ~ city",
 
   "predicate": "containsExactly",

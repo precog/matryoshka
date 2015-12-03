@@ -2,12 +2,12 @@
   "name": "filter by JS expression, with only reducing projections",
   "backends": { "mongodb_read_only": "pending" },
 
-  "data": "zips.data",
+  "data": "largeZips.data",
 
-  "query": "select max(pop), min(city) from zips where length(city) < 6",
+  "query": "select max(pop), min(city) from largeZips where length(city) < 6",
 
   "predicate": "containsExactly",
   "expected": [
-    { "0": 85710, "1": "AARON" }
+    { "0": 85710, "1": "ABAC" }
   ]
 }

@@ -1,12 +1,12 @@
 {
     "name": "shortest city names",
     "backends": { "mongodb_read_only": "pending" },
-    "data": "zips.data",
-    "query": "select distinct city from zips order by length(city), city limit 5",
+    "data": "largeZips.data",
+    "query": "select distinct city from largeZips order by length(city), city limit 5",
     "predicate": "equalsExactly",
-    "expected": [{ "city": "ADA" },
-                 { "city": "AMA" },
-                 { "city": "ARP" },
-                 { "city": "ART" },
-                 { "city": "ARY" }]
+    "expected": [{ "city": "M M" },
+                 { "city": "RYE" },
+                 { "city": "ABAC" },
+                 { "city": "AIEA" },
+                 { "city": "ALTA" }]
 }
