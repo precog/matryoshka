@@ -58,7 +58,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     // "-Ywarn-numeric-widen",
     "-Ywarn-unused-import",
     "-Ywarn-value-discard"),
-  scalacOptions in (Compile, console) --= Seq(
+  scalacOptions in (Test, console) --= Seq(
     "-Yno-imports",
     "-Ywarn-unused-import"
   ),
