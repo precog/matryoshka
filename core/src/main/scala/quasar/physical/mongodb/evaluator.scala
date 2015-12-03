@@ -451,8 +451,8 @@ class MongoDbExecutor[S](client: MongoClient,
     }
     liftMongo(
       MongoWrapper(client).readCursor(cursor)
-          .translate[EvaluationTask](t) ++
-        Process.eval_(cleanup))
+          .translate[EvaluationTask](t)
+          .onComplete(Process.eval_(cleanup)))
   }
 
   def fail[A](e: EvaluationError): M[A] =
