@@ -1,7 +1,7 @@
-package quasar
-package fs
+package quasar.fs
 
 import quasar.Predef._
+import quasar.{Data, DataGen}
 import quasar.fp._
 
 import org.specs2.mutable.Specification
@@ -33,12 +33,12 @@ class ReadFileSpec extends Specification with ScalaCheck with FileSystemFixture 
 
     "scan should automatically close the read handle on failure" ! prop {
       (f: AFile, xs: Vector[Data]) => xs.nonEmpty ==> {
-        val reads = List(xs.right, PathError(PathNotFound(f)).left)
+        val reads = List(xs.right, pathError(PathNotFound(f)).left)
 
         MemFixTask.runLogWithReads(reads, read.scanAll(f)).run
           .leftMap(_.rm)
           .run(emptyMem)
-          .run must_== ((Map.empty, \/.left(PathError(PathNotFound(f)))))
+          .run must_== ((Map.empty, \/.left(pathError(PathNotFound(f)))))
       }
     }
   }

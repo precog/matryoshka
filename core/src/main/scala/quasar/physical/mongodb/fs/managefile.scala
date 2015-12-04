@@ -19,6 +19,7 @@ package quasar.physical.mongodb.fs
 import quasar.Predef._
 import quasar.NameGenerator
 import quasar.fp.TaskRef
+import quasar.fp.prism._
 import quasar.fs._
 import quasar.physical.mongodb._
 
@@ -56,7 +57,7 @@ object managefile {
 
       case TempFile(path) =>
         EitherT.fromDisjunction[MongoManage](Collection.dbNameFromPath(path))
-          .leftMap(PathError)
+          .leftMap(pathError(_))
           .flatMap(db => freshName.liftM[FileSystemErrT] map (n =>
             rootDir[Sandboxed] </> dir(db) </> file(n)))
           .run
@@ -111,16 +112,16 @@ object managefile {
     def reifyMongoErr(m: MongoDbIO[Unit]): MongoFsM[Unit] =
       EitherT(m.attempt flatMap {
         case -\/(e: MongoServerException) if e.getCode == 10026 =>
-          PathError(PathNotFound(src)).left.point[MongoDbIO]
+          pathError(PathNotFound(src)).left.point[MongoDbIO]
 
         case -\/(e: MongoServerException) if e.getCode == 10027 =>
-          PathError(PathExists(dst)).left.point[MongoDbIO]
+          pathError(PathExists(dst)).left.point[MongoDbIO]
 
         case -\/(e: MongoCommandException) if e.getErrorMessage == srcNotFoundErr =>
-          PathError(PathNotFound(src)).left.point[MongoDbIO]
+          pathError(PathNotFound(src)).left.point[MongoDbIO]
 
         case -\/(e: MongoCommandException) if e.getErrorMessage == dstExistsErr =>
-          PathError(PathExists(dst)).left.point[MongoDbIO]
+          pathError(PathExists(dst)).left.point[MongoDbIO]
 
         case -\/(t) =>
           fail(t)
@@ -133,17 +134,17 @@ object managefile {
       EitherT(collectionsIn(dstColl.databaseName)
                 .filter(_ == dstColl)
                 .runLast
-                .map(_.toRightDisjunction(PathError(PathNotFound(dst))).void))
+                .map(_.toRightDisjunction(pathError(PathNotFound(dst))).void))
 
     if (src == dst)
       collFromPathM(src) flatMap (srcColl =>
         collectionExists(srcColl).liftM[FileSystemErrT].ifM(
           if (MoveSemantics.failIfExists isMatching sem)
-            MonadError[MongoE, FileSystemError].raiseError(PathError(PathExists(src)))
+            MonadError[MongoE, FileSystemError].raiseError(pathError(PathExists(src)))
           else
             ().point[MongoFsM]
           ,
-          MonadError[MongoE, FileSystemError].raiseError(PathError(PathNotFound(src)))))
+          MonadError[MongoE, FileSystemError].raiseError(pathError(PathNotFound(src)))))
     else
       for {
         srcColl <- collFromPathM(src)
@@ -179,7 +180,7 @@ object managefile {
     collFromPathM(file) flatMap (c =>
       collectionExists(c).liftM[FileSystemErrT].ifM(
         dropCollection(c).liftM[FileSystemErrT],
-        PathError(PathNotFound(file)).raiseError[MongoE, Unit]))
+        pathError(PathNotFound(file)).raiseError[MongoE, Unit]))
 
   private def freshName: MongoManage[String] =
     for {

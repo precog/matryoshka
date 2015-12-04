@@ -1,7 +1,7 @@
-package quasar
-package fs
+package quasar.fs
 
 import quasar.Predef._
+import quasar.{Data, DataGen}
 import quasar.fp._
 
 import org.specs2.mutable.Specification
@@ -33,11 +33,11 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
     "append should aggregate all `PartialWrite` errors and emit the sum" ! prop {
       (f: AFile, xs: Vector[Data]) => (xs.length > 1) ==> {
         val wf = WriteFailed(Data.Str("foo"), "b/c reasons")
-        val ws = Vector(wf) +: xs.tail.as(Vector(PartialWrite(1)))
+        val ws = Vector(wf) +: xs.tail.as(Vector(partialWrite(1)))
 
         MemFixTask.runLogWithWrites(ws.toList, write.append(f, xs.toProcess))
           .run.eval(emptyMem)
-          .run.toEither must beRight(Vector(wf, PartialWrite(xs.length - 1)))
+          .run.toEither must beRight(Vector(wf, partialWrite(xs.length - 1)))
       }
     }
 
@@ -58,7 +58,7 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
 
     "save should leave existing file untouched on failure" ! prop {
       (f: AFile, xs: Vector[Data], ys: Vector[Data]) => (xs.nonEmpty && ys.nonEmpty) ==> {
-        val err = WriteFailed(Data.Str("bar"), "")
+        val err = writeFailed(Data.Str("bar"), "")
         val ws = (xs ++ ys.init).as(Vector()) :+ Vector(err)
         val p = (write.append(f, xs.toProcess) ++ write.save(f, ys.toProcess)).drain ++ read.scanAll(f)
 
@@ -74,7 +74,7 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
 
       val p = write.append(f, xs.toProcess) ++ write.create(f, ys.toProcess)
 
-      MemTask.runLogEmpty(p).run must_== -\/(PathError(PathExists(f)))
+      MemTask.runLogEmpty(p).run.toEither must beLeft(pathError(PathExists(f)))
     }
 
     "create should consume all input into a new file" ! prop {
@@ -88,14 +88,13 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
     "replace should fail if the file does not exist" ! prop {
       (f: AFile, xs: Vector[Data]) =>
 
-        val p = write.replace(f, xs.toProcess)
-
-        MemTask.runLogEmpty(p).run must_== -\/(PathError(PathNotFound(f)))
+      MemTask.runLogEmpty(write.replace(f, xs.toProcess))
+        .run.toEither must beLeft(pathError(PathNotFound(f)))
     }
 
     "replace should leave the existing file untouched on failure" ! prop {
       (f: AFile, xs: Vector[Data], ys: Vector[Data]) => (xs.nonEmpty && ys.nonEmpty) ==> {
-        val err = WriteFailed(Data.Int(42), "")
+        val err = writeFailed(Data.Int(42), "")
         val ws = (xs ++ ys.init).as(Vector()) :+ Vector(err)
         val p = (write.append(f, xs.toProcess) ++ write.replace(f, ys.toProcess)).drain ++ read.scanAll(f)
 

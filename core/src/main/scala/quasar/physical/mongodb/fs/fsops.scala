@@ -14,13 +14,12 @@
  * limitations under the License.
  */
 
-package quasar
-package physical
-package mongodb
-package fs
+package quasar.physical.mongodb.fs
 
 import quasar.Predef._
+import quasar.fp.prism._
 import quasar.fs._
+import quasar.physical.mongodb._
 
 import pathy.Path._
 import scalaz.{Node => _, _}
@@ -40,7 +39,7 @@ object fsops {
       cs <- MongoDbIO.collectionsIn(c.databaseName)
               .filter(_.collectionName startsWith c.collectionName)
               .runLog.map(_.toVector).liftM[FileSystemErrT]
-      _  <- if (cs.isEmpty) PathError(PathNotFound(dir)).raiseError[MongoE, Unit]
+      _  <- if (cs.isEmpty) pathError(PathNotFound(dir)).raiseError[MongoE, Unit]
             else ().point[MongoFsM]
     } yield cs
 
@@ -52,7 +51,7 @@ object fsops {
 
   /** The collection represented by the given path. */
   def collFromPathM(path: APath): MongoFsM[Collection] =
-    EitherT(Collection.fromPathy(path).leftMap(PathError).point[MongoDbIO])
+    EitherT(Collection.fromPathy(path).leftMap(pathError(_)).point[MongoDbIO])
 
   /** An error indicating that the directory refers to an ancestor of `/`.
     *
@@ -61,6 +60,6 @@ object fsops {
     *       scala-pathy has been updated.
     */
   def nonExistentParent[A](dir: ADir): MongoFsM[A] =
-    PathError(InvalidPath(dir, "directory refers to nonexistent parent"))
+    pathError(InvalidPath(dir, "directory refers to nonexistent parent"))
       .raiseError[MongoE, A]
 }

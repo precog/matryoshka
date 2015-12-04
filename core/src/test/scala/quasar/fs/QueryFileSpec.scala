@@ -1,7 +1,7 @@
-package quasar
-package fs
+package quasar.fs
 
 import quasar.Predef._
+import quasar.{Data, DataGen, LogicalPlan, PhaseResults}
 import quasar.fp._
 import quasar.scalacheck._
 
@@ -32,7 +32,8 @@ class QueryFileSpec extends Specification with ScalaCheck with FileSystemFixture
         .set(workers = java.lang.Runtime.getRuntime.availableProcessors)
 
       "returns not found when dir does not exist" ! prop { d: ADir =>
-        Mem.interpret(query.descendantFiles(d)).eval(emptyMem).toEither must beLeft(PathError(PathNotFound(d)))
+        Mem.interpret(query.descendantFiles(d)).eval(emptyMem)
+          .toEither must beLeft(pathError(PathNotFound(d)))
       }
     }
 
