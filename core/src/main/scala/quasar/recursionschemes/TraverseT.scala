@@ -55,4 +55,9 @@ object TraverseT {
       def traverse[M[_]: Applicative, F[_], G[_]](t: T[F])(f: F[T[F]] => M[G[T[G]]]) =
         f(Recursive[T].project(t)).map(Corecursive[T].embed)
     }
+
+  /** Import from this object instead of `ops._` to get just ops for the
+    * methods of TraverseT, and not those inherited from FunctorT.
+    */
+  object ownOps extends ToTraverseTOps
 }
