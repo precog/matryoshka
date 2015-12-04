@@ -18,8 +18,15 @@ package quasar.effect
 
 import quasar.Predef._
 
-import scalaz._
+import scalaz.{Failure => _, _}
+import scalaz.concurrent.Task
 import scalaz.syntax.monad._
+import scalaz.syntax.show._
+
+/** Provides the ability to indicate a computation has failed.
+  *
+  * @tparam E the reason/error describing why the computation failed
+  */
 
 /** Provides the ability to indicate a computation has failed.
   *
@@ -82,4 +89,26 @@ object Failure {
     def apply[E, S[_]: Functor](implicit S: FailureF[E, ?] :<: S): Ops[E, S] =
       new Ops[E, S]
   }
+
+  def toDisjunction[E]: Failure[E, ?] ~> (E \/ ?) =
+    new (Failure[E, ?] ~> (E \/ ?)) {
+      def apply[A](fa: Failure[E, A]): E \/ A = fa match {
+        case Fail(e) => \/.left(e)
+      }
+    }
+
+  def toEitherT[F[_]: Applicative, E]: Failure[E, ?] ~> EitherT[F, E, ?] = {
+    val f = new ((E \/ ?) ~> EitherT[F, E, ?]) {
+      def apply[A](ea: E \/ A) = EitherT.fromDisjunction[F](ea)
+    }
+
+    f.compose[Failure[E, ?]](toDisjunction[E])
+  }
+
+  def toTaskFailure[E: Show]: Failure[E, ?] ~> Task =
+    new (Failure[E, ?] ~> Task) {
+      def apply[A](fa: Failure[E, A]) = fa match {
+        case Fail(e) => Task.fail(new RuntimeException(e.shows))
+      }
+    }
 }

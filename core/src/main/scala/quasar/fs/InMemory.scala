@@ -214,10 +214,11 @@ object InMemory {
         import quasar.std.StdLib.set.{Drop, Take}
         import quasar.std.StdLib.identity.Squash
         Recursive[Fix].para[LogicalPlan, Option[Vector[Data]]](lp) {
-          case ReadF(path) => convertToAFile(path).flatMap{ pathyPath => fileL(pathyPath).get(mem)}
+          case ReadF(path) => convertToAFile(path).flatMap(pathyPath => fileL(pathyPath).get(mem))
           case InvokeF(Drop, (_,src) :: (Fix(ConstantF(Data.Int(skip))),_) :: Nil) => src.map(_.drop(skip.toInt))
           case InvokeF(Take, (_,src) :: (Fix(ConstantF(Data.Int(limit))),_) :: Nil) => src.map(_.take(limit.toInt))
           case InvokeF(Squash,(_,src) :: Nil) => src
+          case ConstantF(data) => Some(Vector(data))
           case other => queryResponsesL.get(mem).get(Fix(other.map(_._1)))
         }
       })

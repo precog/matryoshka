@@ -2,11 +2,13 @@ package quasar
 package fs
 
 import quasar.Predef._
-import quasar.fp._
+import quasar.fp.{eitherTCatchable, hoistFree, free}
 import quasar.fp.free._
 import quasar.effect._
 import quasar.config.MongoDbConfig
 import quasar.physical.mongodb.{filesystems => mongofs}
+import quasar.mount.Mounts
+import quasar.regression.{interpretHfsIO, HfsIO}
 
 import scala.Either
 
@@ -14,12 +16,12 @@ import monocle.Optional
 import monocle.function.Index
 import monocle.std.vector._
 import org.specs2.mutable.Specification
-import org.specs2.execute._
+import org.specs2.execute.{Failure => _, _}
 import org.specs2.specification._
 import pathy.Path._
-import scalaz.{EphemeralStream => EStream, Optional => _, _}, Scalaz._
+import scalaz.{EphemeralStream => EStream, Optional => _, Failure => _, _}, Scalaz._
 import scalaz.concurrent.Task
-import scalaz.stream._
+import scalaz.stream.Process
 
 /** Executes all the examples defined within the `fileSystemShould` block
   * for each file system in `fileSystems`.
@@ -78,6 +80,7 @@ abstract class FileSystemTest[S[_]: Functor](
 }
 
 object FileSystemTest {
+
   val oneDoc: Vector[Data] =
     Vector(Data.Obj(ListMap("a" -> Data.Int(1))))
 
@@ -93,8 +96,8 @@ object FileSystemTest {
   //--- FileSystems to Test ---
 
   def allFsUT: Task[IList[FileSystemUT[FileSystem]]] =
-    (inMemUT |@| nullViewUT |@| externalFsUT) { (mem, viw, ext) =>
-      (mem :: viw :: ext) map (ut => ut.contramap(chroot.fileSystem(ut.testDir)))
+    (localFsUT |@| externalFsUT) { (loc, ext) =>
+      (loc ::: ext) map (ut => ut.contramap(chroot.fileSystem(ut.testDir)))
     }
 
   def externalFsUT = TestConfig.externalFileSystems {
@@ -103,18 +106,16 @@ object FileSystemTest {
       Task.delay(f)
   }
 
-  val inMemUT: Task[FileSystemUT[FileSystem]] = {
-    lazy val f = InMemory.runStatefully(InMemory.InMemState.empty)
-                   .map(_ compose InMemory.fileSystem)
-                   .run
+  def localFsUT: Task[IList[FileSystemUT[FileSystem]]] =
+    IList(
+      inMemUT,
+      hierarchicalUT,
+      nullViewUT
+    ).sequence
 
-    Task.delay(FileSystemUT(BackendName("In-memory"), f, rootDir))
-  }
-
-  val nullViewUT: Task[FileSystemUT[FileSystem]] = {
-    (inMemUT |@| MonotonicSeq.taskRefMonotonicSeq(0) |@|
-        KeyValueStore.taskRefKeyValueStore[ReadFile.ReadHandle, ReadFile.ReadHandle \/ QueryFile.ResultHandle](Map())) {
-        (mem, seq, viewState) =>
+  def nullViewUT: Task[FileSystemUT[FileSystem]] =
+    (inMemUT |@| MonotonicSeq.taskRefMonotonicSeq(0) |@| ViewState.toTask(Map())) {
+      (mem, seq, viewState) =>
 
       val memPlus: ViewFileSystem ~> Task =
         interpretViewFileSystem(viewState, seq, mem.run)
@@ -123,5 +124,22 @@ object FileSystemTest {
 
       FileSystemUT(BackendName("No-view"), fs, mem.testDir)
     }
+
+  def hierarchicalUT: Task[FileSystemUT[FileSystem]] = {
+    val mntDir: ADir = rootDir </> dir("mnt") </> dir("inmem")
+
+    (NameGenerator.salt |@| interpretHfsIO |@| inMemUT)((dir, f, mem) =>
+      FileSystemUT(
+        BackendName("hierarchical"),
+        foldMapNT[HfsIO, Task](f) compose hierarchical.fileSystem[Task, HfsIO](
+          DirName(dir),
+          Mounts.singleton(mntDir, mem.run)),
+        mntDir))
+  }
+
+  def inMemUT: Task[FileSystemUT[FileSystem]] = {
+    InMemory.runStatefully(InMemory.InMemState.empty)
+      .map(_ compose InMemory.fileSystem)
+      .map(FileSystemUT(BackendName("in-memory"), _, rootDir))
   }
 }

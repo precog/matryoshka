@@ -14,18 +14,21 @@
  * limitations under the License.
  */
 
-package quasar.effect
-
-import quasar.fp.free
+package quasar.fp.free
 
 import scalaz._
 
-/** Encapsulates boilerplate useful in defining lifted operations on free
-  * monads over effect algebras.
-  */
-abstract class LiftedOps[G[_], S[_]: Functor](implicit S: Coyoneda[G, ?] :<: S) {
-  type F[A] = Free[S, A]
+object lift {
+  final class LifterAux[F[_], A](fa: F[A]) {
+    type CF[A] = Coyoneda[F, A]
 
-  def lift[A](ga: G[A]): F[A] =
-    free.lift(ga).intoC[S]
+    def into[G[_]: Functor](implicit I: F :<: G): Free[G, A] =
+      Free.liftF(I.inj(fa))
+
+    def intoC[G[_]: Functor](implicit I: CF :<: G): Free[G, A] =
+      lift[CF, A](Coyoneda.lift(fa)).into[G]
+  }
+
+  def apply[F[_], A](fa: F[A]): LifterAux[F, A] =
+    new LifterAux(fa)
 }

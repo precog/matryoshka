@@ -18,6 +18,7 @@ package quasar.fs
 
 import quasar.Predef._
 
+import pathy.{Path => PPath}
 import scalaz._, Scalaz._
 
 // TODO: Should probably make this an ADT
@@ -59,6 +60,17 @@ final case class Path(dir: List[DirNode], file: Option[FileNode]) {
   def asDir: Path = file match {
     case Some(fileNode) => Path(dir :+ DirNode(fileNode.value), None)
     case None => this
+  }
+
+  /** Interpret as an absolute Pathy path, treating relative paths as relative
+    * to the root directory.
+    */
+  def asAPath: APath = {
+    import PPath._
+    val abs = asAbsolute
+    val absDir = abs.dir.foldLeft(PPath.rootDir[Sandboxed])(
+      (d, n) => d </> PPath.dir(n.value))
+    abs.file.map(n => absDir </> PPath.file(n.value)) getOrElse absDir
   }
 
   def relative = dir.headOption == Some(DirNode.Current)

@@ -26,7 +26,7 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
   val write  = WriteFile.Ops[FileSystem]
   val manage = ManageFile.Ops[FileSystem]
 
-  case class VS(seq: Long, handles: Map[ReadFile.ReadHandle, ReadFile.ReadHandle \/ QueryFile.ResultHandle])
+  case class VS(seq: Long, handles: ViewHandles)
   val _seq = GenLens[VS](_.seq)
   val _handles = GenLens[VS](_.handles)
 
@@ -37,8 +37,8 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
 
   def traceViewFs(nodes: Map[ADir, Set[Node]]): ViewFileSystem ~> VST =
     interpretViewFileSystem[VST](
-      KeyValueStore.stateKeyValueStore[Trace, ReadFile.ReadHandle, ReadFile.ReadHandle \/ QueryFile.ResultHandle, VS](_handles),
-      MonotonicSeq.stateMonotonicSeq[Trace, VS](_seq),
+      KeyValueStore.stateKeyValueStore[Trace](_handles),
+      MonotonicSeq.stateMonotonicSeq[Trace](_seq),
       liftMT[Trace, VSF] compose
         interpretFileSystem[Trace](qfTrace(nodes), rfTrace, wfTrace, mfTrace))
 

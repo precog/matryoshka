@@ -181,7 +181,7 @@ object ManageFile {
             (from, to) => List(from.render, to.render),
             (from, to) => List(from.render, to.render)))
         case Delete(path) => NonTerminal(List("Delete"), None, List(path.render))
-        case TempFile(nearTo) => NonTerminal(List("TempFile"), None, nearTo.map(_.render).toList)
+        case TempFile(nearTo) => NonTerminal(List("TempFile"), None, List(nearTo.render))
       }
     }
 }

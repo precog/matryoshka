@@ -31,9 +31,6 @@ import pathy.{Path => PPath}, PPath._
 import scalaz._, Scalaz._
 
 object view {
-  type ViewState[A] = KeyValueStore[ReadFile.ReadHandle,
-    ReadFile.ReadHandle \/ QueryFile.ResultHandle, A]
-
   /** Translate reads on view paths to the equivalent queries. */
   def readFile[S[_]: Functor]
       (views: Views)
@@ -48,7 +45,7 @@ object view {
     val readUnsafe = ReadFile.Unsafe[S]
     val queryUnsafe = QueryFile.Unsafe[S]
     val seq = MonotonicSeq.Ops[S]
-    val viewState = KeyValueStore.Ops[ReadFile.ReadHandle, ReadFile.ReadHandle \/ QueryFile.ResultHandle, S]
+    val viewState = ViewState.Ops[S]
 
     new (ReadFile ~> Free[S, ?]) {
       def apply[A](rf: ReadFile[A]): Free[S, A] = rf match {
@@ -69,7 +66,7 @@ object view {
 
         case Read(handle) =>
           (for {
-            v <- viewState.get(handle).toRight(UnknownReadHandle(handle))
+            v <- viewState.get(handle).toRight(unknownReadHandle(handle))
             d <- v.fold(readUnsafe.read, queryUnsafe.more)
           } yield d).run
 
@@ -145,7 +142,7 @@ object view {
             manage.delete(path).run
 
         case TempFile(nearTo) =>
-          manage.tempFile(nearTo)
+          manage.tempFile(nearTo).run
       }
     }
   }

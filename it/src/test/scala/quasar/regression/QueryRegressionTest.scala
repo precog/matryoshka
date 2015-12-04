@@ -5,6 +5,7 @@ import quasar.Predef._
 import quasar.config._
 import quasar.fp._
 import quasar.fs.{Path => QPath, _}
+import quasar.mount.Mounts
 import quasar.sql._
 
 import java.io.{File, FileInputStream}
@@ -236,7 +237,27 @@ object QueryRegressionTest {
         Task.delay(f)
     }
 
-    extFs map (_ map (ut => ut.contramap(chroot.fileSystem(ut.testDir))))
+    for {
+      uts    <- extFs
+      mntDir =  rootDir </> dir("hfs-mnt")
+      hfsUts <- uts.traverse(ut => hierarchicalFSIO(mntDir, ut.run) map { f =>
+                  ut.copy(run = f).contramap(chroot.fileSystem[FileSystemIO](ut.testDir))
+                })
+    } yield hfsUts
+  }
+
+  private def hierarchicalFSIO(mnt: ADir, f: FileSystemIO ~> Task): Task[FileSystemIO ~> Task] = {
+    (NameGenerator.salt |@| interpretHfsIO) { (dir, hfs) =>
+      val interpFS = f compose injectNT[FileSystem, FileSystemIO]
+
+      val g: FileSystem ~> Free[HfsIO, ?] =
+        hierarchical.fileSystem[Task, HfsIO](DirName(dir), Mounts.singleton(mnt, interpFS))
+          .compose(chroot.fileSystem[FileSystem](mnt))
+
+      free.interpret2(
+        NaturalTransformation.refl[Task],
+        free.foldMapNT(hfs) compose g)
+    }
   }
 
   implicit val dataEncodeJson: EncodeJson[Data] =
