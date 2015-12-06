@@ -14,17 +14,17 @@
  * limitations under the License.
  */
 
-package quasar
-package physical
-package mongodb
+package quasar.physical.mongodb
 
 import quasar.Predef._
+import quasar.EnvErr2T
 import quasar.fp._
 import quasar.fs.{Path => _, _}
+import quasar.physical.mongodb.fs.bsoncursor._
 
 import com.mongodb.async.client.MongoClient
 import pathy._, Path._
-import scalaz.~>
+import scalaz.{Hoist, ~>}
 import scalaz.std.option._
 import scalaz.syntax.std.option._
 import scalaz.syntax.foldable._
@@ -33,6 +33,8 @@ import scalaz.concurrent.Task
 
 package object fs {
   type WFTask[A] = WorkflowExecErrT[Task, A]
+
+  val MongoDBFsType = FileSystemType("mongodb")
 
   final case class DefaultDb(run: String) extends scala.AnyVal
 
@@ -47,18 +49,22 @@ package object fs {
   def mongoDbFileSystem(
     client: MongoClient,
     defDb: DefaultDb
-  ): EnvErr2T[Task, FileSystem ~> WFTask] =
-    for {
-      qfile  <- queryfile.run(client)(queryfile.interpret)
-      rfile  <- readfile.run(client).liftM[EnvErr2T]
-      wfile  <- writefile.run(client).liftM[EnvErr2T]
-      mfile  <- managefile.run(client, defDb).liftM[EnvErr2T]
-      liftWF =  liftMT[Task, WorkflowExecErrT]
-    } yield {
+  ): EnvErr2T[Task, FileSystem ~> WFTask] = {
+    val liftWF = liftMT[Task, WorkflowExecErrT]
+    val runM = Hoist[EnvErr2T].hoist(MongoDbIO.runNT(client))
+
+    (
+      runM(WorkflowExecutor.mongoDb)                 |@|
+      queryfile.run[BsonCursor](client, some(defDb))
+        .liftM[EnvErr2T]                             |@|
+      readfile.run(client).liftM[EnvErr2T]           |@|
+      writefile.run(client).liftM[EnvErr2T]          |@|
+      managefile.run(client, defDb).liftM[EnvErr2T]
+    )((execMongo, qfile, rfile, wfile, mfile) =>
       interpretFileSystem[WFTask](
-        qfile,
+        qfile compose queryfile.interpret(execMongo),
         liftWF compose rfile compose readfile.interpret,
         liftWF compose wfile compose writefile.interpret,
-        liftWF compose mfile compose managefile.interpret)
-    }
+        liftWF compose mfile compose managefile.interpret))
+  }
 }

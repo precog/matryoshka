@@ -3,7 +3,7 @@ package quasar.mount
 import quasar.Predef._
 import quasar.Variables
 import quasar.fp.prism._
-import quasar.fs.{APath, ADir, AFile, PathError2}
+import quasar.fs.{APath, ADir, AFile, PathError2, FileSystemType}
 import quasar.recursionschemes.Fix
 import quasar.specs2.DisjunctionMatchers
 import quasar.sql

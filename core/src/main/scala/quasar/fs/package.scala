@@ -29,7 +29,7 @@ package object fs {
 
   type FileSystem0[A] = Coproduct[WriteFileF, ManageFileF, A]
   type FileSystem1[A] = Coproduct[ReadFileF, FileSystem0, A]
-  /** FileSystem[A] = QueryFileF or ReadFileF or WriteFileF or ManaFileF */
+  /** FileSystem[A] = QueryFileF or ReadFileF or WriteFileF or ManageFileF */
   type FileSystem[A]  = Coproduct[QueryFileF, FileSystem1, A]
 
   type ADir  = AbsDir[Sandboxed]

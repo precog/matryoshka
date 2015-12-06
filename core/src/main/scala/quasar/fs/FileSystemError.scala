@@ -26,6 +26,7 @@ import monocle.Prism
 import scalaz._
 import scalaz.syntax.show._
 
+import QueryFile.ResultHandle
 import ReadFile.ReadHandle
 import WriteFile.WriteHandle
 
@@ -36,6 +37,8 @@ object FileSystemError {
     final case class PathError(e: PathError2)
       extends FileSystemError
     final case class PlannerError(lp: Fix[LogicalPlan], err: PlannerErr)
+      extends FileSystemError
+    final case class UnknownResultHandle(h: ResultHandle)
       extends FileSystemError
     final case class UnknownReadHandle(h: ReadHandle)
       extends FileSystemError
@@ -52,6 +55,9 @@ object FileSystemError {
 
   val PlannerError: (Fix[LogicalPlan], PlannerErr) => FileSystemError =
     Case.PlannerError(_, _)
+
+  val UnknownResultHandle: ResultHandle => FileSystemError =
+    Case.UnknownResultHandle(_)
 
   val UnknownReadHandle: ReadHandle => FileSystemError =
     Case.UnknownReadHandle(_)
@@ -76,6 +82,12 @@ object FileSystemError {
       case Case.PlannerError(lp, e) => Some((lp, e))
       case _ => None
     } (PlannerError.tupled)
+
+  val unknownResultHandle: Prism[FileSystemError, ResultHandle] =
+    Prism[FileSystemError, ResultHandle] {
+      case Case.UnknownResultHandle(h) => Some(h)
+      case _ => None
+    } (UnknownResultHandle)
 
   val unknownReadHandle: Prism[FileSystemError, ReadHandle] =
     Prism[FileSystemError, ReadHandle] {
@@ -107,6 +119,8 @@ object FileSystemError {
         e.shows
       case Case.PlannerError(_, e) =>
         e.shows
+      case Case.UnknownResultHandle(h) =>
+        s"Attempted to get results from an unknown or closed handle: ${h.run}"
       case Case.UnknownReadHandle(h) =>
         s"Attempted to read from an unknown or closed handle: ${h.run}"
       case Case.UnknownWriteHandle(h) =>

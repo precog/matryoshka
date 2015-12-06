@@ -138,8 +138,19 @@ object chroot {
           Coyoneda.lift(ExecutePlan(lp.translate(rebasePlan), rebase(out, prefix)))
             .map(_.map(_.bimap(stripPathError(prefix), resultFile.modify(stripPrefix(prefix)))))
 
-        case Explain(lp, out) =>
-          Coyoneda.lift(Explain(lp.translate(rebasePlan), rebase(out, prefix)))
+        case EvaluatePlan(lp) =>
+          Coyoneda.lift(EvaluatePlan(lp.translate(rebasePlan)))
+            .map(_.map(_ leftMap stripPathError(prefix)))
+
+        case More(h) =>
+          Coyoneda.lift(More(h))
+            .map(_ leftMap stripPathError(prefix))
+
+        case Close(h) =>
+          Coyoneda.lift(Close(h))
+
+        case Explain(lp) =>
+          Coyoneda.lift(Explain(lp.translate(rebasePlan)))
             .map(_.map(_ leftMap stripPathError(prefix)))
 
         case ListContents(d) =>
