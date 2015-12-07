@@ -88,11 +88,20 @@ object LogicalPlan {
           val nodeType = "LogicalPlan" :: Nil
 
           def render(v: LogicalPlan[α]) = v match {
-            case ReadF(name)             => Terminal("Read" :: nodeType, Some(name.pathname))
-            case ConstantF(data)         => Terminal("Constant" :: nodeType, Some(data.toString))
-            case InvokeF(func, args)     => NonTerminal("Invoke" :: nodeType, Some(func.name), args.map(ra.render))
-            case FreeF(name)             => Terminal("Free" :: nodeType, Some(name.toString))
-            case LetF(ident, form, body) => NonTerminal("Let" :: nodeType, Some(ident.toString), List(ra.render(form), ra.render(body)))
+            // NB: a couple of special cases for readability
+            case ConstantF(Data.Str(str)) => Terminal("Str" :: "Constant" :: nodeType, Some(str.shows))
+            case InvokeF(structural.ObjectProject, expr :: name :: Nil) =>
+              (ra.render(expr), ra.render(name)) match {
+                case (RenderedTree(_, Some(x), Nil), RenderedTree(_, Some(n), Nil)) =>
+                  Terminal("ObjectProject" :: nodeType, Some(x + "[" + n + "]"))
+                case (x, n) => NonTerminal("Invoke" :: nodeType, Some(ObjectProject.name), x :: n :: Nil)
+              }
+
+            case ReadF(name)              => Terminal("Read" :: nodeType, Some(name.pathname))
+            case ConstantF(data)          => Terminal("Constant" :: nodeType, Some(data.toString))
+            case InvokeF(func, args)      => NonTerminal("Invoke" :: nodeType, Some(func.name), args.map(ra.render))
+            case FreeF(name)              => Terminal("Free" :: nodeType, Some(name.toString))
+            case LetF(ident, form, body)  => NonTerminal("Let" :: nodeType, Some(ident.toString), List(ra.render(form), ra.render(body)))
             case TypecheckF(expr, typ, cont, fallback) =>
               NonTerminal("Typecheck" :: nodeType, Some(typ.shows),
                 List(ra.render(expr), ra.render(cont), ra.render(fallback)))
