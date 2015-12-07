@@ -505,9 +505,9 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     "RenderTree" should {
       "render nodes and leaves" in {
         mul(num(0), num(1)).shows must_==
-          """Mul
-            |├─ Num(Fix(0))
-            |╰─ Num(Fix(1))""".stripMargin
+          """Fix:Mul
+            |├─ Fix:Num(0)
+            |╰─ Fix:Num(1)""".stripMargin
       }
     }
   }
