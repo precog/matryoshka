@@ -1,32 +1,31 @@
-package quasar
+package quasar.regression
 
+import quasar._
 import quasar.Predef._
 import quasar.config._
 import quasar.fp._
 import quasar.fs.{Path => QPath, _}
-import quasar.regression._
 import quasar.sql._
 
 import java.io.{File, FileInputStream}
-
 import scala.io.Source
 import scala.util.matching.Regex
 
 import argonaut._, Argonaut._
-
+import org.specs2.specification._
+import org.specs2.execute._
 import pathy.Path._
-
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 import scalaz.stream.{merge => pmerge, _}
 
-import org.specs2.specification._
-import org.specs2.execute._
+abstract class QueryRegressionTest[S[_]: Functor](
+  fileSystems: Task[IList[FileSystemUT[S]]])(
+  implicit S0: QueryFileF :<: S, S1: ManageFileF :<: S,
+           S2: WriteFileF :<: S, S3: Task :<: S
+) extends FileSystemTest[S](fileSystems) {
 
-class RegressionSpec2
-  extends FileSystemTest[FileSystemIO](RegressionSpec2.externalFS) {
-
-  import RegressionSpec2._
+  import QueryRegressionTest._
 
   type FsErr[A] = FileSystemErrT[F, A]
 
@@ -34,7 +33,7 @@ class RegressionSpec2
   import qfTransforms._
 
   val injectTask: Task ~> F =
-    liftFT[FileSystemIO].compose(injectNT[Task, FileSystemIO])
+    liftFT[S].compose(injectNT[Task, S])
 
   val TestsRoot = new File("it/src/main/resources/tests")
   val DataDir: ADir = rootDir </> dir("regression")
@@ -43,17 +42,22 @@ class RegressionSpec2
   def dataFile(fileName: String): AFile =
     DataDir </> file1(FileName(fileName).dropExtension)
 
-  val query  = QueryFile.Ops[FileSystemIO]
-  val read   = ReadFile.Ops[FileSystemIO]
-  val write  = WriteFile.Ops[FileSystemIO]
-  val manage = ManageFile.Ops[FileSystemIO]
+  val query  = QueryFile.Ops[S]
+  val write  = WriteFile.Ops[S]
+  val manage = ManageFile.Ops[S]
+
+  /** A name to idetify the suite in test output. */
+  def suiteName: String
+
+  /** Return the results of evaluating the given query as a stream. */
+  def queryResults(expr: Expr, vars: Variables): Process[CompExecM, Data]
 
   ////
 
   lazy val tests = regressionTests(TestsRoot, knownFileSystems).run
 
   fileSystemShould { name => implicit run =>
-    "Querying" should {
+    suiteName should {
       step(prepareTestData(tests, run).run)
 
       tests.toList foreach { case (f, t) =>
@@ -76,7 +80,7 @@ class RegressionSpec2
     def runTest = (for {
       _    <- Task.delay(println(test.query))
       _    <- run(test.data.cata(verifyDataExists, success.point[F]))
-      data =  execQuery(test.query, test.variables)
+      data =  testQuery(test.query, test.variables)
       res  <- verifyResults(test.expected, data, run)
     } yield res).run
 
@@ -125,7 +129,7 @@ class RegressionSpec2
   }
 
   /** Parse and execute the given query, returning a stream of results. */
-  def execQuery(
+  def testQuery(
     qry: String,
     vars: Map[String, String]
   ): Process[CompExecM, Data] = {
@@ -136,8 +140,7 @@ class RegressionSpec2
       SQLParser.parseInContext(Query(qry), DataPath)
         .fold(e => Task.fail(new RuntimeException(e.message)), _.point[Task])
 
-    f(parseTask).liftM[Process]
-      .flatMap(query.evaluateQuery(_, Variables.fromMap(vars)))
+    f(parseTask).liftM[Process] flatMap (queryResults(_, Variables.fromMap(vars)))
   }
 
   /** Loads all the test data needed by the given tests into the filesystem. */
@@ -221,7 +224,7 @@ class RegressionSpec2
     Task.delay(Source.fromInputStream(new FileInputStream(file)).mkString)
 }
 
-object RegressionSpec2 {
+object QueryRegressionTest {
   import quasar.physical.mongodb.{filesystems => mongofs}
 
   lazy val knownFileSystems = TestConfig.backendNames.toSet
