@@ -1,6 +1,6 @@
 {
     "name": "reduced expressions which trigger bad field ordering (#598)",
-    "backends": { "mongodb_2_6": "pending", "mongodb_3_0": "pending", "mongodb_read_only": "pending" },
+    "backends": { "mongodb_2_6": "pending", "mongodb_3_0": "pending", "mongodb_read_only": "pending", "mongodb_3_2": "pending" },
 
     "data": "zips.data",
 

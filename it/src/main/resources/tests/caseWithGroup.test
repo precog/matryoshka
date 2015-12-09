@@ -15,12 +15,12 @@
                 end as funnel
                 from zips
                 group by state
-                order by funnel",
+                order by funnel, state",
 
     "predicate": "equalsInitial",
     "expected": [{ "abbr": "CO", "quantity":  414, "funnel":   1 },
                  { "abbr": "WA", "quantity":  484, "funnel":   2 },
                  { "abbr": "PA", "quantity": 1458, "funnel":   3 },
                  { "abbr": "VA", "quantity":  816, "funnel":   4 },
-                 { "abbr": "IL", "quantity": 1237, "funnel": 100 }]
+                 { "abbr": "AK", "quantity":  195, "funnel": 100 }]
 }
