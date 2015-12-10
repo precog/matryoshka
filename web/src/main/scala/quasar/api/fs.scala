@@ -99,11 +99,13 @@ class FileSystemApi[WC, SC](
         .as(mountings.get(cfg).keySet contains path)
     }
 
-  protected def updateWebServerConfig(config: Task[WC]): Task[Unit] =
+  def updateWebServerConfig(config: Task[WC]): Task[Unit] = updateWebServerConfig(config, true)
+
+  def updateWebServerConfig(config: Task[WC], restart: Boolean): Task[Unit] =
     for {
       cfg <- config
       _   <- configChanged(cfg)
-      _   <- restartServer(cfg)
+      _   <- if (restart) restartServer(cfg) else Task.now(())
     } yield ()
 
   private def rawJsonLines[F[_]](codec: DataCodec, v: Process[F, Data]): Process[F, String] =
@@ -299,13 +301,11 @@ class FileSystemApi[WC, SC](
   def serverService(config: Task[WC]) =
     HttpService {
       case req @ PUT -> Root / "port" =>
-        EntityDecoder.decodeString(req).flatMap(body =>
-          body.parseInt.fold(
-            e => NotFound(e.getMessage),
-            // TODO: If the requested port is unavailable the server will restart
-            //       on a random one, thus this response text may not be accurate.
-            i => updateWebServerConfig(config.map(wcPort.set(i))) *>
-                 Ok("changed port to " + i)))
+        req.decode[Int] { port =>
+          // TODO: If the requested port is unavailable the server will restart
+          //       on a random one, thus this response text may not be accurate.
+          updateWebServerConfig(config.map(wcPort.set(port))) *> Ok(s"changed port to $port")
+        }
 
       case DELETE -> Root / "port" =>
         updateWebServerConfig(config.map(wcPort.set(ServerConfig.DefaultPort))) *>
@@ -517,6 +517,16 @@ class FileSystemApi[WC, SC](
       json(MessageFormat.JsonArray.Readable) orElse
       json(MessageFormat.JsonArray.Precise) orElse EntityDecoder.error(MessageFormat.UnsupportedContentType)
   }
+
+  implicit val intEntityDecoder: EntityDecoder[Int] =
+    EntityDecoder.text.flatMapR(_.parseInt.fold(
+      κ { val m = "unable to parse as Int"; DecodeResult.failure(ParseFailure(m, m)) },
+      DecodeResult.success(_)))
+
+  implicit val booleanEntityDecoder: EntityDecoder[Boolean] =
+    EntityDecoder.text.flatMapR(_.parseBoolean.fold(
+      κ { val m = "unable to parse as Boolean"; DecodeResult.failure(ParseFailure(m, m)) },
+      DecodeResult.success(_)))
 
   def handleMissingContentType(response: Task[Response]) =
     response.handleWith{ case MessageFormat.UnsupportedContentType =>
