@@ -178,7 +178,7 @@ object WriteFile {
           if (fsPathNotFound.getOption(e) exists (_ == tmp)) ().point[M]
           else MonadError[G, FileSystemError].raiseError(e))
 
-      MF.tempFileNear(dst).liftM[FileSystemErrT].liftM[Process] flatMap { tmp =>
+      MF.tempFile(dst).liftM[Process] flatMap { tmp =>
         appendChunked(tmp, src).terminated.take(1)
           .flatMap(_.cata(
             werr => MF.delete(tmp).as(werr).liftM[Process],

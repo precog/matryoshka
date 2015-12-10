@@ -147,10 +147,11 @@ object InMemory {
       case Delete(path) =>
         refineType(path).fold(deleteDir, deleteFile)
 
-      case TempFile(nearTo) =>
-        nextSeq map (n => nearTo.cata(
-          renameFile(_, κ(FileName(tmpName(n)))),
-          tmpDir </> file(tmpName(n))))
+      case TempFile(path) =>
+        nextSeq map (n => refineType(path).fold(
+          _ </> file(tmpName(n)),
+          renameFile(_, κ(FileName(tmpName(n))))
+        ).right[FileSystemError])
     }
   }
 
@@ -246,7 +247,6 @@ object InMemory {
 
   ////
 
-  private def tmpDir: ADir = rootDir </> dir("__quasar") </> dir("tmp")
   private def tmpName(n: Long) = s"__quasar.gen_$n"
 
   private val seqL: InMemState @> Long =

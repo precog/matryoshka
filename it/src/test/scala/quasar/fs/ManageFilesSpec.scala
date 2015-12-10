@@ -192,12 +192,11 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val f = d </> file("somefile")
 
         val p = write.save(f, oneDoc.toProcess).drain ++
-                (manage.tempFileNear(f).liftM[FileSystemErrT]: manage.M[AFile])
-                  .liftM[Process] flatMap { tf =>
-                    write.save(tf, anotherDoc.toProcess).drain ++
-                    read.scanAll(tf) ++
-                    manage.delete(tf).liftM[Process].drain
-                  }
+                manage.tempFile(f).liftM[Process] flatMap { tf =>
+                  write.save(tf, anotherDoc.toProcess).drain ++
+                  read.scanAll(tf) ++
+                  manage.delete(tf).liftM[Process].drain
+                }
 
         runLogT(run, p).runEither must beRight(anotherDoc)
       }
@@ -205,25 +204,13 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
       "write/read from temp dir near non existing" >> {
         val d = managePrefix </> dir("tmpnear2")
         val f = d </> file("somefile")
-        val p = (manage.tempFileNear(f).liftM[FileSystemErrT]: manage.M[AFile])
-                  .liftM[Process] flatMap { tf =>
-                    write.save(tf, anotherDoc.toProcess).drain ++
-                    read.scanAll(tf) ++
-                    manage.delete(tf).liftM[Process].drain
-                  }
+        val p = manage.tempFile(f).liftM[Process] flatMap { tf =>
+                  write.save(tf, anotherDoc.toProcess).drain ++
+                  read.scanAll(tf) ++
+                  manage.delete(tf).liftM[Process].drain
+                }
 
         runLogT(run, p).runEither must beRight(anotherDoc)
-      }
-
-      "write/read from arbitrary temp dir" >> {
-        val p = (manage.anyTempFile.liftM[FileSystemErrT]: manage.M[AFile])
-                  .liftM[Process] flatMap { tf =>
-                    write.save(tf, oneDoc.toProcess).drain ++
-                    read.scanAll(tf) ++
-                    manage.delete(tf).liftM[Process].drain
-                  }
-
-        runLogT(run, p).runEither must beRight(oneDoc)
       }
 
       step(deleteForManage(run).runVoid)

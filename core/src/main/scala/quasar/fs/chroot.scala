@@ -103,9 +103,9 @@ object chroot {
           Coyoneda.lift(Delete(rebase(p, prefix)))
             .map(_ leftMap stripPathError(prefix))
 
-        case TempFile(nt) =>
-          Coyoneda.lift(TempFile(nt map (rebase(_, prefix))))
-            .map(stripPrefix(prefix))
+        case TempFile(p) =>
+          Coyoneda.lift(TempFile(rebase(p, prefix)))
+            .map(_ bimap (stripPathError(prefix), stripPrefix(prefix)))
       }
     }
 

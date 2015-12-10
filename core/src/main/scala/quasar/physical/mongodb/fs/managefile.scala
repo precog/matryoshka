@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
-package quasar
-package physical
-package mongodb
-package fs
+package quasar.physical.mongodb.fs
 
 import quasar.Predef._
+import quasar.NameGenerator
 import quasar.fp.TaskRef
 import quasar.fs._
+import quasar.physical.mongodb._
 
 import com.mongodb.{MongoCommandException, MongoServerException}
 import com.mongodb.async.client.MongoClient
@@ -32,7 +31,7 @@ import scalaz.concurrent.Task
 object managefile {
   import ManageFile._, FileSystemError._, PathError2._, MongoDbIO._, fsops._
 
-  type ManageIn           = (DefaultDb, TmpPrefix, TaskRef[Long])
+  type ManageIn           = (TmpPrefix, TaskRef[Long])
   type ManageInT[F[_], A] = ReaderT[F, ManageIn, A]
   type MongoManage[A]     = ManageInT[MongoDbIO, A]
 
@@ -55,14 +54,12 @@ object managefile {
         refineType(path).fold(deleteDir, deleteFile)
           .run.liftM[ManageInT]
 
-      case TempFile(maybeNear) =>
-        val dbName = defaultDb map { defDb =>
-          maybeNear
-            .flatMap(f => Collection.fromPathy(f).toOption)
-            .cata(_.databaseName, defDb.run)
-        }
-
-        (defaultDb |@| freshName)((db, n) => rootDir </> dir(db.run) </> file(n))
+      case TempFile(path) =>
+        EitherT.fromDisjunction[MongoManage](Collection.dbNameFromPath(path))
+          .leftMap(PathError)
+          .flatMap(db => freshName.liftM[FileSystemErrT] map (n =>
+            rootDir[Sandboxed] </> dir(db) </> file(n)))
+          .run
     }
   }
 
@@ -70,11 +67,11 @@ object managefile {
     * to use as a default location for temp collections when no other database
     * can be deduced.
     */
-  def run(client: MongoClient, defDb: DefaultDb): Task[MongoManage ~> Task] =
+  def run(client: MongoClient): Task[MongoManage ~> Task] =
     (tmpPrefix |@| TaskRef(0L)) { (prefix, ref) =>
       new (MongoManage ~> Task) {
         def apply[A](fs: MongoManage[A]) =
-          fs.run((defDb, prefix, ref)).run(client)
+          fs.run((prefix, ref)).run(client)
       }
     }
 
@@ -184,13 +181,10 @@ object managefile {
         dropCollection(c).liftM[FileSystemErrT],
         PathError(PathNotFound(file)).raiseError[MongoE, Unit]))
 
-  private def defaultDb: MongoManage[DefaultDb] =
-    MonadReader[R, ManageIn].ask.map(_._1)
-
   private def freshName: MongoManage[String] =
     for {
       in <- MonadReader[R, ManageIn].ask
-      (_, prefix, ref) = in
+      (prefix, ref) = in
       n  <- liftTask(ref.modifyS(i => (i + 1, i))).liftM[ManageInT]
     } yield prefix.run + n
 
