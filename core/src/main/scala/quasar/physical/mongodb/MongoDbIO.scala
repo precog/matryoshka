@@ -250,7 +250,8 @@ object MongoDbIO {
         fail(new MongoException("No database found."))
     }
 
-    databaseNames
+    // NB: use "admin" DB as fallback if no database is known to exist.
+    (databaseNames ++ Process.emit("admin"))
       .evalMap(lookupVersion)
       .takeThrough(_.isLeft)
       .runLog
