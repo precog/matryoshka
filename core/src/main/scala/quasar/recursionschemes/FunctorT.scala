@@ -39,6 +39,14 @@ import simulacrum.{typeclass, op}
   * This is noticable when `T` is `Cofree`. In this function, the result may
   * have any `head` the algebra desires, whereas in `transCata`, it can only
   * have the `head` of the argument to `f`.
+  * 
+  * Docs for operations, since they seem to break scaladoc if put in the right
+  * place:
+  * 
+  * * `map` – very roughly like Uniplate’s `descend`
+  * * `transCataT` – akin to Uniplate’s `transform`
+  * * `transAnaT` – akin to Uniplate’s `topDownTransform`
+  * * `transCata` – akin to Fixplate’s `restructure`
   */
 @typeclass trait FunctorT[T[_[_]]] {
   @op("∘") def map[F[_], G[_]](t: T[F])(f: F[T[F]] => G[T[G]]): T[G]
@@ -54,6 +62,12 @@ import simulacrum.{typeclass, op}
 
   def transAna[F[_], G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[F]]): T[G] =
     map(t)(f(_).map(transAna(_)(f)))
+
+  def transPrepro[F[_]: Functor, G[_]](t: T[F])(f: F[T[G]] => G[T[G]])(g: F ~> F): T[G] =
+    map(t)(ft => f(g(ft.map(transPrepro(_)(f)(g)))))
+
+  def transPostpro[F[_], G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[F]])(g: G ~> G): T[G] =
+    map(t)(ft => g(f(ft).map(transPostpro(_)(f)(g))))
 
   def transPara[F[_]: Functor, G[_]](t: T[F])(f: F[(T[F], T[G])] => G[T[G]]):
       T[G] =
