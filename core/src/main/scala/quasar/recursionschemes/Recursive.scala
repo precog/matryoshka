@@ -89,6 +89,32 @@ import simulacrum.typeclass
     h(t)._2
   }
 
+  def zippa[F[_]: Functor: Zip, A](that: T[F])(f: F[A] => A): A =
+    f(project(this).zipWith(project(that))(_.zippa(_)(f)))
+
+  def paraZippa[F[_]: Functor: Zip, A](that: T[F])(f: (F[T[F]], F[T[F]], F[A]) => A): A = {
+    val (l, r) = (project(this), project(that))
+    f(l, r, l.zipWith(r)(_.paraZippa(_)(f)))
+  }
+
+  def merga[F[_]: Functor: Merge, A](that: T[F])(f: (F[T[F]], F[T[F]]) \/ F[A] => A):
+      A =
+    project(this).mergeWith(project(that)) {
+      case x @ -\/(_)  => f(x)
+      case \/-((a, b)) => a.merga(b)(f)
+    }.fold(identity, x => f(x.right))
+
+  def paraMerga[F[_]: Functor: Merge, A](
+    that: T[F])(
+    f: (F[T[F]], F[T[F]], Option[F[A]]) => A):
+      A = {
+    val (l, r) = (project(this), project(that))
+    l.mergeWith(r) {
+      case -\/((a, b)) => f(a, b, None)
+      case \/-((a, b)) => a.paramerga(b)(f)
+    }.fold(identity, x => f(l, r, x.some))
+  }
+
   def isLeaf[F[_]: Foldable](t: T[F]): Boolean =
     !Tag.unwrap(project(t).foldMap(κ(true.disjunction)))
 
