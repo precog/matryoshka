@@ -6,8 +6,6 @@ import quasar._
 import quasar.javascript._
 import quasar.jscore
 
-import scala.collection.JavaConverters._
-
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
 import org.threeten.bp._
@@ -31,15 +29,6 @@ class BsonSpecs extends Specification with ScalaCheck {
       val b = Doc(ListMap("a" -> Undefined))
 
       fromRepr(b.repr) must_== b
-    }
-
-    "handle completely unexpected object" in {
-      // Simulating a type MongoDB uses that we know nothing about:
-      class Foo
-
-      val native = new org.bson.Document(Map[String, java.lang.Object]("a" -> new Foo()).asJava)
-
-      Bson.fromRepr(native) must_== Doc(ListMap("a" -> Undefined))
     }
 
     import BsonGen._

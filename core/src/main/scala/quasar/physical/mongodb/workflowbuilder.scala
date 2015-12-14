@@ -1551,40 +1551,46 @@ object WorkflowBuilder {
     }
   }
 
+  private def findSort(src: WorkflowBuilder)(distincting: WorkflowBuilder => WorkflowBuilder):
+      M[WorkflowBuilder] = {
+    @tailrec
+    def loop(wb: WorkflowBuilder): M[WorkflowBuilder] =
+      wb.unFix match {
+        case spb @ ShapePreservingBuilderF(spbSrc, sortKeys, f) =>
+          spb.dummyOp.unFix match {
+            case $Sort(_, _) =>
+              foldBuilders(src, sortKeys).map {
+                case (newSrc, dv, ks) =>
+                  val dist = distincting(Fix(normalize(ExprBuilderF(newSrc, \/-($var(dv.toDocVar))))))
+                  ShapePreservingBuilder(
+                    Fix(normalize(ExprBuilderF(dist, \/-($var(dv.toDocVar))))),
+                    ks.map(k => Fix(normalize(ExprBuilderF(dist, \/-($var(k.toDocVar)))))), f)
+              }
+            case _ => loop(spbSrc)
+          }
+        case _ => distincting(src).point[M]
+      }
+    loop(src)
+  }
+
   def distinct(src: WorkflowBuilder): M[WorkflowBuilder] =
     findKeys(src).fold(
       lift(deleteField(src, "_id")).flatMap(del => distinctBy(del, List(del))))(
-      ks => distinctBy(src, ks match {
-        case Root() => List(src)
+      ks => ks match {
+        case Root() => distinctBy(src, List(src))
         case Field(k) =>
-          List(Fix(normalize(ExprBuilderF(src, \/-($var(DocField(k)))))))
+          distinctBy(src, List(Fix(normalize(ExprBuilderF(src, \/-($var(DocField(k))))))))
         case Subset(ks) =>
-          ks.toList.map(k =>
-            Fix(normalize(ExprBuilderF(src, \/-($var(DocField(k)))))))
-      }))
+          val (fields, keys) = ks.toList.map(k =>
+            (k -> $first($var(DocField(k))).left[Expression],
+              Fix(normalize(ExprBuilderF(src, \/-($var(DocField(k)))))))
+          ).unzip
+          findSort(src)(GroupBuilder(_, keys, Doc(fields.toListMap)))
+      })
 
   def distinctBy(src: WorkflowBuilder, keys: List[WorkflowBuilder]):
       M[WorkflowBuilder] = {
-    def distincting(s: WorkflowBuilder) = reduce(groupBy(s, keys))($first(_))
-
-    @tailrec
-    def findSort(wb: WorkflowBuilder): M[WorkflowBuilder] = wb.unFix match {
-      case spb @ ShapePreservingBuilderF(spbSrc, sortKeys, f) =>
-        spb.dummyOp.unFix match {
-          case $Sort(_, _) =>
-            foldBuilders(src, sortKeys).map { case (newSrc, dv, ks) =>
-
-              val dist = distincting(Fix(normalize(ExprBuilderF(newSrc, \/-($var(dv.toDocVar))))))
-              ShapePreservingBuilder(
-                Fix(normalize(ExprBuilderF(dist, \/-($var(dv.toDocVar))))),
-                ks.map(k => Fix(normalize(ExprBuilderF(dist, \/-($var(k.toDocVar)))))), f)
-            }
-          case _ => findSort(spbSrc)
-        }
-      case _ => distincting(src).point[M]
-    }
-
-    findSort(src)
+    findSort(src)(s => reduce(groupBy(s, keys))($first(_)))
   }
 
   private def merge(left: WorkflowBuilder, right: WorkflowBuilder):

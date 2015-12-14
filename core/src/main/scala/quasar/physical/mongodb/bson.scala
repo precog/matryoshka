@@ -27,6 +27,7 @@ import scala.Predef.{
   boolean2Boolean, double2Double, int2Integer, long2Long,
   Boolean2boolean, Double2double, Integer2int, Long2long}
 
+import org.bson._
 import org.bson.types
 import org.threeten.bp.{Instant, ZoneOffset}
 import org.threeten.bp.temporal.{ChronoUnit}
@@ -37,60 +38,50 @@ import scalaz._, Scalaz._
  * is not suitable for efficiently storing large quantities of data.
  */
 sealed trait Bson {
-  def repr: java.lang.Object
+  // TODO: Once Bson is fixpoint, this should be an algebra:
+  //       BsonF[BsonValue] => BsonValue
+  def repr: BsonValue
   def toJs: Js.Expr
 }
 
 object Bson {
-  def fromRepr(obj: java.lang.Object): Bson = {
-    @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.Null"))
-    def loop(v: Any): Bson = v match {
-      case null                       => Null
-      case x: String                  => Text(x)
-      case x: java.lang.Boolean       => Bool(x)
-      case x: java.lang.Integer       => Int32(x)
-      case x: java.lang.Long          => Int64(x)
-      case x: java.lang.Double        => Dec(x)
-      case list: java.util.ArrayList[_] => Arr(list.asScala.map(loop).toList)
-      case obj: org.bson.Document     => Doc(obj.keySet.asScala.toList.map(k => k -> loop(obj.get(k))).toListMap)
-      case x: java.util.Date          => Date(Instant.ofEpochMilli(x.getTime))
-      case x: types.ObjectId          => ObjectId(x.toByteArray)
-      case x: types.Binary            => Binary(x.getData)
-      case _: types.MinKey            => MinKey
-      case _: types.MaxKey            => MaxKey
-      case x: types.Symbol            => Symbol(x.getSymbol)
-      case x: types.BSONTimestamp     => Timestamp(Instant.ofEpochSecond(x.getTime), x.getInc)
-      case x: java.util.regex.Pattern => Regex(x.pattern, "")
-      case x: org.bson.BsonRegularExpression => Regex(x.getPattern, x.getOptions)
-      case x: Array[Byte]             => Binary(x)
-      case x: java.util.UUID          =>
-        val bos = new java.io.ByteArrayOutputStream
-        val dos = new java.io.DataOutputStream(bos)
-        dos.writeLong(x.getLeastSignificantBits)
-        dos.writeLong(x.getMostSignificantBits)
-        Binary(bos.toByteArray.reverse)
-      // NB: the remaining types are not easily translated back to Bson,
-      //     and we don't expect them to appear anyway.
-      //   • JavaScript/JavaScriptScope: would require parsing a string to our
-      //     Js type.
-      //   • Any other value that might be produced by MongoDB which is unknown
-      //     to us.
-      case _ => Undefined
-    }
-
-    loop(obj)
+  // TODO: Once Bson is fixpoint, this should be a coalgebra:
+  //       BsonValue => BsonF[BsonValue]
+  val fromRepr: BsonValue => Bson = {
+    case arr:  BsonArray             => Arr(arr.getValues.asScala.toList ∘ fromRepr)
+    case bin:  BsonBinary            => Binary(bin.getData)
+    case bool: BsonBoolean           => Bool(bool.getValue)
+    case dt:   BsonDateTime          => Date(Instant.ofEpochMilli(dt.getValue))
+    case doc:  BsonDocument          => Doc(doc.asScala.toList.toListMap ∘ fromRepr)
+    case dub:  BsonDouble            => Dec(dub.doubleValue)
+    case i32:  BsonInt32             => Int32(i32.intValue)
+    case i64:  BsonInt64             => Int64(i64.longValue)
+    case _:    BsonMaxKey            => MaxKey
+    case _:    BsonMinKey            => MinKey
+    case _:    BsonNull              => Null
+    case oid:  BsonObjectId          => ObjectId(oid.getValue.toByteArray)
+    case rex:  BsonRegularExpression => Regex(rex.getPattern, rex.getOptions)
+    case str:  BsonString            => Text(str.getValue)
+    case sym:  BsonSymbol            => Symbol(sym.getSymbol)
+    case tms:  BsonTimestamp         => Timestamp(Instant.ofEpochSecond(tms.getTime), tms.getInc)
+    case _:    BsonUndefined         => Undefined
+      // NB: These types we can’t currently translate back to Bson, but we don’t
+      //     expect them to appear.
+    case _: BsonDbPointer | _: BsonJavaScript | _: BsonJavaScriptWithScope => Undefined
   }
 
   final case class Dec(value: Double) extends Bson {
-    def repr = value: java.lang.Double
+    def repr = new BsonDouble(value)
+
     def toJs = Js.Num(value, true)
   }
   final case class Text(value: String) extends Bson {
-    def repr = value
+    def repr = new BsonString(value)
+
     def toJs = Js.Str(value)
   }
   final case class Binary(value: ImmutableArray[Byte]) extends Bson {
-    def repr = value.toArray[Byte]
+    def repr = new BsonBinary(value.toArray[Byte])
     def toJs = Js.Call(Js.Ident("BinData"), List(Js.Num(0, false), Js.Str(new sun.misc.BASE64Encoder().encode(value.toArray))))
 
     override def toString = "Binary(Array[Byte](" + value.mkString(", ") + "))"
@@ -104,18 +95,26 @@ object Bson {
   object Binary {
     def apply(array: Array[Byte]): Binary = Binary(ImmutableArray.fromArray(array))
   }
-  final case class Doc(value: ListMap[String, Bson]) extends Bson {
-    def repr: org.bson.Document = new org.bson.Document((value ∘ (_.repr)).asJava)
+  final case class Doc(value: ListMap[String, Bson])
+      extends Bson with org.bson.conversions.Bson {
+    def repr: BsonDocument =
+      new BsonDocument(value.toList.map { case (k, v) => new BsonElement(k, v.repr) }.asJava)
     def toJs = Js.AnonObjDecl((value ∘ (_.toJs)).toList)
+
+    def toBsonDocument[TDocument](
+      documentClass: java.lang.Class[TDocument],
+      codecRegistry: org.bson.codecs.configuration.CodecRegistry) =
+      repr
   }
   final case class Arr(value: List[Bson]) extends Bson {
-    def repr = new java.util.ArrayList(value.map(_.repr).asJava)
+    def repr = new BsonArray((value ∘ (_.repr)).asJava)
     def toJs = Js.AnonElem(value ∘ (_.toJs))
   }
   final case class ObjectId(value: ImmutableArray[Byte]) extends Bson {
-    def repr = new types.ObjectId(value.toArray[Byte])
+    private def oid = new org.bson.types.ObjectId(value.toArray[Byte])
+    def repr = new BsonObjectId(oid)
 
-    def str = repr.toHexString
+    def str = oid.toHexString
 
     def toJs = Js.Call(Js.Ident("ObjectId"), List(Js.Str(str)))
 
@@ -135,53 +134,55 @@ object Bson {
     }
   }
   final case class Bool(value: Boolean) extends Bson {
-    def repr = value: java.lang.Boolean
+    def repr = new BsonBoolean(value)
     def toJs = Js.Bool(value)
   }
   final case class Date(value: Instant) extends Bson {
-    def repr = new java.util.Date(value.toEpochMilli)
+    def repr = new BsonDateTime(value.toEpochMilli)
     def toJs =
       Js.Call(Js.Ident("ISODate"), List(Js.Str(value.toString)))
   }
   final case object Null extends Bson {
-    @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.Null"))
-    def repr = null
+    def repr = new BsonNull
     override def toJs = Js.Null
   }
 
   /** DEPRECATED in the spec, but the 3.0 Mongo driver returns it to us. */
   final case object Undefined extends Bson {
-    def repr = new org.bson.BsonUndefined
+    def repr = new BsonUndefined
     override def toJs = Js.Undefined
   }
   final case class Regex(value: String, options: String) extends Bson {
-    def repr = new org.bson.BsonRegularExpression(value, options)
+    def repr = new BsonRegularExpression(value, options)
     def toJs = Js.New(Js.Call(Js.Ident("RegExp"), List(Js.Str(value), Js.Str(options))))
   }
   final case class JavaScript(value: Js.Expr) extends Bson {
-    def repr = new types.Code(value.pprint(2))
+    def repr = new BsonJavaScript(value.pprint(0))
     def toJs = value
   }
   final case class JavaScriptScope(code: Js.Expr, doc: ListMap[String, Bson])
       extends Bson {
-    def repr = new types.CodeWithScope(code.pprint(2), Doc(doc).repr)
+    def repr =
+      new BsonJavaScriptWithScope(
+        code.pprint(0),
+        new BsonDocument(doc.toList.map { case (k, v) => new BsonElement(k, v.repr) }.asJava))
     // FIXME: this loses scope, but I don’t know what it should look like
     def toJs = code
   }
   final case class Symbol(value: String) extends Bson {
-    def repr = new types.Symbol(value)
+    def repr = new BsonSymbol(value)
     def toJs = Js.Ident(value)
   }
   final case class Int32(value: Int) extends Bson {
-    def repr = value: java.lang.Integer
+    def repr = new BsonInt32(value)
     def toJs = Js.Call(Js.Ident("NumberInt"), List(Js.Num(value, false)))
   }
   final case class Int64(value: Long) extends Bson {
-    def repr = value: java.lang.Long
+    def repr = new BsonInt64(value)
     def toJs = Js.Call(Js.Ident("NumberLong"), List(Js.Num(value, false)))
   }
   final case class Timestamp private (epochSecond: Int, ordinal: Int) extends Bson {
-    def repr = new types.BSONTimestamp(epochSecond, ordinal)
+    def repr = new BsonTimestamp(epochSecond, ordinal)
     def toJs = Js.Call(Js.Ident("Timestamp"),
       List(Js.Num(epochSecond, false), Js.Num(ordinal, false)))
     override def toString = "Timestamp(" + Instant.ofEpochSecond(epochSecond) + ", " + ordinal + ")"
@@ -191,11 +192,11 @@ object Bson {
       Timestamp((instant.toEpochMilli/1000).toInt, ordinal)
   }
   final case object MinKey extends Bson {
-    def repr = new types.MinKey
+    def repr = new BsonMinKey()
     def toJs = Js.Ident("MinKey")
   }
   final case object MaxKey extends Bson {
-    def repr = new types.MaxKey
+    def repr = new BsonMaxKey()
     def toJs = Js.Ident("MaxKey")
   }
 }
@@ -308,7 +309,7 @@ object BsonField {
     override def toString = s"""BsonField.Name("$value")"""
   }
 
-  private final case class Path(values: NonEmptyList[Name]) extends BsonField {
+  final case class Path(values: NonEmptyList[Name]) extends BsonField {
     def flatten = values
 
     def asText = (values.list.zipWithIndex.map {

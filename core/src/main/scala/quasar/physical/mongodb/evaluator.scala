@@ -26,7 +26,10 @@ import quasar.physical.mongodb.accumulator._
 import quasar.physical.mongodb.expression._
 import Workflow._
 
+import scala.Predef.classOf
+
 import com.mongodb._
+import org.bson.{BsonDocument, BsonValue}
 import scalaz.{Free => FreeM, _}, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
@@ -51,6 +54,7 @@ trait Executor[F[_], C] {
 
   def pureCursor(values: List[Bson]): F[C]
   def wrappedCount(field: BsonField.Name, source: Col, count: Count): F[C]
+  def wrappedDistinct(field: BsonField.Name, source: Col, distinct: Distinct): F[C]
   def find(source: Col, find: Find): F[C]
   def aggregateCursor(source: Col, pipeline: workflowtask.Pipeline): F[C]
   def mapReduceCursor(source: Col, mr: MapReduce): F[C]
@@ -81,6 +85,10 @@ final case class Count(
   query:      Option[Selector],
   skip:       Option[Long],
   limit:      Option[Long])
+
+final case class Distinct(
+  field:      BsonField.Name,
+  query:      Option[Selector])
 
 class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[
     StateT[EvaluationTask, SequenceNameGenerator.EvalState, ?],
@@ -122,17 +130,17 @@ object MongoDbEvaluator {
 
   def apply(client0: MongoClient): EnvTask[Evaluator[Crystallized]] = {
     val nameGen = SequenceNameGenerator.Gen
-    val testDoc = Bson.Doc(ListMap("a" -> Bson.Int32(1))).repr
+    val testDoc = Bson.Doc(ListMap("a" -> Bson.Int32(1)))
 
     /** Returns the name of the database if a write succeeds. */
     def canWriteToCol(col: Collection): OptionT[Task, String] = {
       val mongoCol = Task.delay(
         client0.getDatabase(col.databaseName)
-          getCollection(col.collectionName))
+          getCollection(col.collectionName, classOf[BsonDocument]))
 
       val inserted = for {
         c <- mongoCol
-        _ <- Task.delay(c.insertOne(testDoc))
+        _ <- Task.delay(c.insertOne(testDoc.repr))
         _ <- Task.delay(c.drop())
       } yield col.databaseName
 
@@ -319,6 +327,26 @@ trait MongoDbEvaluatorImpl[F[_], C] {
     }
   }
 
+  private object Distinctable {
+    def unapply(pipeline: workflowtask.Pipeline): Option[(BsonField.Name, BsonField.Name)] =
+      pipeline match {
+        case List($Group((), Grouped(map), by), $Project((), Reshape(fields), IdHandling.IgnoreId | IdHandling.ExcludeId))
+            if map.isEmpty && fields.size ≟ 1 =>
+          fields.headOption.fold[Option[(BsonField.Name, BsonField.Name)]] (None)(field =>
+            (by, field) match {
+              case (\/-($var(DocField(origField @ BsonField.Name(_)))), (newField, \/-($var(DocField(IdName))))) =>
+                (origField, newField).some
+              case (-\/(Reshape(map)), (newField, \/-($var(DocField(BsonField.Path(NonEmptyList(IdName, x))))))) if map.size ≟ 1 =>
+                map.get(x).flatMap {
+                  case \/-($var(DocField(origField @ BsonField.Name(_)))) => (origField, newField).some
+                  case _ => None
+                }
+              case _ => None
+            })
+        case _ => None
+      }
+  }
+
   private def extractRange(pipeline: workflowtask.Pipeline):
       ((workflowtask.Pipeline, workflowtask.Pipeline),
         (Option[Long], Option[Long])) =
@@ -367,8 +395,11 @@ trait MongoDbEvaluatorImpl[F[_], C] {
         executor.wrappedCount(field, source, Count(sel.some, None, None))
       case (List($Match((), sel)), List(Countable(field))) =>
         executor.wrappedCount(field, source, Count(sel.some, skip, limit))
-      case _ => executor.aggregateCursor(source, pipeline)
-    }
+      case (Distinctable(origField, newField), Nil) if skip ≟ None && limit ≟ None =>
+        executor.wrappedDistinct(newField, source, Distinct(origField, None))
+      case ($Match((), sel) :: Distinctable(origField, newField), Nil) if skip ≟ None && limit ≟ None =>
+        executor.wrappedDistinct(newField, source, Distinct(origField, sel.some))
+      case _ => executor.aggregateCursor(source, pipeline)}
   }
 
   def evaluate(physical: Crystallized): F[C] = {
@@ -474,7 +505,7 @@ class MongoDbExecutor[S](client: MongoClient,
     nameGen.generateTempName(dbName).mapK(_.point[EvaluationTask])
 
   def insert(dst: Collection, value: Bson.Doc): M[Unit] =
-    liftMongo(mongoCol(dst).insertOne(value.repr))
+    liftTask(mongoCol(dst).map(_.insertOne(value.repr)))
 
   def aggregate(source: Collection, pipeline: workflowtask.Pipeline): M[Unit] =
     runMongoCommand(
@@ -499,33 +530,40 @@ class MongoDbExecutor[S](client: MongoClient,
       case other => other
     }: EvaluationTask[(S, Unit)])
 
-  def drop(coll: Collection) = liftMongo(mongoCol(coll).drop())
+  def drop(coll: Collection) = liftTask(mongoCol(coll).map(_.drop()))
 
   def pureCursor(values: List[Bson]) =
     liftTask(Task.now(Process.emitAll(values.map(BsonCodec.toData))))
 
   def count0(source: Col, count: Count) =
-    Process.emit(
-      mongoCol(source.collection).count(
-        count.query.fold(Bson.Doc(ListMap()).repr)(_.bson.repr),
-        new com.mongodb.client.model.CountOptions()
-          .app(count.skip)((c, count) => c.skip(count.toInt))
-          .app(count.limit)((c, count) => c.limit(count.toInt))))
+    liftTask(
+      mongoCol(source.collection).map(col =>
+        Process.emit(col.count(
+          count.query.fold(Bson.Doc(ListMap()))(_.bson),
+          new com.mongodb.client.model.CountOptions()
+            .app(count.skip)((c, count) => c.skip(count.toInt))
+            .app(count.limit)((c, count) => c.limit(count.toInt))))))
 
   def wrappedCount(field: BsonField.Name, source: Col, count: Count) =
-    liftTask(
-      Task.delay(count0(source, count).map(n =>
-        Data.Obj(ListMap(field.asText -> Data.Int(n))))))
+    count0(source, count).map(_.map(n =>
+      Data.Obj(ListMap(field.asText -> Data.Int(n)))))
+
+  def wrappedDistinct(field: BsonField.Name, source: Col, distinct: Distinct) =
+    fromCursor(
+      mongoCol(source.collection).map(
+        _.distinct(distinct.field.asText, classOf[BsonValue])
+          .app(distinct.query)((c, sel) => c.filter(sel.bson))),
+      source).map(_.map(elem => Data.Obj(ListMap(field.asText -> elem))))
 
   def find(source: Col, find: Find) =
-    fromCursor(Task.delay(
-      mongoCol(source.collection)
-        .find()
-        .app(find.query)((c, sel) => c.filter(sel.bson.repr))
-        .app(find.projection)((c, proj) => c.projection(proj.repr))
-        .app(find.sort)((c, sort) => c.sort($Sort.keyBson(sort).repr))
-        .app(find.skip)((c, count) => c.skip(count.toInt))
-        .app(find.limit)((c, count) => c.limit(count.toInt))),
+    fromCursor(
+      mongoCol(source.collection).map(
+        _.find()
+          .app(find.query)((c, sel) => c.filter(sel.bson))
+          .app(find.projection)((c, proj) => c.projection(proj))
+          .app(find.sort)((c, sort) => c.sort($Sort.keyBson(sort)))
+          .app(find.skip)((c, count) => c.skip(count.toInt))
+          .app(find.limit)((c, count) => c.limit(count.toInt))),
       source)
 
   def aggregateCursor(source: Col, pipeline: workflowtask.Pipeline) = {
@@ -533,51 +571,50 @@ class MongoDbExecutor[S](client: MongoClient,
     import scala.Predef.boolean2Boolean
 
     fromCursor(
-      Task.delay(
-        mongoCol(source.collection)
-          .aggregate(pipeline.map(_.bson.repr).asJava)
+      mongoCol(source.collection).map(
+        _.aggregate(pipeline.map(_.bson).asJava)
           .allowDiskUse(true)),
       source)
   }
 
   def mapReduceCursor(source: Col, mr: MapReduce) = {
-    fromCursor(Task.delay {
-      mongoCol(source.collection)
-        .mapReduce(mr.map.pprint(0), mr.reduce.pprint(0))
-        .app(mr.selection)((c, q) => c.filter(q.bson.repr))
-        .app(mr.limit)((c, l) => c.limit(l.toInt))
-        .app(mr.finalizer)((c, f) => c.finalizeFunction(f.pprint(0)))
-        .scope(Bson.Doc(mr.scope).repr)
-        .app(mr.verbose)((c, v) => c.verbose(v))
-    }, source)
+    fromCursor(
+      mongoCol(source.collection).map(
+        _.mapReduce(mr.map.pprint(0), mr.reduce.pprint(0))
+          .app(mr.selection)((c, q) => c.filter(q.bson))
+          .app(mr.limit)((c, l) => c.limit(l.toInt))
+          .app(mr.finalizer)((c, f) => c.finalizeFunction(f.pprint(0)))
+          .scope(Bson.Doc(mr.scope))
+          .app(mr.verbose)((c, v) => c.verbose(v))),
+      source)
   }
 
-  private def fromCursor(cursor: Task[com.mongodb.client.MongoIterable[org.bson.Document]], source: Col): M[Process[EvaluationTask, Data]] = {
+  private def fromCursor[A <: BsonValue](cursor: Task[com.mongodb.client.MongoIterable[A]], source: Col):
+      M[Process[EvaluationTask, Data]] = {
     val t = new (ETask[Backend.ResultError, ?] ~> EvaluationTask) {
       def apply[A](t: ETask[Backend.ResultError, A]) =
         t.leftMap(EvalResultError(_))
     }
     val cleanup: EvaluationTask[Unit] = source match {
-      case Col.Tmp(coll) => MongoWrapper.liftTask(Task.delay { mongoCol(coll).drop() })
-      case Col.User(_) => liftE(Task.now(()))
+      case Col.Tmp(coll) => MongoWrapper.liftTask(mongoCol(coll).map(_.drop()))
+      case Col.User(_)   => liftE(Task.now(()))
     }
     liftMongo(
       MongoWrapper(client).readCursor(cursor)
-          .translate[EvaluationTask](t)
-          .onComplete(Process.eval_(cleanup)))
+        .translate[EvaluationTask](t)
+        .onComplete(Process.eval_(cleanup)))
   }
 
   def fail[A](e: EvaluationError): M[A] =
     MonadError[ETask, EvaluationError].raiseError[A](e).liftM[MT]
 
-  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NoNeedForMonad"))
   def version: M[List[Int]] = {
     def lookupVersion(dbName: String): EvaluationTask[List[Int]] = {
-      val cmd = Bson.Doc(ListMap("buildinfo" -> Bson.Int32(1))).repr
-      MongoWrapper.delay(client.getDatabase(dbName).runCommand(cmd)) flatMapF { r =>
+      val cmd = Bson.Doc(ListMap("buildinfo" -> Bson.Int32(1)))
+      MongoWrapper.delay(client.getDatabase(dbName).runCommand(cmd, classOf[BsonDocument])) flatMapF { r =>
         Option(r getString "version")
           .toRightDisjunction(CommandFailed("buildInfo: response missing 'version' field"))
-          .map(_.split('.').toList.map(_.toInt))
+          .map(_.getValue.split('.').toList.map(_.toInt))
           .point[Task]
       }
     }
@@ -599,7 +636,10 @@ class MongoDbExecutor[S](client: MongoClient,
   }
 
   private def mongoCol(col: Collection) =
-    client.getDatabase(col.databaseName).getCollection(col.collectionName)
+    Task.delay(
+      client
+        .getDatabase(col.databaseName)
+        .getCollection(col.collectionName, classOf[BsonDocument]))
 
   private def liftTask[A](a: Task[A]): M[A] =
     MongoWrapper.liftTask(a).liftM[MT]
@@ -608,7 +648,7 @@ class MongoDbExecutor[S](client: MongoClient,
     MongoWrapper.delay(a).liftM[MT]
 
   private def runMongoCommand(db: String, cmd: Bson.Doc): M[Unit] =
-    liftMongo(client.getDatabase(db).runCommand(cmd.repr)).void
+    liftMongo(client.getDatabase(db).runCommand(cmd)).void
 }
 
 // Convenient partially-applied type: LoggerT[X]#Rec
@@ -653,6 +693,15 @@ class JSExecutor[F[_]: Monad](nameGen: NameGenerator[F])
 
   def wrappedCount(field: BsonField.Name, source: Col, count: Count) =
     write(AnonElem(List(AnonObjDecl(List(field.asText -> count0(source, count))))))
+
+  def distinct0(source: Col, distinct: Distinct) =
+      Call(Select(toJsRef(source.collection), "distinct"), List(Js.Str(distinct.field.asText)))
+        .app(distinct.query)((c, sel) => Call(Select(c, "filter"), List(sel.bson.toJs)))
+
+  def wrappedDistinct(field: BsonField.Name, source: Col, distinct: Distinct) =
+    write(
+      Call(Select(distinct0(source, distinct), "map"), List(
+        AnonFunDecl(List("elem"), List(Return(AnonObjDecl(List(field.asText -> Ident("elem")))))))))
 
   def find(source: Col, find: Find) =
     write(

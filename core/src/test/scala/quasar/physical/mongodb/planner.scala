@@ -2323,21 +2323,16 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
       beWorkflow(
         chain(
           $read(Collection("db", "zips")),
-          $project(
-            reshape(
-              "city"  -> $field("city"),
-              "state" -> $field("state")),
-            IgnoreId),
           $group(
-            grouped("__tmp0" -> $first($$ROOT)),
+            grouped(),
             -\/(reshape(
               "0" -> $field("city"),
               "1" -> $field("state")))),
           $project(
             reshape(
-              "city"  -> $field("__tmp0", "city"),
-              "state" -> $field("__tmp0", "state")),
-            ExcludeId)))
+              "city"  -> $field("_id", "0"),
+              "state" -> $field("_id", "1")),
+            IgnoreId)))
     }
 
     "plan distinct as expression" in {
@@ -2420,13 +2415,12 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               IgnoreId),
             $sort(NonEmptyList(BsonField.Name("city") -> Ascending)),
             $group(
-              grouped("__tmp1" -> $first($$ROOT)),
+              grouped(),
               -\/(reshape("0" -> $field("city")))),
-            $sort(NonEmptyList(
-              BsonField.Name("__tmp1") \ BsonField.Name("city") -> Ascending)),
             $project(
-              reshape("city" -> $field("__tmp1", "city")),
-              ExcludeId)))
+              reshape("city" -> $field("_id", "0")),
+              IgnoreId),
+            $sort(NonEmptyList(BsonField.Name("city") -> Ascending))))
     }
 
     "plan distinct with unrelated order by" in {
@@ -2493,19 +2487,18 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
               "state"    -> $include()),
             IgnoreId),
           $unwind(DocField("state")),
-
           $group(
-            grouped("__tmp7" -> $first($$ROOT)),
+            grouped(),
             -\/(reshape(
               "0" -> $field("totalPop"),
               "1" -> $field("city"),
               "2" -> $field("state")))),
           $project(
             reshape(
-              "totalPop" -> $field("__tmp7", "totalPop"),
-              "city"     -> $field("__tmp7", "city"),
-              "state"    -> $field("__tmp7", "state")),
-            ExcludeId)))
+              "totalPop" -> $field("_id", "0"),
+              "city"     -> $field("_id", "1"),
+              "state"    -> $field("_id", "2")),
+            IgnoreId)))
     }
 
     "plan distinct with sum, group, and orderBy" in {
@@ -2534,19 +2527,18 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
             $unwind(DocField("state")),
             $sort(NonEmptyList(BsonField.Name("totalPop") -> Descending)),
             $group(
-              grouped("__tmp8" -> $first($$ROOT)),
+              grouped(),
               -\/(reshape(
                 "0" -> $field("totalPop"),
                 "1" -> $field("city"),
                 "2" -> $field("state")))),
-            $sort(NonEmptyList(
-              BsonField.Name("__tmp8") \ BsonField.Name("totalPop") -> Descending)),
             $project(
               reshape(
-                "totalPop" -> $field("__tmp8", "totalPop"),
-                "city"     -> $field("__tmp8", "city"),
-                "state"    -> $field("__tmp8", "state")),
-              ExcludeId)))
+                "totalPop" -> $field("_id", "0"),
+                "city"     -> $field("_id", "1"),
+                "state"    -> $field("_id", "2")),
+              IgnoreId),
+            $sort(NonEmptyList(BsonField.Name("totalPop") -> Descending))))
 
     }
 

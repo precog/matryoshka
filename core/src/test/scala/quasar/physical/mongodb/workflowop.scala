@@ -799,9 +799,9 @@ class WorkflowSpec extends Specification with TreeMatchers {
   "$redact" should {
 
     "render result variables" in {
-      $Redact.DESCEND.bson.repr must_== "$$DESCEND"
-      $Redact.PRUNE.bson.repr   must_== "$$PRUNE"
-      $Redact.KEEP.bson.repr    must_== "$$KEEP"
+      $Redact.DESCEND.bson must_== Bson.Text("$$DESCEND")
+      $Redact.PRUNE.bson   must_== Bson.Text("$$PRUNE")
+      $Redact.KEEP.bson    must_== Bson.Text("$$KEEP")
     }
   }
 

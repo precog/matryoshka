@@ -7,7 +7,6 @@ import quasar.Predef._
 import quasar.fp._
 import quasar.fs._
 
-import org.bson.Document
 import com.mongodb.async.client.MongoClient
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
@@ -36,7 +35,7 @@ object writefile {
         }
 
         lookupCollection(h) flatMap (_ cata (
-          c => insertAny(c, docs)
+          c => insertAny(c, docs.map(_.repr))
                  .filter(_ < docs.size)
                  .map(n => PartialWrite(docs.size - n))
                  .run.map(errs ++ _.toList)
@@ -87,11 +86,11 @@ object writefile {
   private def lookupCollection(h: WriteHandle): MongoWrite[Option[Collection]] =
     writeState map (collectionL(h).get)
 
-  private def dataToDocument(d: Data): FileSystemError \/ Document =
+  private def dataToDocument(d: Data): FileSystemError \/ Bson.Doc =
     BsonCodec.fromData(d)
       .leftMap(err => WriteFailed(d, err.toString))
       .flatMap {
-        case doc @ Bson.Doc(_) => doc.repr.right
+        case doc @ Bson.Doc(_) => doc.right
         case otherwise         => WriteFailed(d, "MongoDB is only able to store documents").left
       }
 }

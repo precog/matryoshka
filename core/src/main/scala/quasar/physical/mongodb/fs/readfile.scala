@@ -11,14 +11,14 @@ import scala.collection.JavaConverters._
 
 import com.mongodb.async.AsyncBatchCursor
 import com.mongodb.async.client.MongoClient
-import org.bson.Document
+import org.bson.BsonDocument
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 
 object readfile {
   import ReadFile._, FileSystemError._, PathError2._, MongoDbIO._
 
-  type BsonCursor          = AsyncBatchCursor[Document]
+  type BsonCursor          = AsyncBatchCursor[BsonDocument]
   type ReadState           = (Long, Map[ReadHandle, BsonCursor])
   type ReadStateT[F[_], A] = ReaderT[F, TaskRef[ReadState], A]
   type MongoRead[A]        = ReadStateT[MongoDbIO, A]
@@ -93,11 +93,11 @@ object readfile {
     } yield h
 
   private def nextChunk(c: BsonCursor): MongoRead[Vector[Data]] = {
-    val withoutId: Document => Document =
-      d => (d: Id[Document]) map (_ remove "_id") as d
+    val withoutId: BsonDocument => BsonDocument =
+      d => (d: Id[BsonDocument]) map (_ remove "_id") as d
 
-    val toData: Document => Data =
-      (BsonCodec.toData _) compose (Bson.fromRepr _) compose withoutId
+    val toData: BsonDocument => Data =
+      (BsonCodec.toData _) <<< Bson.fromRepr <<< withoutId
 
     // NB: `null` is used as a sentinel value to indicate input is exhausted,
     //     because Java.
