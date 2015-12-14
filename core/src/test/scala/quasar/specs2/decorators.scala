@@ -10,8 +10,7 @@ import org.specs2.execute._
  it purports to test will not be erroneously flagged as covered.
  */
 trait PendingWithAccurateCoverage extends PendingUntilFixed {
-  def isCoverageRun: Boolean =
-    java.lang.Boolean.parseBoolean(java.lang.System.getProperty("isCoverageRun"))
+  def isCoverageRun: Boolean = quasar.build.BuildInfo.coverageEnabled
 
   /** Overrides the standard specs2 implicit. */
   implicit def toPendingWithAccurateCoverage[T: AsResult](t: => T) = new PendingWithAccurateCoverage(t)
