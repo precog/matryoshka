@@ -18,6 +18,6 @@ ScoverageKeys.coverageFailOnMinimum := true
 
 sbtbuildinfo.BuildInfoPlugin.projectSettings
 
-buildInfoKeys := Seq[BuildInfoKey](version)
+buildInfoKeys := Seq[BuildInfoKey](version, scoverage.ScoverageKeys.coverageEnabled)
 
 buildInfoPackage := "quasar.build"
