@@ -1,0 +1,10 @@
+{
+    "name": "filter, skip, limit, and count",
+
+    "data": "zips.data",
+
+    "query": "select count(*) from (select * from zips where city like 'BOU%' offset 15 limit 10) x",
+
+    "predicate": "equalsExactly",
+    "expected": [{ "0": 5 }]
+}

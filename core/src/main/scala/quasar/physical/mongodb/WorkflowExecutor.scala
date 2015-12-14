@@ -107,7 +107,7 @@ trait WorkflowExecutor[F[_]] {
 
       case QueryTask(source, query, skip, limit) =>
         val pipelineQuery =
-          List($Match((), query.query)) :::
+          List($Match((), query)) :::
           skip.map($Skip((), _)).toList :::
           limit.map($Limit((), _)).toList
 

@@ -1,0 +1,20 @@
+{
+    "name": "sort, project, and limit",
+
+    "data": "zips.data",
+
+    "query": "select city, state from zips order by city, state limit 10",
+
+    "predicate": "equalsExactly",
+    "expected": [
+        { "city": "AARON",         "state": "KY" },
+        { "city": "AARONSBURG",    "state": "PA" },
+        { "city": "ABAC",          "state": "GA" },
+        { "city": "ABBEVILLE",     "state": "AL" },
+        { "city": "ABBEVILLE",     "state": "GA" },
+        { "city": "ABBEVILLE",     "state": "MS" },
+        { "city": "ABBEVILLE",     "state": "SC" },
+        { "city": "ABBOT VILLAGE", "state": "ME" },
+        { "city": "ABBOTSFORD",    "state": "WI" },
+        { "city": "ABBOTT",        "state": "TX" }]
+}

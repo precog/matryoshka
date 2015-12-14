@@ -4,7 +4,7 @@ import quasar.Predef._
 
 import org.specs2.mutable._
 
-class FindQuerySpec extends Specification  {
+class SelectorSpec extends Specification  {
 
   implicit def toBson(x: Int) = Bson.Int32(x)
   implicit def toField(name: String) = BsonField.Name(name)

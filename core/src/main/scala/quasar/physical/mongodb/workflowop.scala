@@ -167,7 +167,7 @@ object Workflow {
     }
 
   def task(fop: Crystallized): WorkflowTask =
-    (finish(_, _)).tupled(fop.op.para(crush))._2
+    (finish(_, _)).tupled(fop.op.para(crush))._2.translate(normalize)
 
   val coalesceƒ: WorkflowF[Workflow] => Option[WorkflowF[Workflow]] = {
     case $Match(src, selector) => src.unFix match {
@@ -297,7 +297,6 @@ object Workflow {
       case op @ $Match((src, rez), selector) =>
         // TODO: If we ever allow explicit request of cursors (instead of
         //       collections), we could generate a FindQuery here.
-
         lazy val nonPipeline = {
           val (base, crushed) = (finish(_, _)).tupled(rez)
           (ExprVar,
@@ -414,15 +413,6 @@ object Workflow {
 
     def applyNel[A](m: NonEmptyList[(BsonField, A)]): NonEmptyList[(BsonField, A)] = m.map(t => applyFieldName(t._1) -> t._2)
 
-    def applyFindQuery(q: FindQuery): FindQuery = {
-      q.copy(
-        query   = applySelector(q.query),
-        max     = q.max.map(applyMap _),
-        min     = q.min.map(applyMap _),
-        orderby = q.orderby.map(applyNel _)
-      )
-    }
-
     (op match {
       case $Project(src, shape, xId) =>
         $Project(src, shape.rewriteRefs(applyVar0), xId)
@@ -437,7 +427,7 @@ object Workflow {
       case g: $GeoNear[_]            =>
         g.copy(
           distanceField = applyFieldName(g.distanceField),
-          query = g.query.map(applyFindQuery _))
+          query = g.query.map(applySelector))
       case _                          => op
     }).asInstanceOf[A]
   }
@@ -646,7 +636,7 @@ object Workflow {
   final case class $Project[A](src: A, shape: Reshape, idExclusion: IdHandling)
       extends PipelineF[A]("$project") {
     def reparent[B](newSrc: B): $Project[B] = copy(src = newSrc)
-    def rhs = idExclusion match {
+    def rhs: Bson.Doc = idExclusion match {
       case IdHandling.ExcludeId =>
         Bson.Doc(shape.bson.value + (Workflow.IdLabel -> Bson.Bool(false)))
       case _         => shape.bson
@@ -732,9 +722,6 @@ object Workflow {
 
   final case class $Limit[A](src: A, count: Long)
       extends ShapePreservingF[A]("$limit") {
-    // TODO: If the preceding is a $Match, and it or its source isn’t
-    //       pipelineable, then return a FindQuery combining the match and this
-    //       limit
     def reparent[B](newSrc: B) = copy(src = newSrc)
     def rhs = Bson.Int64(count)
   }
@@ -746,9 +733,6 @@ object Workflow {
 
   final case class $Skip[A](src: A, count: Long)
       extends ShapePreservingF[A]("$skip") {
-    // TODO: If the preceding is a $Match (or a limit preceded by a $Match),
-    //       and it or its source isn’t pipelineable, then return a FindQuery
-    //       combining the match and this skip
     def reparent[B](newSrc: B) = copy(src = newSrc)
     def rhs = Bson.Int64(count)
   }
@@ -800,12 +784,15 @@ object Workflow {
       extends ShapePreservingF[A]("$sort") {
     def reparent[B](newSrc: B) = copy(src = newSrc)
     // Note: ListMap preserves the order of entries.
-    def rhs = Bson.Doc(ListMap((value.map { case (k, t) => k.asText -> t.bson }).list: _*))
+    def rhs: Bson.Doc = $Sort.keyBson(value)
   }
   object $Sort {
     def make(value: NonEmptyList[(BsonField, SortType)])(src: Workflow):
         Workflow =
       Fix(coalesce($Sort(src, value)))
+
+    def keyBson(value: NonEmptyList[(BsonField, SortType)]) =
+      Bson.Doc(ListMap((value.map { case (k, t) => k.asText -> t.bson }).list: _*))
   }
   val $sort = $Sort.make _
 
@@ -832,7 +819,7 @@ object Workflow {
     src: A,
     near: (Double, Double), distanceField: BsonField,
     limit: Option[Int], maxDistance: Option[Double],
-    query: Option[FindQuery], spherical: Option[Boolean],
+    query: Option[Selector], spherical: Option[Boolean],
     distanceMultiplier: Option[Double], includeLocs: Option[BsonField],
     uniqueDocs: Option[Boolean])
       extends PipelineF[A]("$geonear") {
@@ -853,7 +840,7 @@ object Workflow {
     def make(
       near: (Double, Double), distanceField: BsonField,
       limit: Option[Int], maxDistance: Option[Double],
-      query: Option[FindQuery], spherical: Option[Boolean],
+      query: Option[Selector], spherical: Option[Boolean],
       distanceMultiplier: Option[Double], includeLocs: Option[BsonField],
       uniqueDocs: Option[Boolean])(
       src: Workflow):

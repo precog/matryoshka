@@ -1,0 +1,10 @@
+{
+    "name": "skip and count",
+
+    "data": "zips.data",
+
+    "query": "select count(*) from (select * from zips offset 10) x",
+
+    "predicate": "equalsExactly",
+    "expected": [{ "0": 29343 }]
+}

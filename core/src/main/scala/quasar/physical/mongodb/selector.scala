@@ -23,37 +23,6 @@ import quasar.javascript._
 
 import scalaz._, Scalaz._
 
-final case class FindQuery(
-  query:        Selector,
-  comment:      Option[String],
-  explain:      Option[Boolean],
-  hint:         Option[Bson],
-  maxScan:      Option[Long],
-  max:          Option[ListMap[BsonField, Bson]],
-  min:          Option[ListMap[BsonField, Bson]],
-  orderby:      Option[NonEmptyList[(BsonField, SortType)]],
-  returnKey:    Option[Boolean],
-  showDiskLoc:  Option[Boolean],
-  snapshot:     Option[Boolean],
-  natural:      Option[SortType]) {
-  def bson = Bson.Doc(List[List[(String, Bson)]](
-    List("$query" -> query.bson),
-    comment.toList.map    (comment      => ("$comment",     Bson.Text(comment))),
-    explain.toList.map    (explain      => ("$explain",     if (explain) Bson.Int32(1) else Bson.Int32(0))),
-    hint.toList.map       (hint         => ("$hint",        hint)),
-    maxScan.toList.map    (maxScan      => ("$maxScan",     Bson.Int64(maxScan))),
-    max.toList.map        (max          => ("$max",         Bson.Doc(max.map(mapField _)))),
-    min.toList.map        (min          => ("$min",         Bson.Doc(min.map(mapField _)))),
-    orderby.toList.map    (_.map { case (k, t) => k.asText -> t.bson }).map(ts => ("orderby", Bson.Doc(ListMap(ts.list: _*)))),
-    returnKey.toList.map  (returnKey    => ("$returnKey",   if (returnKey) Bson.Int32(1) else Bson.Int32(0))),
-    showDiskLoc.toList.map(showDiskLoc  => ("$showDiskLoc", if (showDiskLoc) Bson.Int32(1) else Bson.Int32(0))),
-    snapshot.toList.map   (snapshot     => ("$snapshot",    if (snapshot) Bson.Int32(1) else Bson.Int32(0))),
-    natural.toList.map    (natural      => "$natural" -> natural.bson)
-  ).flatten.toListMap)
-
-  private def mapField[A](t: (BsonField, A)): (String, A) = t._1.asText -> t._2
-}
-
 sealed trait Selector {
   def bson: Bson.Doc
 
