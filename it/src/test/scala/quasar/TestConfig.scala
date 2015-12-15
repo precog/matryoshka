@@ -35,8 +35,9 @@ object TestConfig {
   val MONGO_2_6 = BackendName("mongodb_2_6")
   val MONGO_3_0 = BackendName("mongodb_3_0")
   val MONGO_READ_ONLY = BackendName("mongodb_read_only")
+  val MONGO_3_2 = BackendName("mongodb_3_2")
 
-  lazy val readWriteBackends: List[BackendName] = List(MONGO_2_6, MONGO_3_0)
+  lazy val readWriteBackends: List[BackendName] = List(MONGO_2_6, MONGO_3_0, MONGO_3_2)
   lazy val readOnlyBackends: List[BackendName]  = List(MONGO_READ_ONLY)
   lazy val backendNames: List[BackendName]      = readWriteBackends ::: readOnlyBackends
 

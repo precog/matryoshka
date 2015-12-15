@@ -15,7 +15,7 @@
                 end as funnel
                 from zips
                 group by state
-                order by funnel",
+                order by funnel, state",
 
     "note": "should be `equalsInitial`, with a separate `containsAtLeast` with
              the IL entry (and perhaps others).",
@@ -24,5 +24,5 @@
                  { "abbr": "WA", "quantity":  484, "funnel":   2 },
                  { "abbr": "PA", "quantity": 1458, "funnel":   3 },
                  { "abbr": "VA", "quantity":  816, "funnel":   4 },
-                 { "abbr": "IL", "quantity": 1237, "funnel": 100 }]
+                 { "abbr": "AK", "quantity":  195, "funnel": 100 }]
 }

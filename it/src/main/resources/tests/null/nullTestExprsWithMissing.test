@@ -1,6 +1,6 @@
 {
     "name": "expressions with `= null` and `is null`, with missing fields (pending #465)",
-    "backends": { "mongodb_2_6": "pending", "mongodb_3_0": "pending", "mongodb_read_only": "pending" },
+    "backends": { "mongodb_2_6": "pending", "mongodb_3_0": "pending", "mongodb_read_only": "pending", "mongodb_3_2": "pending" },
     "data": "nullsWithMissing.data",
     "query": "select name,
                      val, val = null, val is null, val is not null,

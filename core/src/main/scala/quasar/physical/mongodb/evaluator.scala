@@ -583,9 +583,9 @@ class MongoDbExecutor[S](client: MongoClient,
     }
 
     def attemptVersion(dbNames: Set[String]): EvaluationTask[List[Int]] =
-      EitherT(dbNames.toList.toNel.toRightDisjunction(NoDatabase()).point[Task])
+      // NB: use "admin" DB as fallback if no database is known to exist.
+      EitherT.right(dbNames.toList.toNel.getOrElse(NonEmptyList("admin")).point[Task])
         .flatMap(_.traverseU(lookupVersion(_).swap).map(_.head).swap)
-
     MongoWrapper.liftTask(MongoWrapper.databaseNames(client).map(_ ⊹ defaultWritableDB.toSet))
       .flatMap(attemptVersion)
       .liftM[MT]

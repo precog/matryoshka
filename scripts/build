@@ -27,11 +27,12 @@ QUASAR_TEMP_JAR="$TEMP_DIR/$QUASAR_WEB_JAR"
 QUASAR_MONGODB_TESTDB="quasar-test"
 QUASAR_MONGODB_HOST_2_6="localhost:27018"
 QUASAR_MONGODB_HOST_3_0="localhost:27019"
+QUASAR_MONGODB_HOST_3_2="localhost:27020"
 
 JOB_NUM=${TRAVIS_JOB_NUMBER:="1"}
 
 # Enables running tests for a single mongo release by specifying an argument of
-# "2_6" or "3_0" for the MongoDB 2.6.x and 3.0.x releases.
+# "2_6", "3_0", or "3_2" for the MongoDB 2.6.x, 3.0.x, and 3.2.x releases.
 if [[ "$#" == "1" ]]; then
   QUASAR_MONGODB_RELEASE="$1"
 else
@@ -49,11 +50,14 @@ if [[ ${LOCAL_MONGODB:-} == "true" ]] ; then
   elif [[ "$QUASAR_MONGODB_RELEASE" == "3_0_RO" ]]; then
     export QUASAR_MONGODB_READ_ONLY="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-read:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
     export QUASAR_MONGODB_READ_ONLY_INSERT="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-dbOwner:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
+  elif [[ "$QUASAR_MONGODB_RELEASE" == "3_2" ]]; then
+    export QUASAR_MONGODB_3_2="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_2}\"}}"
   else
     export QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_2_6}\"}}"
-    export QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-dbOwner:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
+    export QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_0}\"}}"
     export QUASAR_MONGODB_READ_ONLY="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-read:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
     export QUASAR_MONGODB_READ_ONLY_INSERT="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-dbOwner:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
+    export QUASAR_MONGODB_3_2="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_2}\"}}"
   fi
 
   echo "Using local MongoDB config"

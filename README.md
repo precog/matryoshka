@@ -55,15 +55,16 @@ Set the following environment variables:
 For bash this would like such,
 
 ```bash
+export QUASAR_MONGODB_3_2="{\"mongodb\":{\"connectionUri\":\"mongodb://`mongoURL`\"}}"
 export QUASAR_MONGODB_3_0="{\"mongodb\":{\"connectionUri\":\"mongodb://`mongoURL`\"}}"
 export QUASAR_MONGODB_2_6="{\"mongodb\":{\"connectionUri\":\"mongodb://`mongoURL`\"}}"
 ```
 
 where \`mongoURL\` is the url at which one can find a Mongo database. For example \`mongoURL\` would probably look
 something like `localhost:27017` for a local installation. This means the integration tests will be run against
-both MongoDB version 2.6 and version 3.0. Alternatively, you can choose to install only one of these and run the integration
-tests against only that one database. Simply omit one of the two in order to avoid testing against it. On the integration
-server, the tests are run against both supported versions of MongoDB.
+both MongoDB versions 2.6, 3.0, and 3.2. Alternatively, you can choose to install only one of these and run the integration
+tests against only that one database. Simply omit a version in order to avoid testing against it. On the integration
+server, the tests are run against all supported versions of MongoDB, as well as read-only configurations.
 
 #### REPL Jar
 
