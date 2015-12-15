@@ -307,43 +307,10 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
     def initial[A]: G[A]
 
     // Extracts bindings from a node:
-    def bindings[A](t: F[Fix[F]], b: G[A])(f: F[Fix[F]] => A): G[A]
+    def bindings[T[_[_]]: Recursive, A](t: F[T[F]], b: G[A])(f: F[T[F]] => A): G[A]
 
     // Possibly binds a free term to its definition:
-    def subst[A](t: F[Fix[F]], b: G[A]): Option[A]
-  }
-
-  def boundCata[F[_]: Functor, A](t: Fix[F])(f: F[A] => A)(implicit B: Binder[F]): A = {
-    def loop(t: F[Fix[F]], b: B.G[A]): A = {
-      val newB = B.bindings(t, b)(loop(_, b))
-      B.subst(t, newB).getOrElse(f(t.map(x => loop(x.unFix, newB))))
-    }
-
-    loop(t.unFix, B.initial)
-  }
-
-  def boundParaM[M[_]: Monad, F[_]: Traverse, A](t: Fix[F])(f: F[(Fix[F], A)] => M[A])(implicit B: Binder[F]): M[A] = {
-    def loop(t: F[Fix[F]], b: B.G[A]): M[A] = {
-      Applicative[M].sequence(B.bindings[M[A]](t, B.G.map(b)(_.point[M]))(s => loop(s, b)))(B.G).flatMap { newB =>
-        B.subst(t, newB).cata[M[A]](
-          _.point[M],
-          t.traverse(x => loop(x.unFix, newB).map((x, _))).flatMap(f))
-      }
-    }
-
-    loop(t.unFix, B.initial)
-  }
-
-  def boundParaS[F[_]: Traverse, S, A](t: Fix[F])(f: F[(Fix[F], A)] => State[S, A])(implicit B: Binder[F]): State[S, A] =
-    boundParaM[State[S, ?], F, A](t)(f)
-
-  def boundPara[F[_]: Functor, A](t: Fix[F])(f: F[(Fix[F], A)] => A)(implicit B: Binder[F]): A = {
-    def loop(t: F[Fix[F]], b: B.G[A]): A = {
-      val newB = B.bindings(t, b)(loop(_, b))
-      B.subst(t, newB).getOrElse(f(t.map(x => (x, loop(x.unFix, newB)))))
-    }
-
-    loop(t.unFix, B.initial)
+    def subst[T[_[_]]: Recursive, A](t: F[T[F]], b: G[A]): Option[A]
   }
 
   /**
