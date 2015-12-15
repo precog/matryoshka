@@ -110,13 +110,13 @@ object Exp {
 
     def initial[A] = Map[Symbol, A]()
 
-    def bindings[A](t: Exp[Fix[Exp]], b: G[A])(f: Exp[Fix[Exp]] => A) =
+    def bindings[T[_[_]]: Recursive, A](t: Exp[T[Exp]], b: G[A])(f: Exp[T[Exp]] => A) =
       t match {
-        case Let(name, value, _) => b + (name -> f(value.unFix))
+        case Let(name, value, _) => b + (name -> f(value.project))
         case _                   => b
       }
 
-    def subst[A](t: Exp[Fix[Exp]], b: G[A]) = t match {
+    def subst[T[_[_]]: Recursive, A](t: Exp[T[Exp]], b: G[A]) = t match {
       case Var(symbol) => b.get(symbol)
       case _           => None
     }
@@ -662,7 +662,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
 
       "produce correct annotations when used in let expression" in {
-        boundCata(Example2)(example1ƒ) must beSome(10)
+        Example2.boundCata(example1ƒ) must beSome(10)
       }
 
       val inlineMulBy1: Exp[(Fix[Exp], Fix[Exp])] => Fix[Exp] = {
@@ -684,8 +684,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
           let('x, num(1),
             let('y, mul(num(2), num(3)),
               vari('y)))
-        boundPara(source)(inlineMulBy1) must_== exp
-        boundParaM[Id, Exp, Fix[Exp]](source)(inlineMulBy1) must_== exp
+        source.boundPara(inlineMulBy1) must_== exp
+        source.boundParaM[Id, Fix[Exp]](inlineMulBy1) must_== exp
       }
 
       "rewrite under a binding" in {
@@ -697,8 +697,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
           let('x, num(1),
             let('y, num(2),              // Want this simplifed...
               mul(vari('y), vari('y))))  // ...but not this.
-        boundPara(source)(inlineMulBy1) must_== exp
-        boundParaM[Id, Exp, Fix[Exp]](source)(inlineMulBy1) must_== exp
+        source.boundPara(inlineMulBy1) must_== exp
+        source.boundParaM[Id, Fix[Exp]](inlineMulBy1) must_== exp
       }
 
       "annotate source nodes using bound nodes" in {

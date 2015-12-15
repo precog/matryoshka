@@ -527,7 +527,7 @@ object Compiler {
       (Fix(t.map(_._1)),
         groupedKeys(t.map(_._1), Fix(t.map(_._1))).getOrElse(t.foldMap(_._2)))
     }
-    val keys: List[Fix[LogicalPlan]] = boundCata(tree)(keysƒ)._2
+    val keys: List[Fix[LogicalPlan]] = tree.boundCata(keysƒ)._2
 
     // Step 1: annotate nodes containing the keys.
     val ann: Cofree[LogicalPlan, Boolean] = boundAttribute(tree)(keys.contains)

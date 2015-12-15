@@ -184,13 +184,13 @@ object LogicalPlan {
 
       def initial[A] = Map[Symbol, A]()
 
-      def bindings[A](t: LogicalPlan[Fix[LogicalPlan]], b: G[A])(f: LogicalPlan[Fix[LogicalPlan]] => A): G[A] =
+      def bindings[T[_[_]]: Recursive, A](t: LogicalPlan[T[LogicalPlan]], b: G[A])(f: LogicalPlan[T[LogicalPlan]] => A): G[A] =
         t match {
-          case LetF(ident, form, _) => b + (ident -> f(form.unFix))
+          case LetF(ident, form, _) => b + (ident -> f(form.project))
           case _                    => b
         }
 
-      def subst[A](t: LogicalPlan[Fix[LogicalPlan]], b: G[A]): Option[A] =
+      def subst[T[_[_]]: Recursive, A](t: LogicalPlan[T[LogicalPlan]], b: G[A]): Option[A] =
         t match {
           case FreeF(symbol) => b.get(symbol)
           case _             => None

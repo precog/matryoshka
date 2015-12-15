@@ -135,7 +135,7 @@ object Optimizer {
   }
 
   def preferProjections(t: Fix[LogicalPlan]): Fix[LogicalPlan] =
-    boundPara(t)(preferProjectionsƒ)._1.transCata(repeatedly(simplifyƒ))
+    t.boundPara(preferProjectionsƒ)._1.transCata(repeatedly(simplifyƒ))
 
   val elideTypeCheckƒ: LogicalPlan[Fix[LogicalPlan]] => Fix[LogicalPlan] = {
     case LetF(n, b, Fix(TypecheckF(Fix(FreeF(nf)), _, cont, _)))
@@ -295,7 +295,7 @@ object Optimizer {
     */
   def optimize(t: Fix[LogicalPlan]): Fix[LogicalPlan] = {
     val t1 = t.transCata(repeatedly(simplifyƒ))
-    val t2 = boundParaS(t1)(rewriteCrossJoinsƒ).evalZero
+    val t2 = t1.boundParaS(rewriteCrossJoinsƒ).evalZero
     val t3 = t2.transCata(repeatedly(simplifyƒ))
     val t4 = (normalizeLets _ >>> normalizeTempNames _)(t3)
     t4
