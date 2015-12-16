@@ -329,4 +329,33 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
     }
     loop(t.unFix, B.initial)._2
   }
+
+  sealed class IdOps[T[_[_]], A](self: A)(implicit T: Corecursive[T]) {
+    def ana[F[_]: Functor](f: A => F[A]): T[F] =
+      T.ana(self)(f)
+    def anaM[F[_]: Traverse, M[_]: Monad](f: A => M[F[A]]): M[T[F]] =
+      T.anaM(self)(f)
+    def gana[F[_]: Functor, M[_]](
+        k: λ[α => M[F[α]]] ~> λ[α => F[M[α]]], f: A => F[M[A]])(
+        implicit M: Monad[M]):
+          T[F] =
+      T.gana(self)(k, f)
+    def apo[F[_]: Functor](f: A => F[T[F] \/ A]): T[F] =
+      T.apo(self)(f)
+    def apoM[F[_]: Traverse, M[_]: Monad](f: A => M[F[T[F] \/ A]]): M[T[F]] =
+      T.apoM(self)(f)
+    def postpro[F[_]: Functor](e: F ~> F, g: A => F[A])(implicit R: Recursive[T]): T[F] =
+      T.postpro(self)(e, g)
+    def gpostpro[F[_]: Functor, M[_]](
+        k: λ[α => M[F[α]]] ~> λ[α => F[M[α]]], e: F ~> F, g: A => F[M[A]])(
+        implicit R: Recursive[T], M: Monad[M]):
+          T[F] =
+      T.gpostpro(self)(k, e, g)
+    def futu[F[_]: Functor](f: A => F[Free[F, A]]): T[F] =
+      T.futu(self)(f)
+    def futuM[F[_]: Traverse, M[_]: Monad](f: A => M[F[Free[F, A]]]):
+        M[T[F]] =
+      T.futuM(self)(f)
+  }
+  implicit def ToFixIdOps[A](a: A): IdOps[Fix, A] = new IdOps[Fix, A](a)
 }

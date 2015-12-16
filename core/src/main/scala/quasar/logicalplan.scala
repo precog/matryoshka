@@ -221,8 +221,7 @@ object LogicalPlan {
   }
 
   def rename[M[_]: Monad](f: Symbol => M[Symbol])(t: Fix[LogicalPlan]): M[Fix[LogicalPlan]] =
-    Corecursive[Fix].anaM[LogicalPlan, M, (Map[Symbol, Symbol], Fix[LogicalPlan])](
-      (Map(), t))(renameƒ(f))
+    (Map[Symbol, Symbol](), t).anaM(renameƒ(f))
 
   def normalizeTempNames(t: Fix[LogicalPlan]) =
     rename[State[NameGen, ?]](κ(freshName("tmp")))(t).evalZero

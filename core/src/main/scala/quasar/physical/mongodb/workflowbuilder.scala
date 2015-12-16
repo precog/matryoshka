@@ -342,7 +342,7 @@ object WorkflowBuilder {
             xs <- inner.map { case (n, x) =>
                     jscore.Select(jscore.Ident(js.param), n.value) -> exprToJs(x)
                   }.sequenceU.toOption
-            expr1 <- Corecursive[Fix].apoM[jscore.JsCoreF, Option, JsCore](js.expr) {
+            expr1 <- js.expr.apoM[jscore.JsCoreF, Option] {
                     case t @ jscore.Access(b, _) if b == jscore.Ident(js.param) =>
                       xs.get(t).map(_(jscore.Ident(js.param)).unFix.map(_.left))
                     case t => t.unFix.map(_.right[JsCore]).some

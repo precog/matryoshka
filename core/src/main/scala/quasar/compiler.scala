@@ -546,6 +546,6 @@ object Compiler {
           else t.tail
       }
     }
-    Corecursive[Fix].ana(ann)(rewriteƒ)
+    ann.ana(rewriteƒ)
   }
 }
