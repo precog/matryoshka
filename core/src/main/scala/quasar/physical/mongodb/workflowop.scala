@@ -581,7 +581,7 @@ object Workflow {
     }
 
     Crystallized(
-      Corecursive[Fix].ana(promoteKnownShape(finished))(crystallizeƒ).transCata[WorkflowF](coalesce)
+      promoteKnownShape(finished).ana(crystallizeƒ).transCata[WorkflowF](coalesce)
         // TODO: this can coalesce more cases, but hasn’t been done thus far and
         //       requires rewriting many tests in a much less readable way.
         // .cata[Workflow](x => coalesce(uncleanƒ(x).unFix))

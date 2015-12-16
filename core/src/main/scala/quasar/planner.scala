@@ -19,7 +19,7 @@ package quasar
 import quasar.Predef._
 import quasar.fp._
 import quasar.fs.Path._
-import quasar.recursionschemes._, Fix._, FunctorT.ops._
+import quasar.recursionschemes._, Fix._
 import quasar.sql._
 
 import scalaz._, Scalaz._
@@ -43,8 +43,8 @@ trait Planner[PhysicalPlan] {
       tree       <- withTree("Variables Substituted")(Variables.substVars(select, req.variables).leftMap(CSemanticError(_)))
       tree       <- withTree("Annotated Tree")(AllPhases(tree).leftMap(ManyErrors(_)))
       logical    <- withTree("Logical Plan")(Compiler.compile(tree).leftMap(CSemanticError(_)))
-      simplified <- withTree("Simplified")(\/-(logical.transCata(repeatedly(Optimizer.simplifyƒ))))
-      checked    <- withTree("Typechecked")(LogicalPlan.ensureCorrectTypes(simplified).disjunction.leftMap(ManyErrors(_)))
+      optimized  <- withTree("Optimized")(\/-(Optimizer.optimize(logical)))
+      checked    <- withTree("Typechecked")(LogicalPlan.ensureCorrectTypes(optimized).disjunction.leftMap(ManyErrors(_)))
       physical   <- plan(checked).leftMap(CPlannerError(_))
       _          <- withTree("Physical Plan")(\/-(physical))
       _          <- withString(physical)(showNative)
@@ -54,6 +54,7 @@ trait Planner[PhysicalPlan] {
 object Planner {
   private type WriterResult[A] = (Vector[PhaseResult], A)
 
+  // NB: can't use private WriterResult in this type
   type EitherWriter[E, A] = EitherT[(Vector[PhaseResult], ?), E, A]
 
   def emit[E, A](log: Vector[PhaseResult], v: E \/ A): EitherWriter[E, A] = {

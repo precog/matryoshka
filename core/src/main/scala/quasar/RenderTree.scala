@@ -30,6 +30,7 @@ final case class RenderedTree(nodeType: List[String], label: Option[String], chi
   def simpleType: Option[String] = nodeType.headOption
 
   def relabel(f: String => String) = this.copy(label = label.map(f))
+  def retype(f: List[String] => List[String]) = this.copy(nodeType = f(nodeType))
 
   /**
    A tree that describes differences between two trees:

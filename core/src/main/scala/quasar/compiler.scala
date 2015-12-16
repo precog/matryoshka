@@ -26,13 +26,13 @@ import quasar.SemanticAnalysis._, quasar.SemanticError._
 
 import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
 import scalaz.{Tree => _, _}, Scalaz._
-import shapeless.contrib.scalaz.instances.deriveEqual
 
 trait Compiler[F[_]] {
   import identity._
   import set._
   import string._
   import structural._
+  import JoinDir._
 
   // HELPERS
   private type M[A] = EitherT[F, SemanticError, A]
@@ -104,14 +104,6 @@ trait Compiler[F[_]] {
     def freshName(prefix: String)(implicit m: Monad[F]): CompilerM[Symbol] =
       read[CompilerState, Int](_.nameGen).map(n => Symbol(prefix + n.toString)) <*
         mod((s: CompilerState) => s.copy(nameGen = s.nameGen + 1))
-  }
-
-  sealed trait JoinDir
-  final case object Left extends JoinDir {
-    override def toString: String = "left"
-  }
-  final case object Right extends JoinDir {
-    override def toString: String = "right"
   }
 
   private def read[A, B](f: A => B)(implicit m: Monad[F]):
@@ -191,8 +183,8 @@ trait Compiler[F[_]] {
       case _: NamedRelation[_] => term
       case JoinRelation(left, right, _, _) =>
         Fix(ObjectConcat(
-          flattenJoins(Fix(ObjectProject(term, LogicalPlan.Constant(Data.Str("left")))), left),
-          flattenJoins(Fix(ObjectProject(term, LogicalPlan.Constant(Data.Str("right")))), right)))
+          flattenJoins(Left.projectFrom(term), left),
+          flattenJoins(Right.projectFrom(term), right)))
     }
 
     def buildJoinDirectionMap(relations: SqlRelation[CoExpr]):
@@ -213,10 +205,7 @@ trait Compiler[F[_]] {
         case (name, dirs) =>
           name -> dirs.foldRight(
             joined)(
-            (dir, acc) =>
-            Fix(ObjectProject(
-              acc,
-              LogicalPlan.Constant(Data.Str(dir.toString)))))
+            (dir, acc) => dir.projectFrom(acc))
       }
 
     def tableContext(joined: Fix[LogicalPlan], relations: SqlRelation[CoExpr]):
@@ -324,7 +313,7 @@ trait Compiler[F[_]] {
             case (_,    Splice(_)) => None
             case (name, _)         => Some(name)
           }
-        
+
         val projs = projections.map(_.expr)
 
         val syntheticNames: List[String] =
@@ -488,6 +477,23 @@ trait Compiler[F[_]] {
   }
 }
 
+sealed trait JoinDir {
+  def projectFrom(t: Fix[LogicalPlan]): Fix[LogicalPlan]
+}
+object JoinDir {
+  import structural._
+
+  final case object Left extends JoinDir {
+    def projectFrom(t: Fix[LogicalPlan]) =
+      Fix(ObjectProject(t, LogicalPlan.Constant(Data.Str("left"))))
+  }
+
+  final case object Right extends JoinDir {
+    def projectFrom(t: Fix[LogicalPlan]) =
+      Fix(ObjectProject(t, LogicalPlan.Constant(Data.Str("right"))))
+  }
+}
+
 object Compiler {
   import LogicalPlan._
 
@@ -499,6 +505,9 @@ object Compiler {
       SemanticError \/ Fix[LogicalPlan] =
     trampoline.compile(tree).run
 
+  /** Emulate SQL semantics by reducing any projection which trivially
+    * matches a key in the "group by".
+    */
   def reduceGroupKeys(tree: Fix[LogicalPlan]): Fix[LogicalPlan] = {
     // Step 0: identify key expressions, and rewrite them by replacing the
     // group source with the source at the point where they might appear.
@@ -518,7 +527,7 @@ object Compiler {
       (Fix(t.map(_._1)),
         groupedKeys(t.map(_._1), Fix(t.map(_._1))).getOrElse(t.foldMap(_._2)))
     }
-    val keys: List[Fix[LogicalPlan]] = boundCata(tree)(keysƒ)._2
+    val keys: List[Fix[LogicalPlan]] = tree.boundCata(keysƒ)._2
 
     // Step 1: annotate nodes containing the keys.
     val ann: Cofree[LogicalPlan, Boolean] = boundAttribute(tree)(keys.contains)
@@ -537,6 +546,6 @@ object Compiler {
           else t.tail
       }
     }
-    Corecursive[Fix].ana(ann)(rewriteƒ)
+    ann.ana(rewriteƒ)
   }
 }

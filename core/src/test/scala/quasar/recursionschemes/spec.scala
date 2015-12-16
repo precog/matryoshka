@@ -106,16 +106,17 @@ object Exp {
 
   implicit val ExpBinder: Binder[Exp] = new Binder[Exp] {
     type G[A] = Map[Symbol, A]
+    val G = implicitly[Traverse[G]]
 
     def initial[A] = Map[Symbol, A]()
 
-    def bindings[A](t: Exp[Fix[Exp]], b: G[A])(f: Exp[Fix[Exp]] => A) =
+    def bindings[T[_[_]]: Recursive, A](t: Exp[T[Exp]], b: G[A])(f: Exp[T[Exp]] => A) =
       t match {
-        case Let(name, value, _) => b + (name -> f(value.unFix))
+        case Let(name, value, _) => b + (name -> f(value.project))
         case _                   => b
       }
 
-    def subst[A](t: Exp[Fix[Exp]], b: G[A]) = t match {
+    def subst[T[_[_]]: Recursive, A](t: Exp[T[Exp]], b: G[A]) = t match {
       case Var(symbol) => b.get(symbol)
       case _           => None
     }
@@ -288,8 +289,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "generalizeCoalgebra" should {
       "behave like ana" ! prop { (i: Int) =>
-        Corecursive[Fix].apo(i)(generalizeCoalgebra[Fix[Exp] \/ ?](extractFactors)) must_==
-          Corecursive[Fix].ana(i)(extractFactors)
+        i.apo(generalizeCoalgebra[Fix[Exp] \/ ?](extractFactors)) must_==
+          i.ana(extractFactors)
       }
     }
 
@@ -372,17 +373,17 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
           else Num(x)
         "apoM" in {
           "should be some" in {
-            Corecursive[Fix].apoM(12)(fM) must beSome(mul(num(2), mul(num(2), num(3))))
+            12.apoM(fM) must beSome(mul(num(2), mul(num(2), num(3))))
           }
           "should be none" in {
-            Corecursive[Fix].apoM(10)(fM) must beNone
+            10.apoM(fM) must beNone
           }
         }
         "apo should be an optimization over apoM and be semantically equivalent" ! prop { i: Int =>
           if (i == 0) ok
           else
-            Corecursive[Fix].apoM[Exp,Id.Id,Int](i.toInt)(f) must_==
-              Corecursive[Fix].apo(i.toInt)(f)
+            i.apoM[Exp, Id](f) must_==
+              i.apo(f)
         }
       }
       "construct factorial" in {
@@ -390,7 +391,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
           if (x > 1) Mul(-\/(num(x)), \/-(x-1))
           else Num(x)
 
-        Corecursive[Fix].apo(4)(fact) must_==
+        4.apo(fact) must_==
           mul(num(4), mul(num(3), mul(num(2), num(1))))
       }
     }
@@ -401,25 +402,25 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
           def extractFactorsM(x: Int): Option[Exp[Int]] =
             if (x == 5) None else Some(extractFactors(x))
           "pull out factors of two" in {
-            Corecursive[Fix].anaM(12)(extractFactorsM) must beSome(
+            12.anaM(extractFactorsM) must beSome(
               mul(num(2), mul(num(2), num(3)))
             )
           }
           "fail if 5 is present" in {
-            Corecursive[Fix].anaM(10)(extractFactorsM) must beNone
+            10.anaM(extractFactorsM) must beNone
           }
         }
         "ana should be an optimization over anaM and be semantically equivalent" ! prop { i: Int =>
-          Corecursive[Fix].anaM[Exp,Id.Id,Int](i)(extractFactors) must_==
-            Corecursive[Fix].ana(i)(extractFactors)
+          i.anaM[Exp,Id](extractFactors) must_==
+            i.ana(extractFactors)
         }
       }
     }
 
     "distAna" should {
       "behave like ana" ! prop { (i: Int) =>
-        Corecursive[Fix].gana[Exp, Id, Int](i)(distAna, extractFactors) must_==
-          Corecursive[Fix].ana(i)(extractFactors)
+        i.gana[Exp, Id](distAna, extractFactors) must_==
+          i.ana(extractFactors)
       }
     }
 
@@ -482,16 +483,16 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "futu" should {
       "factor multiples of two" in {
-        Corecursive[Fix].futu(8)(extract2and3) must_==
+        8.futu(extract2and3) must_==
           mul(num(2), mul(num(2), num(2)))
       }
 
       "factor multiples of three" in {
-        Corecursive[Fix].futu(81)(extract2and3) must_== mul(num(3), num(27))
+        81.futu(extract2and3) must_== mul(num(3), num(27))
       }
 
       "factor 3 within 2" in {
-        Corecursive[Fix].futu(324)(extract2and3) must_==
+        324.futu(extract2and3) must_==
           mul(num(2), mul(num(2), mul(num(3), num(27))))
       }
     }
@@ -505,9 +506,9 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     "RenderTree" should {
       "render nodes and leaves" in {
         mul(num(0), num(1)).shows must_==
-          """Mul
-            |├─ Num(Fix(0))
-            |╰─ Num(Fix(1))""".stripMargin
+          """Fix:Mul
+            |├─ Fix:Num(0)
+            |╰─ Fix:Num(1)""".stripMargin
       }
     }
   }
@@ -661,7 +662,43 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
 
       "produce correct annotations when used in let expression" in {
-        boundCata(Example2)(example1ƒ) must beSome(10)
+        Example2.boundCata(example1ƒ) must beSome(10)
+      }
+
+      val inlineMulBy1: Exp[(Fix[Exp], Fix[Exp])] => Fix[Exp] = {
+        case Mul((_, Fix(Num(1))), (x, _)) => x  // actually, either `x` is the same here
+        case t                             => Fix(t.map { case (src, bnd) =>
+          src.unFix match {
+            case Var(_) => src
+            case _      => bnd
+          }
+        })
+      }
+
+      "rewrite with bound value" in {
+        val source =
+          let('x, num(1),
+            let('y, mul(num(2), num(3)),
+              mul(vari('x), vari('y))))
+        val exp =
+          let('x, num(1),
+            let('y, mul(num(2), num(3)),
+              vari('y)))
+        source.boundPara(inlineMulBy1) must_== exp
+        source.boundParaM[Id, Fix[Exp]](inlineMulBy1) must_== exp
+      }
+
+      "rewrite under a binding" in {
+        val source =
+          let('x, num(1),
+            let('y, mul(vari('x), num(2)),
+              mul(vari('y), vari('y))))
+        val exp =
+          let('x, num(1),
+            let('y, num(2),              // Want this simplifed...
+              mul(vari('y), vari('y))))  // ...but not this.
+        source.boundPara(inlineMulBy1) must_== exp
+        source.boundParaM[Id, Fix[Exp]](inlineMulBy1) must_== exp
       }
 
       "annotate source nodes using bound nodes" in {

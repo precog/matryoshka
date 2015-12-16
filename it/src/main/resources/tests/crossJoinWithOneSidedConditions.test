@@ -1,0 +1,13 @@
+{
+  "name": "cross join with conditions that must be pushed ahead of the join (or else the join explodes, taking several minutes to complete)",
+  "backends": { "mongodb_read_only": "pending" },
+
+  "data": "largeZips.data",
+
+  "query": "select a.city as a, b.city as b, b.pop - a.pop as diff from largeZips a, largeZips b where a._id like '80301' and b._id like '90277'",
+
+  "predicate": "equalsExactly",
+  "expected": [
+    { "a": "BOULDER", "b": "REDONDO BEACH", "diff": 14928 }
+  ]
+}

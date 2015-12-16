@@ -17,7 +17,7 @@
 package quasar
 
 import quasar.Predef._
-import quasar.recursionschemes._, cofree._, Recursive.ops._
+import quasar.recursionschemes._, cofree._, Recursive.ops._, FunctorT.ops._
 import quasar.fp._
 import quasar.fs.Path
 import quasar.namegen._
@@ -88,11 +88,20 @@ object LogicalPlan {
           val nodeType = "LogicalPlan" :: Nil
 
           def render(v: LogicalPlan[α]) = v match {
-            case ReadF(name)             => Terminal("Read" :: nodeType, Some(name.pathname))
-            case ConstantF(data)         => Terminal("Constant" :: nodeType, Some(data.toString))
-            case InvokeF(func, args)     => NonTerminal("Invoke" :: nodeType, Some(func.name), args.map(ra.render))
-            case FreeF(name)             => Terminal("Free" :: nodeType, Some(name.toString))
-            case LetF(ident, form, body) => NonTerminal("Let" :: nodeType, Some(ident.toString), List(ra.render(form), ra.render(body)))
+            // NB: a couple of special cases for readability
+            case ConstantF(Data.Str(str)) => Terminal("Str" :: "Constant" :: nodeType, Some(str.shows))
+            case InvokeF(structural.ObjectProject, expr :: name :: Nil) =>
+              (ra.render(expr), ra.render(name)) match {
+                case (RenderedTree(_, Some(x), Nil), RenderedTree(_, Some(n), Nil)) =>
+                  Terminal("ObjectProject" :: nodeType, Some(x + "[" + n + "]"))
+                case (x, n) => NonTerminal("Invoke" :: nodeType, Some(ObjectProject.name), x :: n :: Nil)
+              }
+
+            case ReadF(name)              => Terminal("Read" :: nodeType, Some(name.pathname))
+            case ConstantF(data)          => Terminal("Constant" :: nodeType, Some(data.toString))
+            case InvokeF(func, args)      => NonTerminal("Invoke" :: nodeType, Some(func.name), args.map(ra.render))
+            case FreeF(name)              => Terminal("Free" :: nodeType, Some(name.toString))
+            case LetF(ident, form, body)  => NonTerminal("Let" :: nodeType, Some(ident.toString), List(ra.render(form), ra.render(body)))
             case TypecheckF(expr, typ, cont, fallback) =>
               NonTerminal("Typecheck" :: nodeType, Some(typ.shows),
                 List(ra.render(expr), ra.render(cont), ra.render(fallback)))
@@ -171,16 +180,17 @@ object LogicalPlan {
 
   implicit val LogicalPlanBinder: Binder[LogicalPlan] = new Binder[LogicalPlan] {
       type G[A] = Map[Symbol, A]
+      val G = implicitly[Traverse[G]]
 
       def initial[A] = Map[Symbol, A]()
 
-      def bindings[A](t: LogicalPlan[Fix[LogicalPlan]], b: G[A])(f: LogicalPlan[Fix[LogicalPlan]] => A): G[A] =
+      def bindings[T[_[_]]: Recursive, A](t: LogicalPlan[T[LogicalPlan]], b: G[A])(f: LogicalPlan[T[LogicalPlan]] => A): G[A] =
         t match {
-          case LetF(ident, form, _) => b + (ident -> f(form.unFix))
+          case LetF(ident, form, _) => b + (ident -> f(form.project))
           case _                    => b
         }
 
-      def subst[A](t: LogicalPlan[Fix[LogicalPlan]], b: G[A]): Option[A] =
+      def subst[T[_[_]]: Recursive, A](t: LogicalPlan[T[LogicalPlan]], b: G[A]): Option[A] =
         t match {
           case FreeF(symbol) => b.get(symbol)
           case _             => None
@@ -189,6 +199,39 @@ object LogicalPlan {
 
   def freshName(prefix: String): State[NameGen, Symbol] =
     quasar.namegen.freshName(prefix).map(Symbol(_))
+
+  // NB: this can't currently be generalized to Binder, because the key type isn't exposed there.
+  def renameƒ[M[_]: Monad](f: Symbol => M[Symbol]):
+      ((Map[Symbol, Symbol], Fix[LogicalPlan])) =>
+        M[LogicalPlan[(Map[Symbol, Symbol], Fix[LogicalPlan])]] =
+  { case (bound, t) =>
+    t.unFix match {
+      case LetF(sym, expr, body) =>
+        f(sym).map(sym1 =>
+          LetF(sym1,
+            (bound, expr),
+            (bound + (sym -> sym1), body)))
+      case FreeF(sym) =>
+        val v: LogicalPlan[(Map[Symbol, Symbol], Fix[LogicalPlan])] =
+          FreeF(bound.get(sym).getOrElse(sym))
+        v.point[M]
+      case t =>
+        t.strengthL(bound).point[M]
+    }
+  }
+
+  def rename[M[_]: Monad](f: Symbol => M[Symbol])(t: Fix[LogicalPlan]): M[Fix[LogicalPlan]] =
+    (Map[Symbol, Symbol](), t).anaM(renameƒ(f))
+
+  def normalizeTempNames(t: Fix[LogicalPlan]) =
+    rename[State[NameGen, ?]](κ(freshName("tmp")))(t).evalZero
+
+  val normalizeLetsƒ: LogicalPlan[Fix[LogicalPlan]] => Option[LogicalPlan[Fix[LogicalPlan]]] = {
+      case LetF(b, Fix(LetF(a, x1, x2)), x3) => LetF(a, x1, Let(b, x2, x3)).some
+      case t => None
+  }
+
+  def normalizeLets(t: Fix[LogicalPlan]) = t.transAna(repeatedly(normalizeLetsƒ))
 
   type Typed[F[_]] = Cofree[F, Type]
   final case class NamedConstraint(name: Symbol, inferred: Type, term: Fix[LogicalPlan])

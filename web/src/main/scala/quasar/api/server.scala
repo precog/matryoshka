@@ -243,7 +243,7 @@ abstract class ServerOps[WC: CodecJson, SC](
       cfgPath        <- opts.config.fold[EnvTask[Option[FsPath[pathy.Path.File, pathy.Path.Sandboxed]]]](
           liftE(Task.now(None)))(
           cfg => FsPath.parseSystemFile(cfg).toRight(InvalidConfig("Invalid path to config file: " + cfg)).map(Some(_)))
-      config         <- configOps.fromFileOrDefaultPaths(cfgPath).orElse(EitherT.right(Task.now(defaultWC)))
+      config         <- configOps.fromFileOrDefaultPaths(cfgPath).fixedOrElse(EitherT.right(Task.now(defaultWC)))
       port           =  opts.port getOrElse wcPort.get(config)
       updCfg         =  wcPort.set(port)(config)
       (proc, useCfg) =  servers(content.toList, Some(redirect), idleTimeout, Backend.test,

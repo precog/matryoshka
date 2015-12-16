@@ -149,6 +149,17 @@ trait EitherTInstances {
       def fail[A](t: Throwable) =
         EitherT[F, E, A](Catchable[F].fail(t))
     }
+
+  // Temporary workaround for a bug in scalaz 7.1, where the "right" value is
+  // sequenced twice.
+  // TODO: Remove this when we update to scalaz 7.2.
+  implicit class eitherTOps[F[_], A, B](v: EitherT[F, A, B]) {
+    def fixedOrElse(v2: => EitherT[F, A, B])(implicit F: Monad[F]): EitherT[F, A, B] =
+      EitherT(F.bind(v.run) {
+        case    -\/ (_) => v2.run
+        case r @ \/-(_) => F.point(r)
+      })
+  }
 }
 
 trait OptionTInstances {

@@ -21,6 +21,8 @@ import quasar.{RenderTree, Terminal, NonTerminal}
 import quasar.fp._
 import quasar.javascript._
 
+import scala.Any
+
 import scalaz._, Scalaz._
 
 sealed trait Selector {
@@ -232,19 +234,41 @@ object Selector {
     def bson = Bson.Doc(ListMap(op -> Bson.Arr(flatten.map(_.bson))))
   }
 
-  final case class And(left: Selector, right: Selector) extends Abstract("$and")
+  final case class And(left: Selector, right: Selector) extends Abstract("$and") {
+    override def equals(that: Any) = that match {
+      case that @ And(_, _) => flatten == that.flatten
+      case _ => false
+    }
+    override def hashCode = flatten.hashCode
+  }
   object And {
     def apply(first: Selector, rest: Selector*): Selector =
       rest.foldLeft(first)(And(_, _))
   }
 
-  final case class Or(left: Selector, right: Selector) extends Abstract("$or")
+  final case class Or(left: Selector, right: Selector) extends Abstract("$or") {
+    override def equals(that: Any) = that match {
+      case that @ Or(_, _) => flatten == that.flatten
+      case _ => false
+    }
+    override def hashCode = flatten.hashCode
+  }
   object Or {
     def apply(first: Selector, rest: Selector*): Selector =
       rest.foldLeft(first)(Or(_, _))
   }
 
-  final case class Nor(left: Selector, right: Selector) extends Abstract("$nor")
+  final case class Nor(left: Selector, right: Selector) extends Abstract("$nor") {
+    override def equals(that: Any) = that match {
+      case that @ Nor(_, _) => flatten == that.flatten
+      case _ => false
+    }
+    override def hashCode = flatten.hashCode
+  }
+  object Nor {
+    def apply(first: Selector, rest: Selector*): Selector =
+      rest.foldLeft(first)(Nor(_, _))
+  }
 
   implicit val SelectorAndSemigroup: Semigroup[Selector] = new Semigroup[Selector] {
     def append(s1: Selector, s2: => Selector): Selector = {

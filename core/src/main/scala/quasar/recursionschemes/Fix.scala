@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
-package quasar
-package recursionschemes
+package quasar.recursionschemes
+
+import quasar.Predef._
+import quasar.RenderTree
 
 import scalaz._
 
@@ -36,7 +38,10 @@ object Fix {
       RenderTree[Fix[F]] =
     new RenderTree[Fix[F]] {
       def render(v: Fix[F]) =
-        RF(fixRenderTree[F]).render(v.unFix).relabel("Fix(" + _ + ")")
+        RF(fixRenderTree[F]).render(v.unFix).retype {
+          case h :: t => ("Fix:" + h) :: t
+          case Nil    => "Fix" :: Nil
+        }
     }
 
   implicit def fixShow[F[_]](implicit F: Show ~> λ[α => Show[F[α]]]):

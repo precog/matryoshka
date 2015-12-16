@@ -199,7 +199,7 @@ trait ConfigOps[C] {
         }
       }
 
-    path.cata(p => load(Task.now(p)), load(defaultPath).orElse(load(alternatePath)))
+    path.cata(p => load(Task.now(p)), load(defaultPath).fixedOrElse(load(alternatePath)))
   }
 
   def loadAndTest(path: FsPath[File, Sandboxed])(implicit D: DecodeJson[C]): EnvTask[C] =
