@@ -102,7 +102,7 @@ class SQLParser extends StandardTokenParsers {
   ))
 
   ignore(lexical.delimiters += (
-    "*", "+", "-", "%", "~~", "!~~", "~", "~*", "!~", "!~*", "||", "<", "=",
+    "*", "+", "-", "%", "^", "~~", "!~~", "~", "~*", "!~", "!~*", "||", "<", "=",
     "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";", "...",
     "{", "}", "{*}", "{:*}", "{*:}", "{_}", "{:_}", "{_:}",
     "[", "]", "[*]", "[:*]", "[*:]", "[_]", "[:_]", "[_:]"))
@@ -219,7 +219,10 @@ class SQLParser extends StandardTokenParsers {
     mult_expr * (op("+") ^^^ Plus | op("-") ^^^ Minus)
 
   def mult_expr: Parser[Expr] =
-    deref_expr * (op("*") ^^^ Mult | op("/") ^^^ Div | op("%") ^^^ Mod)
+    pow_expr * (op("*") ^^^ Mult | op("/") ^^^ Div | op("%") ^^^ Mod)
+
+  def pow_expr: Parser[Expr] =
+    deref_expr * (op("^") ^^^ Pow)
 
   sealed trait DerefType
   case class ObjectDeref(expr: Expr) extends DerefType

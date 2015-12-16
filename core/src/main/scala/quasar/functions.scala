@@ -30,6 +30,12 @@ sealed trait Func {
 
   def domain: List[Type]
 
+  /** This handles rewrites that constant-folding (handled by the typers) can’t.
+    * I.e., any rewrite where either the result or one of the relevant arguments
+    * is a non-Constant expression. It _could_ cover all the rewrites, but
+    * there’s no need to duplicate the cases that must also be handled by the
+    * typer.
+    */
   def simplify: Func.Simplifier
 
   def apply[A](args: A*): LogicalPlan[A] =

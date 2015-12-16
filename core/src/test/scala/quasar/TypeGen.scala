@@ -1,11 +1,11 @@
 package quasar
 
 import quasar.Predef.{Set => _, _}
-import org.scalacheck._
-import Gen._
-import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
+import quasar.DataGen._
+import quasar.Type._
 
-import Type._
+import org.scalacheck._, Gen._
+import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
 
 trait TypeGen {
   implicit def arbitraryType: Arbitrary[Type] = Arbitrary { Gen.sized(depth => typeGen(depth/25)) }
@@ -17,6 +17,20 @@ trait TypeGen {
   def arbitraryConst = Arbitrary { constGen }
 
   def arbitraryNonnestedType = Arbitrary { Gen.oneOf(Gen.const(Top), Gen.const(Bottom), simpleGen) }
+
+  def arbitrarySubtype(superType: Type) = Arbitrary {
+    Arbitrary.arbitrary[Type].suchThat(superType.contains(_))
+  }
+
+  /** `arbitrarySubtype` is more general, but throws away too many cases to
+    * succeed. This version uses `suchThat` in a much more restricted context.
+    */
+  val arbitraryNumeric = Arbitrary {
+    Gen.oneOf(
+      Gen.const(Type.Dec),
+      Gen.const(Type.Int),
+      constGen.suchThat(Type.Numeric.contains(_)))
+  }
 
   def typeGen(depth: Int): Gen[Type] = {
     // NB: never nests Top or Bottom inside any complex type, because that's mostly nonsensical.
@@ -34,22 +48,15 @@ trait TypeGen {
     right <- complexGen(depth-1, gen)
   } yield left ⨿ right
 
-  def simpleGen: Gen[Type] = Gen.oneOf(terminalGen, constGen, setGen)
+  def simpleGen: Gen[Type] = Gen.oneOf(terminalGen, simpleConstGen, setGen)
 
   def terminalGen: Gen[Type] = Gen.oneOf(Null, Str, Type.Int, Dec, Bool, Binary, Timestamp, Date, Time, Interval)
 
-  def constGen: Gen[Type] =
-    Gen.oneOf(Const(Data.Null), Const(Data.Str("a")), Const(Data.Int(1)),
-              Const(Data.Dec(1.0)), Const(Data.True), Const(Data.Binary(Array[Byte](1))),
-              Const(Data.Timestamp(Instant.now())),
-              Const(Data.Date(LocalDate.now())),
-              Const(Data.Time(LocalTime.now())),
-              Const(Data.Interval(Duration.ofSeconds(1))))
+  def simpleConstGen: Gen[Type] = DataGen.simpleData.map(Const(_))
+  def constGen: Gen[Type] = Arbitrary.arbitrary[Data].map(Const(_))
 
   // TODO: can a Set contain constants? objects? arrays?
-  def setGen: Gen[Type] = for {
-    t <- terminalGen
-  } yield Set(t)
+  def setGen: Gen[Type] = terminalGen.map(Set(_))
 
   def fieldGen: Gen[(String, Type)] = for {
     c <- Gen.alphaChar

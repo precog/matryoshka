@@ -2,6 +2,7 @@ package quasar.std
 
 import quasar.Predef._
 import quasar.TypeGen
+import quasar.fp._
 import quasar.specs2.PendingWithAccurateCoverage
 
 import org.scalacheck.Arbitrary
@@ -13,7 +14,6 @@ import org.specs2.matcher.Matcher
 import org.specs2.mutable._
 import org.specs2.scalaz._
 import org.threeten.bp.{Instant, LocalDate, LocalTime, Duration}
-import scalaz.{Validation, Success, Failure}
 
 class SetSpec extends Specification with ScalaCheck with TypeGen with ValidationMatchers with PendingWithAccurateCoverage {
   import SetLib._
@@ -61,7 +61,11 @@ class SetSpec extends Specification with ScalaCheck with TypeGen with Validation
 
     "maintain first type for constantly" ! prop { (t1 : Type, t2 : Type) =>
       val expr = Constantly(t1, t2)
-      expr must beSuccessful(Type.Set(t1))
+      (t1, t2) match {
+        case (Const(r), Const(Data.Set(l))) =>
+           expr must beSuccessful(Const(Data.Set(l.map(κ(r)))))
+        case (_, _) => expr must beSuccessful(Type.Set(t1))
+      }
     }
   }
 }
