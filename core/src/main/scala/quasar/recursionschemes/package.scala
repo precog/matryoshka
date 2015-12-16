@@ -302,32 +302,15 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
 
   @typeclass trait Binder[F[_]] {
     type G[A]
+    def G: Traverse[G]
 
     def initial[A]: G[A]
 
     // Extracts bindings from a node:
-    def bindings[A](t: F[Fix[F]], b: G[A])(f: F[Fix[F]] => A): G[A]
+    def bindings[T[_[_]]: Recursive, A](t: F[T[F]], b: G[A])(f: F[T[F]] => A): G[A]
 
     // Possibly binds a free term to its definition:
-    def subst[A](t: F[Fix[F]], b: G[A]): Option[A]
-  }
-
-  def boundCata[F[_]: Functor, A](t: Fix[F])(f: F[A] => A)(implicit B: Binder[F]): A = {
-    def loop(t: F[Fix[F]], b: B.G[A]): A = {
-      val newB = B.bindings(t, b)(loop(_, b))
-      B.subst(t, newB).getOrElse(f(t.map(x => loop(x.unFix, newB))))
-    }
-
-    loop(t.unFix, B.initial)
-  }
-
-  def boundPara[F[_]: Functor, A](t: Fix[F])(f: F[(Fix[F], A)] => A)(implicit B: Binder[F]): A = {
-    def loop(t: F[Fix[F]], b: B.G[A]): A = {
-      val newB = B.bindings(t, b)(loop(_, b))
-      B.subst(t, newB).getOrElse(f(t.map(x => (x, loop(x.unFix, newB)))))
-    }
-
-    loop(t.unFix, B.initial)
+    def subst[T[_[_]]: Recursive, A](t: F[T[F]], b: G[A]): Option[A]
   }
 
   /**
@@ -346,4 +329,33 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
     }
     loop(t.unFix, B.initial)._2
   }
+
+  sealed class IdOps[T[_[_]], A](self: A)(implicit T: Corecursive[T]) {
+    def ana[F[_]: Functor](f: A => F[A]): T[F] =
+      T.ana(self)(f)
+    def anaM[F[_]: Traverse, M[_]: Monad](f: A => M[F[A]]): M[T[F]] =
+      T.anaM(self)(f)
+    def gana[F[_]: Functor, M[_]](
+        k: λ[α => M[F[α]]] ~> λ[α => F[M[α]]], f: A => F[M[A]])(
+        implicit M: Monad[M]):
+          T[F] =
+      T.gana(self)(k, f)
+    def apo[F[_]: Functor](f: A => F[T[F] \/ A]): T[F] =
+      T.apo(self)(f)
+    def apoM[F[_]: Traverse, M[_]: Monad](f: A => M[F[T[F] \/ A]]): M[T[F]] =
+      T.apoM(self)(f)
+    def postpro[F[_]: Functor](e: F ~> F, g: A => F[A])(implicit R: Recursive[T]): T[F] =
+      T.postpro(self)(e, g)
+    def gpostpro[F[_]: Functor, M[_]](
+        k: λ[α => M[F[α]]] ~> λ[α => F[M[α]]], e: F ~> F, g: A => F[M[A]])(
+        implicit R: Recursive[T], M: Monad[M]):
+          T[F] =
+      T.gpostpro(self)(k, e, g)
+    def futu[F[_]: Functor](f: A => F[Free[F, A]]): T[F] =
+      T.futu(self)(f)
+    def futuM[F[_]: Traverse, M[_]: Monad](f: A => M[F[Free[F, A]]]):
+        M[T[F]] =
+      T.futuM(self)(f)
+  }
+  implicit def ToFixIdOps[A](a: A): IdOps[Fix, A] = new IdOps[Fix, A](a)
 }
