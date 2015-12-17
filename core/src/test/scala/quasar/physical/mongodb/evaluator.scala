@@ -120,7 +120,6 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
           |  { "city": true, "_id": false }).limit(
           |  10);
           |""".stripMargin)
-
     }
 
     "write simple count to JS" in {
@@ -135,6 +134,43 @@ class EvaluatorSpec extends Specification with DisjunctionMatchers {
 
       MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisjunction(
         """[{ "num": db.zips.count({ "pop": { "$gte": NumberLong(1000) } }) }];
+          |""".stripMargin)
+    }
+
+    "write simple distinct to JS" in {
+      val wf = chain(
+        $read(Collection("db", "zips")),
+        $group(
+          Grouped(ListMap()),
+          Reshape(ListMap(
+            BsonField.Name("0") -> $field("city").right)).left),
+        $project(
+          Reshape(ListMap(
+            BsonField.Name("c") -> $field("_id", "0").right)),
+          IdHandling.ExcludeId))
+
+      MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisjunction(
+        """db.zips.distinct("city").map(function (elem) { return { "c": elem } });
+          |""".stripMargin)
+    }
+
+    "write filtered distinct to JS" in {
+      val wf = chain(
+        $read(Collection("db", "zips")),
+        $match(Selector.Doc(
+          BsonField.Name("pop") -> Selector.Gte(Bson.Int64(1000)))),
+        $group(
+          Grouped(ListMap()),
+          Reshape(ListMap(
+            BsonField.Name("0") -> $field("city").right)).left),
+        $project(
+          Reshape(ListMap(
+            BsonField.Name("c") -> $field("_id", "0").right)),
+          IdHandling.ExcludeId))
+
+      MongoDbEvaluator.toJS(crystallize(wf)) must beRightDisjunction(
+        """db.zips.distinct("city").filter({ "pop": { "$gte": NumberLong(1000) } }).map(
+          |  function (elem) { return { "c": elem } });
           |""".stripMargin)
     }
 

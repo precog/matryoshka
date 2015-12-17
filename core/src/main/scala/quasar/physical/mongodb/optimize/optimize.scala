@@ -100,10 +100,10 @@ package object optimize {
                   })
 
               id.fold(
-                re => maybeSimplify(re.find(v.copoint).map(f => DocField(BsonField.Name("_id") \ f))),
+                re => maybeSimplify(re.find(v.copoint).map(f => DocField(IdName \ f))),
                 expr =>
                   maybeSimplify(
-                    if (v.copoint == expr) DocField(BsonField.Name("_id")).some
+                    if (v.copoint == expr) DocField(IdName).some
                     else None))
           }
 

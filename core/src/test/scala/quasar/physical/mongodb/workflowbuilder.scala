@@ -239,11 +239,8 @@ class WorkflowBuilderSpec
             IgnoreId),
           $group(
             Grouped(ListMap(
-              BsonField.Name("__tmp0") -> $first($$ROOT))),
-            -\/(Reshape(ListMap(BsonField.Name("0") -> \/-($field("city")))))),
-          $project(Reshape(ListMap(
-            BsonField.Name("city") -> \/-($field("__tmp0", "city")))),
-            ExcludeId)))
+              BsonField.Name("city") -> $first($field("city")))),
+            -\/(Reshape(ListMap(BsonField.Name("0") -> \/-($field("city"))))))))
     }
 
     "distinct after group" in {
@@ -269,14 +266,12 @@ class WorkflowBuilderSpec
           -\/(Reshape(ListMap(BsonField.Name("0") -> \/-($field("city")))))),
         $unwind(DocField(BsonField.Name("city"))),
         $group(
-          Grouped(ListMap(BsonField.Name("__tmp0") -> $first($$ROOT))),
+          Grouped(ListMap(
+            BsonField.Name("total") -> $first($field("total")),
+            BsonField.Name("city")  -> $first($field("city")))),
           -\/(Reshape(ListMap(
             BsonField.Name("0") -> \/-($field("total")),
-            BsonField.Name("1")  -> \/-($field("city")))))),
-        $project(Reshape(ListMap(
-          BsonField.Name("total") -> \/-($field("__tmp0", "total")),
-          BsonField.Name("city")  -> \/-($field("__tmp0", "city")))),
-          ExcludeId)))
+            BsonField.Name("1")  -> \/-($field("city"))))))))
     }
 
     "distinct and sort with intervening op" in {
@@ -308,17 +303,14 @@ class WorkflowBuilderSpec
         $limit(10),
         $group(
           Grouped(ListMap(
-            BsonField.Name("__tmp1") -> $first($$ROOT))),
+            BsonField.Name("city") -> $first($field("city")),
+            BsonField.Name("state") -> $first($field("state")))),
           -\/(Reshape(ListMap(
             BsonField.Name("0") -> \/-($field("city")),
             BsonField.Name("1") -> \/-($field("state")))))),
         $sort(NonEmptyList(
-          BsonField.Name("__tmp1") \ BsonField.Name("city")  -> Ascending,
-          BsonField.Name("__tmp1") \ BsonField.Name("state") -> Ascending)),
-        $project(Reshape(ListMap(
-          BsonField.Name("city")  -> \/-($field("__tmp1", "city")),
-          BsonField.Name("state") -> \/-($field("__tmp1", "state")))),
-          ExcludeId)))
+          BsonField.Name("city")  -> Ascending,
+          BsonField.Name("state") -> Ascending))))
     }
 
     "group in proj" in {

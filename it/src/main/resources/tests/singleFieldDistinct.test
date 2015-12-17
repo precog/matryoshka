@@ -1,0 +1,21 @@
+{
+  "name": "distinct of one field",
+  "data": "olympics.data",
+  "query": "select distinct discipline as d from olympics",
+  "predicate": "containsExactly",
+  "expected": [{ "d": "Figure skating"  },
+               { "d": "Bobsleigh"       },
+               { "d": "Ice Hockey"      },
+               { "d": "Biathlon"        },
+               { "d": "Speed skating"   },
+               { "d": "Cross Country S" },
+               { "d": "Curling"         },
+               { "d": "Nordic Combined" },
+               { "d": "Ski Jumping"     },
+               { "d": "Skeleton"        },
+               { "d": "Alpine Skiing"   },
+               { "d": "Luge"            },
+               { "d": "Short Track S."  },
+               { "d": "Freestyle Ski."  },
+               { "d": "Snowboard"       }]
+}

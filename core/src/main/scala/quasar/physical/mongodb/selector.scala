@@ -80,7 +80,7 @@ object Selector {
         case and: And     => NonTerminal("And" :: SelectorNodeType, None, and.flatten.map(render))
         case or: Or       => NonTerminal("Or" :: SelectorNodeType, None, or.flatten.map(render))
         case nor: Nor     => NonTerminal("Nor" :: SelectorNodeType, None, nor.flatten.map(render))
-        case where: Where => Terminal("Where" :: SelectorNodeType, Some(where.bson.repr.toString))
+        case where: Where => Terminal("Where" :: SelectorNodeType, Some(where.bson.toJs.pprint(0)))
         case Doc(pairs)   => {
           val children = pairs.map {
             case (field, Expr(expr)) =>

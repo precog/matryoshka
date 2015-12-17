@@ -19,13 +19,13 @@ private[mongodb] final class MongoDbWorkflowExecutor
   import MapReduce._
 
   def aggregate(src: Collection, pipeline: Pipeline) =
-    MongoDbIO.aggregate_(src, pipeline map (_.bson.repr), true)
+    MongoDbIO.aggregate_(src, pipeline map(_.bson), true)
 
   def drop(c: Collection) =
     MongoDbIO.dropCollection(c)
 
   def insert(dst: Collection, values: List[Bson.Doc]) =
-    MongoDbIO.insert(dst, values map (_.repr))
+    MongoDbIO.insert(dst, values.map(_.repr))
 
   def mapReduce(src: Collection, dst: OutputCollection, mr: MapReduce) =
     MongoDbIO.mapReduce_(src, dst, mr)

@@ -55,7 +55,7 @@ class ExpressionSpec extends Specification with DisjunctionMatchers {
     }
 
     "render $$ROOT" in {
-      DocVar.ROOT().bson.repr must_== "$$ROOT"
+      DocVar.ROOT().bson must_== Bson.Text("$$ROOT")
     }
 
     "treat DocField as alias for DocVar.ROOT()" in {
@@ -63,11 +63,11 @@ class ExpressionSpec extends Specification with DisjunctionMatchers {
     }
 
     "render $foo under $$ROOT" in {
-      DocVar.ROOT(BsonField.Name("foo")).bson.repr must_== "$foo"
+      DocVar.ROOT(BsonField.Name("foo")).bson must_== Bson.Text("$foo")
     }
 
     "render $foo.bar under $$CURRENT" in {
-      DocVar.CURRENT(BsonField.Name("foo") \ BsonField.Name("bar")).bson.repr must_== "$$CURRENT.foo.bar"
+      DocVar.CURRENT(BsonField.Name("foo") \ BsonField.Name("bar")).bson must_== Bson.Text("$$CURRENT.foo.bar")
     }
   }
 

@@ -26,7 +26,7 @@ import scala.collection.JavaConverters._
 import com.mongodb.client.model.{InsertOneModel, RenameCollectionOptions}
 import com.mongodb.client.{MongoCollection, MongoDatabase}
 import com.mongodb.{MongoClient, MongoCommandException, MongoNamespace}
-import org.bson.Document
+import org.bson.BsonDocument
 import scalaz.Scalaz._
 import scalaz._
 import scalaz.concurrent.Task
@@ -51,8 +51,8 @@ sealed trait MongoWrapper {
   }
 
   // Note: this exposes the Java obj, so should be made private at some point
-  def get(col: Collection): Task[MongoCollection[Document]] =
-    Task.delay(db(col.databaseName).getCollection(col.collectionName))
+  def get(col: Collection): Task[MongoCollection[BsonDocument]] =
+    Task.delay(db(col.databaseName).getCollection(col.collectionName, scala.Predef.classOf[BsonDocument]))
 
   def rename(src: Collection, dst: Collection, semantics: RenameSemantics): Task[Unit] = {
     val drop = semantics match {
@@ -81,7 +81,7 @@ sealed trait MongoWrapper {
   def dropAllDatabases: Task[Unit] =
     databaseNames.flatMap(_.traverse_(dropDatabase))
 
-  def insert(col: Collection, data: Vector[Document]): Task[Unit] = for {
+  def insert(col: Collection, data: Vector[BsonDocument]): Task[Unit] = for {
     c <- get(col)
     _ = c.bulkWrite(data.map(new InsertOneModel(_)).asJava)
   } yield ()
@@ -93,14 +93,17 @@ sealed trait MongoWrapper {
     databaseNames.flatMap(_.toList.traverse(MongoWrapper.collections(_, client)))
       .map(_.join)
 
-  def readCursor(cursor: Task[com.mongodb.client.MongoIterable[org.bson.Document]]):
+  def readCursor[A <: org.bson.BsonValue](cursor: Task[com.mongodb.client.MongoIterable[A]]):
       Process[ETask[ResultError, ?], Data] = {
     resource(cursor.map(_.iterator))(
       iter => Task.delay(iter.close()))(
       iter => Task.delay {
         if (iter.hasNext) {
           val obj = iter.next
-          ignore(obj.remove("_id"))
+          obj match {
+            case doc: BsonDocument => ignore(doc.remove("_id"))
+            case _                 => ()
+          }
           BsonCodec.toData(Bson.fromRepr(obj))
         }
         else throw Cause.End.asThrowable

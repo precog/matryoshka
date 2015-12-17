@@ -21,6 +21,8 @@ import quasar.fp._
 import quasar._, Backend._, Errors._
 import quasar.fs._, Path._
 
+import com.mongodb.client.FindIterable
+import org.bson.BsonDocument
 import scalaz._, Scalaz._
 import scalaz.concurrent._
 import scalaz.stream._
@@ -32,14 +34,19 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
 
   def scan0(path: Path, offset: Long, limit: Option[Long]):
       Process[ETask[ResultError, ?], Data] = {
-    val skipper = (it: com.mongodb.client.FindIterable[org.bson.Document]) => it.skip(offset.toInt)
-    // NB As per the MondoDB documentation, we inverse the value of limit in order to retrieve a single batch.
-    // The documentation around this is very confusing, but it would appear that proceeding this way allows us
-    // to retrieve the data in a single batch. Behavior of the limit parameter on large datasets is tested in
-    // FileSystemSpecs and appears to work as expected.
-    val limiter = (it: com.mongodb.client.FindIterable[org.bson.Document]) => limit.map(v => it.limit(-v.toInt)).getOrElse(it)
+    // In another world, these would be NatTrans.
+    val skipper: FindIterable[BsonDocument] => FindIterable[BsonDocument] =
+      _.skip(offset.toInt)
+    // NB: As per the MongoDB documentation, we inverse the value of limit in
+    //     order to retrieve a single batch. The documentation around this is
+    //     very confusing, but it would appear that proceeding this way allows
+    //     us to retrieve the data in a single batch. Behavior of the limit
+    //     parameter on large datasets is tested in FileSystemSpecs and appears
+    //     to work as expected.
+    val limiter: FindIterable[BsonDocument] => FindIterable[BsonDocument] =
+      limit.foldLeft(_)((it, v) => it.limit(-v.toInt))
 
-    val skipperAndLimiter = skipper andThen limiter
+    val skipperAndLimiter = limiter <<< skipper
 
     Collection.fromPath(path).fold(
       e => Process.eval[ETask[ResultError, ?], Data](EitherT.left(Task.now(ResultPathError(e)))),
@@ -70,9 +77,9 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
       col => {
         import process1._
 
-        val chunks: Process[Task, Vector[(Data, String \/ org.bson.Document)]] = {
+        val chunks: Process[Task, Vector[(Data, String \/ Bson.Doc)]] = {
           def unwrap(obj: Bson) = obj match {
-            case doc @ Bson.Doc(_) => \/-(doc.repr)
+            case doc @ Bson.Doc(_) => \/-(doc)
             case value => -\/("Cannot store value in MongoDB: " + value)
           }
           values.map(json => json -> BsonCodec.fromData(json).fold(err => -\/(err.message), unwrap)) pipe chunk(ChunkSize)
@@ -83,7 +90,7 @@ trait MongoDbFileSystem extends PlannerBackend[Workflow.Crystallized] {
             val parseErrors = vs.collect { case (json, -\/ (err)) => WriteError(json, Some(err)) }
             val objs        = vs.collect { case (json,  \/-(obj)) => json -> obj }
 
-            val insertErrors = server.insert(col, objs.map(_._2)).attemptRun.fold(
+            val insertErrors = server.insert(col, objs.map(_._2.repr)).attemptRun.fold(
               e => objs.map { case (json, _) => WriteError(json, Some(e.getMessage)) },
               _ => Nil)
 
