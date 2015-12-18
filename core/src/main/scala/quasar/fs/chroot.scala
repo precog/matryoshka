@@ -213,7 +213,8 @@ object chroot {
   private def stripNodePrefix(prefix: ADir): Node => Node =
     _.fold(
       Node.Mount compose stripRelPrefix(prefix),
-      Node.Plain compose stripRPathPrefix(prefix))
+      Node.Plain compose stripRPathPrefix(prefix),
+      Node.View  compose stripRelPrefix(prefix))
 
   private def stripAPathPrefix(prefix: ADir): APath => APath =
     p => stripPrefix(prefix)(p)

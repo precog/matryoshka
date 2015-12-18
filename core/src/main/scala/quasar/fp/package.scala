@@ -97,6 +97,12 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
           })
     }
 
+  implicit def VectorRenderTree[A](implicit RA: RenderTree[A]):
+      RenderTree[Vector[A]] =
+    new RenderTree[Vector[A]] {
+      def render(v: Vector[A]) = NonTerminal(List("Vector"), None, v.map(RA.render).toList)
+    }
+
   implicit val BooleanRenderTree: RenderTree[Boolean] =
     RenderTree.fromToString[Boolean]("Boolean")
   implicit val IntRenderTree: RenderTree[Int] =
@@ -105,6 +111,13 @@ sealed trait TreeInstances extends LowPriorityTreeInstances {
     RenderTree.fromToString[Double]("Double")
   implicit val StringRenderTree: RenderTree[String] =
     RenderTree.fromToString[String]("String")
+
+  implicit def PathRenderTree[B,T,S]: RenderTree[pathy.Path[B,T,S]] =
+    new RenderTree[pathy.Path[B,T,S]] {
+      // NB: the implicit Show instance in scope here ends up being a circular
+      // call, so an explicit reference to pathy's Show is needed.
+      def render(v: pathy.Path[B,T,S]) = Terminal(List("Path"), pathy.Path.PathShow.shows(v).some)
+    }
 
   // NB: RenderTree should `extend Show[A]`, but Scalaz type classes don’t mesh
   //     with Simulacrum ones.

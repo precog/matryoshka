@@ -17,8 +17,11 @@
 package quasar.effect
 
 import quasar.Predef._
+import quasar.fp.TaskRef
 
-import scalaz._
+import monocle.Lens
+import scalaz.{Lens => _, _}, Scalaz._
+import scalaz.concurrent.Task
 
 /** Provides the ability to request the next element of a monotonically
   * increasing numeric sequence.
@@ -49,4 +52,22 @@ object MonotonicSeq {
     def apply[S[_]: Functor](implicit S: MonotonicSeqF :<: S): Ops[S] =
       new Ops[S]
   }
+
+  def taskRefMonotonicSeq(initial: Long): Task[MonotonicSeq ~> Task] = {
+    TaskRef(initial).map(ref =>
+      new (MonotonicSeq ~> Task) {
+        def apply[A](fa: MonotonicSeq[A]): Task[A] = fa match {
+          case Next =>
+            ref.modifyS(n => (n+1, n))
+        }
+      })
+  }
+
+  def stateMonotonicSeq[F[_]: Applicative, S](l: Lens[S, Long]) =
+    new (MonotonicSeq ~> StateT[F, S, ?]) {
+      def apply[A](fa: MonotonicSeq[A]): StateT[F, S, A] = fa match {
+        case Next =>
+          StateT[F, S, A](s => (l.modify(_+1)(s), l.get(s)).point[F])
+      }
+    }
 }

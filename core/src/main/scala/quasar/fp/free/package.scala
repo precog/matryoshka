@@ -33,6 +33,11 @@ package object free {
       def apply[A](fa: S[A]): M[A] = f(S.inj(Coyoneda.lift(fa)))
     }
 
+  def foldMapNT[F[_]: Functor, G[_]: Monad](f: F ~> G) = new (Free[F, ?] ~> G) {
+    def apply[A](fa: Free[F, A]): G[A] =
+      fa.foldMap(f)
+  }
+
   def interpret2[F[_], G[_], M[_]](f: F ~> M, g: G ~> M): Coproduct[F, G, ?] ~> M =
     new (Coproduct[F, G, ?] ~> M) {
       def apply[A](fa: Coproduct[F, G, A]) =
