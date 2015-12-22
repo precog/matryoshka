@@ -22,7 +22,9 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
 
       val p = write.append(f, xs.toProcess).drain ++ read.scanAll(f)
 
-      p.translate[InMemResult](runResult).runLog.run
+      type Result[A] = FileSystemErrT[MemStateTask,A]
+
+      p.translate[Result](MemTask.interpretT).runLog.run
         .leftMap(_.wm)
         .run(emptyMem)
         .run must_== ((Map.empty, \/.right(xs)))
@@ -33,7 +35,7 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
         val wf = WriteFailed(Data.Str("foo"), "b/c reasons")
         val ws = Vector(wf) +: xs.tail.as(Vector(PartialWrite(1)))
 
-        runLogWithWrites(ws.toList, write.append(f, xs.toProcess))
+        MemFixTask.runLogWithWrites(ws.toList, write.append(f, xs.toProcess))
           .run.eval(emptyMem)
           .run.toEither must beRight(Vector(wf, PartialWrite(xs.length - 1)))
       }
@@ -44,14 +46,14 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
 
       val p = (write.append(f, xs.toProcess) ++ write.save(f, ys.toProcess)).drain ++ read.scanAll(f)
 
-      evalLogZero(p).run.toEither must beRight(ys)
+      MemTask.runLogEmpty(p).run must_== \/-(ys)
     }
 
     "save with empty input should create an empty file" ! prop { f: AFile =>
       val p = write.save(f, Process.empty) ++
               (query.fileExists(f).liftM[FileSystemErrT]: query.M[Boolean]).liftM[Process]
 
-      evalLogZero(p).run must_== \/.right(Vector(true))
+      MemTask.runLogEmpty(p).run must_== \/-(Vector(true))
     }
 
     "save should leave existing file untouched on failure" ! prop {
@@ -60,8 +62,8 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
         val ws = (xs ++ ys.init).as(Vector()) :+ Vector(err)
         val p = (write.append(f, xs.toProcess) ++ write.save(f, ys.toProcess)).drain ++ read.scanAll(f)
 
-        runLogWithWrites(ws.toList, p).run
-          .leftMap(_.fm.keySet)
+        MemFixTask.runLogWithWrites(ws.toList, p).run
+          .leftMap(_.contents.keySet)
           .run(emptyMem)
           .run must_== ((Set(f), \/.right(xs)))
       }
@@ -72,21 +74,23 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
 
       val p = write.append(f, xs.toProcess) ++ write.create(f, ys.toProcess)
 
-      evalLogZero(p).run.toEither must beLeft(PathError(PathExists(f)))
+      MemTask.runLogEmpty(p).run must_== -\/(PathError(PathExists(f)))
     }
 
     "create should consume all input into a new file" ! prop {
       (f: AFile, xs: Vector[Data]) =>
 
-      evalLogZero(write.create(f, xs.toProcess) ++ read.scanAll(f))
-        .run.toEither must beRight(xs)
+      val p = write.create(f, xs.toProcess) ++ read.scanAll(f)
+
+      MemTask.runLogEmpty(p).run must_== \/-(xs)
     }
 
     "replace should fail if the file does not exist" ! prop {
       (f: AFile, xs: Vector[Data]) =>
 
-      evalLogZero(write.replace(f, xs.toProcess))
-        .run.toEither must beLeft(PathError(PathNotFound(f)))
+        val p = write.replace(f, xs.toProcess)
+
+        MemTask.runLogEmpty(p).run must_== -\/(PathError(PathNotFound(f)))
     }
 
     "replace should leave the existing file untouched on failure" ! prop {
@@ -95,8 +99,8 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
         val ws = (xs ++ ys.init).as(Vector()) :+ Vector(err)
         val p = (write.append(f, xs.toProcess) ++ write.replace(f, ys.toProcess)).drain ++ read.scanAll(f)
 
-        runLogWithWrites(ws.toList, p).run
-          .leftMap(_.fm.keySet)
+        MemFixTask.runLogWithWrites(ws.toList, p).run
+          .leftMap(_.contents.keySet)
           .run(emptyMem)
           .run must_== ((Set(f), \/.right(xs)))
       }
@@ -107,7 +111,7 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
 
       val p = write.save(f, xs.toProcess) ++ write.replace(f, ys.toProcess) ++ read.scanAll(f)
 
-      evalLogZero(p).run.toEither must beRight(ys)
+      MemTask.runLogEmpty(p).run must_== \/-(ys)
     }
   }
 }

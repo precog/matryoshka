@@ -102,8 +102,8 @@ object readfile {
   private def openCursor(c: Collection, off: Natural, lim: Option[Positive]): MongoRead[ReadHandle] =
     for {
       it   <- find(c).liftM[ReadStateT]
-      skpd =  it skip off.run.toInt
-      ltd  =  lim cata (n => skpd.limit(n.run.toInt), skpd)
+      skpd =  it skip off.value.toInt
+      ltd  =  lim cata (n => skpd.limit(n.value.toInt), skpd)
       cur  <- async(ltd.batchCursor).liftM[ReadStateT]
       h    <- recordCursor(cur)
     } yield h

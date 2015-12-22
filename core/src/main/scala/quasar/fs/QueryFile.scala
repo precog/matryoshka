@@ -32,6 +32,9 @@ object QueryFile {
   final case class ExecutePlan(lp: Fix[LogicalPlan], out: AFile)
     extends QueryFile[(PhaseResults, FileSystemError \/ ResultFile)]
 
+  final case class Explain(lp: Fix[LogicalPlan], out: AFile)
+    extends QueryFile[(PhaseResults, FileSystemError \/ PhaseResult)]
+
   /** TODO: While this is a bit better in one dimension here in `QueryFile`,
     *       `@mossprescott` points out it is still a bit of a stretch to include
     *       in this algebra. We need to revisit this and probably add algebras
@@ -66,19 +69,25 @@ object QueryFile {
     /** Returns the path to the result of executing the given [[LogicalPlan]] */
     def execute_(plan: Fix[LogicalPlan])
                 (implicit M: ManageFile.Ops[S]): ExecM[ResultFile] = {
-
-      val outFile = plan.foldMap {
-        case Fix(LogicalPlan.ReadF(p)) => Vector(p)
-        case _                         => Vector.empty
-      }.headOption flatMap pathToAbsFile cata (M.tempFileNear, M.anyTempFile)
-
       for {
-        out <- toExec(outFile)
+        out <- toExec(firstFile(plan) cata (M.tempFileNear, M.anyTempFile))
         rf0 <- execute(plan, out)
         rf1 =  user.getOrModify(rf0)
                  .map(usr => if (usr == out) Temp(usr) else User(usr))
                  .merge
       } yield rf1
+    }
+
+    /** Returns a description of how the the given logical plan will be executed
+      * along with any error encountered during planning.
+      */
+    def explain(plan: Fix[LogicalPlan])
+               (implicit M: ManageFile.Ops[S])
+               : F[(PhaseResults, FileSystemError \/ PhaseResult)] = {
+
+      firstFile(plan)
+        .cata(M.tempFileNear, M.anyTempFile)
+        .flatMap(f => lift(Explain(plan, f)))
     }
 
     /** Returns the source of values from the result of executing the given
@@ -133,6 +142,24 @@ object QueryFile {
       comp flatMap (lp => evaluate(lp).translate[CompExecM](execToCompExec))
     }
 
+    /** Returns a description of how the the given SQL^2 query will be executed
+      * along with any error encountered during planning.
+      */
+    def explainQuery(query: sql.Expr, vars: Variables)
+                    (implicit M: ManageFile.Ops[S])
+                    : SemanticErrsT[F, (PhaseResults, FileSystemError \/ PhaseResult)] = {
+
+      type E[A, B] = EitherT[F, A, B]
+
+      queryPlan(query, vars).run.run match {
+        case (prs, \/-(lp)) =>
+          explain(lp).map(_.leftMap(prs ++ _)).liftM[SemanticErrsT]
+
+        case (_, -\/(semErrs)) =>
+          semErrs.raiseError[E, (PhaseResults, FileSystemError \/ PhaseResult)]
+      }
+    }
+
     /** Returns immediate children of the given directory, fails if the
       * directory does not exist.
       */
@@ -143,19 +170,19 @@ object QueryFile {
     def ls: M[Set[Node]] =
       ls(rootDir)
 
-    /** Returns the children of the given directory and all of their
-      * descendants, fails if the directory does not exist.
+    /** Returns all files in this directory and all of it's sub-directories
+      * Fails if the directory does not exist.
       */
-    def lsAll(dir: ADir): M[Set[Node]] = {
+    def descendantFiles(dir: ADir): M[Set[RFile]] = {
       type S[A] = StreamT[M, A]
 
-      def lsR(desc: RDir): StreamT[M, Node] =
+      def lsR(desc: RDir): StreamT[M, RFile] =
         StreamT.fromStream[M, Node](ls(dir </> desc) map (_.toStream))
           .flatMap(n => refineType(n.path).fold(
             d => lsR(desc </> d),
-            f => Node.Plain(desc </> f).point[S]))
+            f => (desc </> f).point[S]))
 
-      lsR(currentDir).foldLeft(Set.empty[Node])(_ + _)
+      lsR(currentDir).foldLeft(Set.empty[RFile])(_ + _)
     }
 
     /** Returns whether the given file exists. */
@@ -175,6 +202,17 @@ object QueryFile {
       compToCompExec(queryPlan(query, vars))
         .flatMap(lp => execToCompExec(f(lp)))
     }
+
+    private def firstFile(lp: Fix[LogicalPlan]): Option[AFile] =
+    // This implementation, although more resource efficient, cannot be used right now because it triggers
+    // a compiler crash in conjunction with the scoverage compiler plugin. As a compromise in order to have
+    // code coverage, we currently have a less efficient implementation that sidesteps the compiler crash.
+    // https://github.com/scoverage/scalac-scoverage-plugin/issues/147
+    //  Tag.unwrap(lp foldMap[FirstOption[QPath]] {
+    //    case Fix(LogicalPlan.ReadF(p)) => Tag(Some(p))
+    //    case _                         => Tag(None)
+    //  }) flatMap pathToAbsFile
+    lp.collect{case Fix(LogicalPlan.ReadF(p)) => p}.headOption.flatMap(pathToAbsFile)
 
     private def pathToAbsFile(p: QPath): Option[AFile] =
       p.file map (fn =>

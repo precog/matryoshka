@@ -16,7 +16,8 @@
 
 package quasar
 
-import quasar.fp._
+import quasar.Predef._
+import quasar.fp.free._
 import scalaz._
 import pathy.Path._
 
@@ -28,6 +29,7 @@ package object fs {
 
   type FileSystem0[A] = Coproduct[WriteFileF, ManageFileF, A]
   type FileSystem1[A] = Coproduct[ReadFileF, FileSystem0, A]
+  /** FileSystem[A] = QueryFileF or ReadFileF or WriteFileF or ManaFileF */
   type FileSystem[A]  = Coproduct[QueryFileF, FileSystem1, A]
 
   type ADir  = AbsDir[Sandboxed]
@@ -46,6 +48,12 @@ package object fs {
     w: WriteFile ~> M,
     m: ManageFile ~> M
   ): FileSystem ~> M =
-    interpret.interpret4[QueryFileF, ReadFileF, WriteFileF, ManageFileF, M](
+    interpret4[QueryFileF, ReadFileF, WriteFileF, ManageFileF, M](
       Coyoneda.liftTF(q), Coyoneda.liftTF(r), Coyoneda.liftTF(w), Coyoneda.liftTF(m))
+
+  // Remove once we have fully migrated to Pathy
+  def convert(path: pathy.Path[_,_,Sandboxed]): fs.Path = fs.Path(posixCodec.printPath(path))
+
+  // Remove once we have fully migrated to Pathy
+  def convertToAFile(path: fs.Path): Option[AFile] = posixCodec.parseAbsFile(path.pathname) flatMap (sandbox(rootDir, _)) map (rootDir </> _)
 }

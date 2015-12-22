@@ -208,7 +208,7 @@ class DataCodecSpecs extends Specification with ScalaCheck with DisjunctionMatch
  object DataGen {
    val LargeInt = Data.Int(new java.math.BigInteger(Long.MaxValue.toString + "0"))  // Too big for Long
 
-  implicit val data: Arbitrary[Data] = Arbitrary {
+  implicit val dataArbitrary: Arbitrary[Data] = Arbitrary {
     Gen.oneOf(
       Data.Null, Data.True, Data.False,
       Data.Str("abc"), Data.Int(0), Data.Dec(1.1),

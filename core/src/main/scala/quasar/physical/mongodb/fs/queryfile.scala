@@ -34,7 +34,7 @@ import scalaz.concurrent.Task
 object queryfile {
   import QueryFile._
   import Planner.{PlannerError => PPlannerError}
-  import Workflow.Crystallized
+  import Workflow._
   import FileSystemError._, PathError2._, fsops._
   import LogicalPlan.ReadF
   import Recursive.ops._
@@ -43,23 +43,24 @@ object queryfile {
 
   val interpret: EnvErr2T[MongoDbIO, QueryFile ~> MongoQuery] =
     WorkflowExecutor.mongoDb map { execMongo =>
-      val execJs = WorkflowExecutor.javaScript
-
       new (QueryFile ~> MongoQuery) {
         def apply[A](qf: QueryFile[A]) = qf match {
           case ExecutePlan(lp, out) =>
             (for {
               _      <- checkPathsExist(lp)
-              wf     <- convertP(lp)(MongoDbPlanner.plan(lp))
-              dst    <- EitherT(Collection.fromPathy(out)
-                                  .leftMap(PathError)
-                                  .point[F])
               salt   <- liftG(MongoDbIO.liftTask(NameGenerator.salt)
                                 .liftM[WorkflowExecErrT])
               prefix =  s"tmp.gen_${salt}"
-              _      <- writeJsLog(wf, dst, execJs) run prefix
-              coll   <- execWorkflow(wf, dst, execMongo) run prefix
+              coll   <- planWorkflow(lp, out)
+                          .flatMap { case (wf, dst) => execWorkflow(wf, dst, execMongo) }
+                          .run(prefix)
             } yield ResultFile.User(coll.asFile)).run.run
+
+          case Explain(lp, out) =>
+            planWorkflow(lp, out)
+              .run("tmp.gen")
+              .run.map(_.map{ case (workflow,_) => PhaseResult.Tree("result", CrystallizedRenderTree.render(workflow)):PhaseResult})
+              .run
 
           case ListContents(dir) =>
             (dirName(dir) match {
@@ -98,34 +99,47 @@ object queryfile {
   private type W[A, B]  = WriterT[MongoQuery, A, B]
   private type GE[A, B] = EitherT[F, A, B]
 
+  private type PrefixRT[X[_], A] = ReaderT[X, String, A]
+
   private val liftG: MongoQuery ~> G =
     liftMT[F, FileSystemErrT] compose liftMT[MongoQuery, PhaseResultT]
+
+  private def planWorkflow(
+    lp: Fix[LogicalPlan],
+    out: AFile
+  ): PrefixRT[G, (Crystallized, Collection)] = for {
+    wf  <- convertP(lp)(MongoDbPlanner.plan(lp))
+             .liftM[PrefixRT]
+    dst <- EitherT(
+             Collection.fromPathy(out)
+               .leftMap(PathError)
+               .point[F])
+             .liftM[PrefixRT]: PrefixRT[G, Collection]
+    _   <- writeJsLog(wf, dst)
+  } yield (wf, dst)
 
   private def convertP(lp: Fix[LogicalPlan]): P ~> G =
     new (P ~> G) {
       def apply[A](pa: P[A]) = {
         val r = pa.leftMap(PlannerError(lp, _)).run
-        val f: F[FileSystemError \/ A] = WriterT(r.point[MongoQuery])
-        EitherT(f)
+        EitherT(WriterT(r.point[MongoQuery]): F[FileSystemError \/ A])
       }
     }
 
-  private def writeJsLog(
-    wf: Crystallized,
-    dst: Collection,
-    execJs: WorkflowExecutor[JavaScriptLog]
-  ) = ReaderT[G, String, Unit] { tmpPrefix =>
-    val (stmts, r) =
-      execJs.execute(wf, dst).run.run(tmpPrefix).eval(0).run
+  private def writeJsLog(wf: Crystallized, dst: Collection) =
+    ReaderT[G, String, Unit] { tmpPrefix =>
+      val (stmts, r) =
+        WorkflowExecutor.javaScript
+          .execute(wf, dst).run.run(tmpPrefix).eval(0).run
 
-    def phaseR: PhaseResult =
-      PhaseResult.Detail("MongoDB", Js.Stmts(stmts.toList).pprint(0))
+      def phaseR: PhaseResult =
+        PhaseResult.Detail("MongoDB", Js.Stmts(stmts.toList).pprint(0))
 
-    r.fold(
-      err => liftG(err.raiseError[MongoE, Unit]),
-      _   => (MonadTell[W, PhaseResults].tell(Vector(phaseR)): F[Unit])
-               .liftM[FileSystemErrT])
-  }
+      r.fold(
+        err => liftG(err.raiseError[MongoE, Unit]),
+        _   => (MonadTell[W, PhaseResults].tell(Vector(phaseR)): F[Unit])
+                 .liftM[FileSystemErrT])
+    }
 
   private def execWorkflow(
     wf: Crystallized,

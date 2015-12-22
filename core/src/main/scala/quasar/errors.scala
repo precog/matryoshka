@@ -25,12 +25,8 @@ import scalaz.syntax.monad._
 import scalaz.syntax.std.option._
 
 object Errors {
-  import scalaz.stream.Process
 
   type ETask[E, X] = EitherT[Task, E, X]
-
-  implicit class PrOpsETask[E, O](self: Process[ETask[E, ?], O])
-      extends PrOps[ETask[E, ?], O](self)
 
   def handle[E, A, B>:A](t: ETask[E, A])(f: PartialFunction[Throwable, B]):
       ETask[E, B] = {

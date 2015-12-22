@@ -35,6 +35,8 @@ object Predef extends LowPriorityImplicits {
   type Char = scala.Char
   type Double = scala.Double
   val  Function = scala.Function
+  type Short = scala.Short
+  val  Short = scala.Short
   type Int = scala.Int
   val  Int = scala.Int
   type Long = scala.Long

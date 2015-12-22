@@ -22,26 +22,30 @@ import quasar.Predef._
 import scalaz._
 import scalaz.Tags.{Multiplication => Mult}
 
-final class Positive private (val run: Long) extends scala.AnyVal {
+final class Positive private (val value: Long) extends scala.AnyVal {
   def plus(other: Positive): Positive =
-    new Positive(run + other.run)
+    new Positive(value + other.value)
 
   def + (other: Positive): Positive =
     plus(other)
 
   def times(other: Positive): Positive =
-    new Positive(run * other.run)
+    new Positive(value * other.value)
 
   def * (other: Positive): Positive =
     times(other)
 
   def toInt: Int =
-    run.toInt
+    value.toInt
+
+  def toNatural: Natural = new Natural(value)
 }
 
 object Positive {
   def apply(n: Long): Option[Positive] =
     Some(n).filter(_ > 0).map(new Positive(_))
+
+  def unapply(p: Positive) = Some(p.value)
 
   val _1: Positive = new Positive(1)
   val _2: Positive = new Positive(2)
@@ -60,4 +64,8 @@ object Positive {
     Monoid.instance(
       (x, y) => Mult(Mult.unwrap(x) * Mult.unwrap(y)),
       Mult(_1))
+
+  implicit val equal: Equal[Positive] = Equal.equalA
+
+  implicit val show: Show[Positive] = Show.shows(_.value.toString)
 }
