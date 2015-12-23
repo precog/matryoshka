@@ -67,6 +67,9 @@ if [[ "${JOB_NUM##*.}" == "1" ]]; then
   rm -rf "$TEMP_DIR"
   mkdir -p "$TEMP_DIR"
 
+  # Require that all header comments are present before proceeding:
+  "$SBT" checkHeaders
+
   # Build the pristine JAR without coverage:
   # We cannot do this at the end is because it would require us to clean the project
   # which would remove the coverage information that Jenkins expects to find in the workspace after the build
