@@ -4,7 +4,7 @@ package mongodb
 
 import quasar.Predef._
 import quasar.regression._
-import quasar.fp.interpret
+import quasar.fp.free._
 import quasar.fs._
 import quasar.physical.mongodb.fs._
 
@@ -33,7 +33,7 @@ object filesystems {
     prefix: ADir
   ): Task[FileSystemIO ~> Task] =
     testFileSystem(cs, prefix)
-      .map(interpret.interpret2(NaturalTransformation.refl[Task], _))
+      .map(interpret2(NaturalTransformation.refl[Task], _))
 
   ////
 

@@ -104,7 +104,7 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
         val k = Natural._9 * Natural._2
         val r = runLogT(run, read.scan(smallFile.file, k, None))
         val d = smallFile.data.zip(EStream.iterate(0)(_ + 1))
-                  .dropWhile(_._2 < k.run.toInt).map(_._1)
+                  .dropWhile(_._2 < k.value.toInt).map(_._1)
 
         r.runEither must beRight(d.toIndexedSeq)
       }
@@ -113,15 +113,15 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
         val j = Positive._5
         val r = runLogT(run, read.scan(smallFile.file, Natural._0, Some(j)))
 
-        r.runEither must beRight(smallFile.data.take(j.run.toInt).toIndexedSeq)
+        r.runEither must beRight(smallFile.data.take(j.value.toInt).toIndexedSeq)
       }
 
       "scan with offset k and limit j takes j data, starting from k" >> {
         val j = Positive._5 * Positive._5 * Positive._5
         val r = runLogT(run, read.scan(largeFile.file, Natural.fromPositive(j), Some(j)))
         val d = largeFile.data.zip(EStream.iterate(0)(_ + 1))
-                  .dropWhile(_._2 < j.run.toInt).map(_._1)
-                  .take(j.run.toInt)
+                  .dropWhile(_._2 < j.value.toInt).map(_._1)
+                  .take(j.value.toInt)
 
         r.runEither must beRight(d.toIndexedSeq)
       }
@@ -130,7 +130,7 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
         val j = Positive._5 * Positive._5 * Positive._5
         val r = runLogT(run, read.scan(smallFile.file, Natural._0, Some(j)))
 
-        (j.run.toInt must beGreaterThan(smallFile.data.length)) and
+        (j.value.toInt must beGreaterThan(smallFile.data.length)) and
         (r.runEither must beRight(smallFile.data.toIndexedSeq))
       }
 

@@ -7,9 +7,7 @@ import quasar.fp._
 import org.specs2.mutable.Specification
 import org.specs2.ScalaCheck
 import pathy.scalacheck.PathyArbitrary._
-import scalaz._
-import scalaz.std.vector._
-import scalaz.syntax.either._
+import scalaz._, Scalaz._
 
 class ReadFileSpec extends Specification with ScalaCheck with FileSystemFixture {
   import DataGen._, FileSystemError._, PathError2._
@@ -20,7 +18,7 @@ class ReadFileSpec extends Specification with ScalaCheck with FileSystemFixture 
 
       val p = write.append(f, xs.toProcess).drain ++ read.scanAll(f)
 
-      evalLogZero(p).run.toEither must beRight(xs)
+      MemTask.runLogEmpty(p).run must_== \/-(xs)
     }
 
     "scan should automatically close the read handle when terminated early" ! prop {
@@ -28,10 +26,8 @@ class ReadFileSpec extends Specification with ScalaCheck with FileSystemFixture 
         val n = xs.length / 2
         val p = write.append(f, xs.toProcess).drain ++ read.scanAll(f).take(n)
 
-        p.translate[InMemResult](runResult).runLog
-          .run.leftMap(_.rm)
-          .run(emptyMem)
-          .run must_== ((Map.empty, \/.right(xs take n)))
+        MemTask.runLog(p).run.run(emptyMem)
+          .run.leftMap(_.rm) must_== ((Map.empty, \/.right(xs take n)))
       }
     }
 
@@ -39,7 +35,7 @@ class ReadFileSpec extends Specification with ScalaCheck with FileSystemFixture 
       (f: AFile, xs: Vector[Data]) => xs.nonEmpty ==> {
         val reads = List(xs.right, PathError(PathNotFound(f)).left)
 
-        runLogWithReads(reads, read.scanAll(f)).run
+        MemFixTask.runLogWithReads(reads, read.scanAll(f)).run
           .leftMap(_.rm)
           .run(emptyMem)
           .run must_== ((Map.empty, \/.left(PathError(PathNotFound(f)))))

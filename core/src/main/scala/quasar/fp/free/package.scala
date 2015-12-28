@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-package quasar
-package fp
+package quasar.fp
 
 import scalaz._
 
-object interpret {
+package object free {
   type Coproduct3[F[_], G[_], H[_], A] = Coproduct[F, Coproduct[G, H, ?], A]
   type Coproduct4[F[_], G[_], H[_], I[_], A] = Coproduct[F, Coproduct3[G, H, I, ?], A]
   type Coproduct5[F[_], G[_], H[_], I[_], J[_], A] = Coproduct[F, Coproduct4[G, H, I, J, ?], A]
