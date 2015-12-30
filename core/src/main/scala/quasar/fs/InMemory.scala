@@ -158,7 +158,7 @@ object InMemory {
     def apply[A](qf: QueryFile[A]) = qf match {
       case ExecutePlan(lp, out) =>
         evalPlan(lp) { data =>
-          (fileL(out) := some(data)) as ResultFile.User(out)
+          (fileL(out) := some(data)) as out
         }
 
       case EvaluatePlan(lp) =>

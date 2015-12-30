@@ -20,7 +20,6 @@ class ResultFileQueryRegressionSpec
 
   def queryResults(expr: Expr, vars: Variables) = {
     import qfTransforms._
-    import ResultFile._
 
     type M[A] = FileSystemErrT[F, A]
 
@@ -32,9 +31,9 @@ class ResultFileQueryRegressionSpec
 
     for {
       tmpFile <- toCompExec(manage.tempFileNear(tmpPath)).liftM[Process]
-      result  <- query.executeQuery(expr, vars, tmpFile).liftM[Process]
+      outFile <- query.executeQuery(expr, vars, tmpFile).liftM[Process]
       cleanup =  hoistM(manage.delete(tmpFile))
-      data    <- read.scanAll(resultFile get result)
+      data    <- read.scanAll(outFile)
                    .translate(hoistM)
                    .onComplete(Process.eval_(cleanup))
     } yield data

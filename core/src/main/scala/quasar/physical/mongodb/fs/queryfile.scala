@@ -87,7 +87,7 @@ private final class QueryFileInterpreter[C](
 
   def apply[A](qf: QueryFile[A]) = qf match {
     case ExecutePlan(lp, out) =>
-      EitherT[QR, WorkflowExecutionError, (PhaseResults, FileSystemError \/ ResultFile)](
+      EitherT[QR, WorkflowExecutionError, (PhaseResults, FileSystemError \/ AFile)](
         (for {
           _      <- checkPathsExist(lp)
           dst    <- EitherT(Collection.fromPathy(out)
@@ -97,7 +97,7 @@ private final class QueryFileInterpreter[C](
           prefix <- liftMQ(genPrefix)
           _      <- writeJsLog(execJs.execute(wf, dst), prefix)
           coll   <- liftMQ(execWorkflow(wf, dst, prefix))
-        } yield ResultFile.User(coll.asFile)).run.run.run)
+        } yield coll.asFile).run.run.run)
 
     case EvaluatePlan(lp) =>
       EitherT[QR, WorkflowExecutionError, (PhaseResults, FileSystemError \/ ResultHandle)](

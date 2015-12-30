@@ -40,7 +40,7 @@ object QueryFile {
   }
 
   final case class ExecutePlan(lp: Fix[LogicalPlan], out: AFile)
-    extends QueryFile[(PhaseResults, FileSystemError \/ ResultFile)]
+    extends QueryFile[(PhaseResults, FileSystemError \/ AFile)]
 
   final case class EvaluatePlan(lp: Fix[LogicalPlan])
     extends QueryFile[(PhaseResults, FileSystemError \/ ResultHandle)]
@@ -80,13 +80,9 @@ object QueryFile {
       * Execution of certain plans may return a result file other than the
       * requested file if it is more efficient to do so (i.e. to avoid copying
       * lots of data for a plan consisting of a single `ReadF(...)`).
-      *
-      * TODO: It looks like we probably no longer need the `ResultFile` type
-      *       as the result will either be a file from the plan or `out`, but never
-      *       a temp file.
       */
-    def execute(plan: Fix[LogicalPlan], out: AFile): ExecM[ResultFile] =
-      EitherT(WriterT(lift(ExecutePlan(plan, out))): G[FileSystemError \/ ResultFile])
+    def execute(plan: Fix[LogicalPlan], out: AFile): ExecM[AFile] =
+      EitherT(WriterT(lift(ExecutePlan(plan, out))): G[FileSystemError \/ AFile])
 
     /** Returns the stream of data resulting from evaluating the given
       * [[LogicalPlan]].
@@ -120,7 +116,7 @@ object QueryFile {
       * using the given output file if possible.
       */
     def executeQuery(query: sql.Expr, vars: Variables, out: AFile)
-                    : CompExecM[ResultFile] = {
+                    : CompExecM[AFile] = {
 
       compileAnd(query, vars)(execute(_, out))
     }

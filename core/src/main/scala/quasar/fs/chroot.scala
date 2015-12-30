@@ -120,7 +120,6 @@ object chroot {
   /** Rebases paths in `QueryFile` onto the given prefix. */
   def queryFile(prefix: ADir): QueryFileF ~> QueryFileF = {
     import QueryFile._
-    import ResultFile.resultFile
 
     val base = Path(posixCodec.printPath(prefix))
 
@@ -136,7 +135,7 @@ object chroot {
       def apply[A](qf: QueryFile[A]) = qf match {
         case ExecutePlan(lp, out) =>
           Coyoneda.lift(ExecutePlan(lp.translate(rebasePlan), rebase(out, prefix)))
-            .map(_.map(_.bimap(stripPathError(prefix), resultFile.modify(stripPrefix(prefix)))))
+            .map(_.map(_.bimap(stripPathError(prefix), stripPrefix(prefix))))
 
         case EvaluatePlan(lp) =>
           Coyoneda.lift(EvaluatePlan(lp.translate(rebasePlan)))

@@ -198,7 +198,7 @@ class MongoDbFileSystemSpec
           }
 
           def check(file: AFile) = {
-            val errP: Prism[FileSystemError \/ ResultFile, APath] =
+            val errP: Prism[FileSystemError \/ AFile, APath] =
               D.left                    composePrism
               FileSystemError.pathError composePrism
               PathError2.pathNotFound
