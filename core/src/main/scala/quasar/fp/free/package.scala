@@ -28,6 +28,11 @@ package object free {
       def apply[A](ga: G[A]) = G.prj(ga).fold(ga)(fa => G.inj(f(fa)))
     }
 
+  def restrict[M[_], S[_], T[_]](f: T ~> M)(implicit S: Coyoneda[S, ?] :<: T) =
+    new (S ~> M) {
+      def apply[A](fa: S[A]): M[A] = f(S.inj(Coyoneda.lift(fa)))
+    }
+
   def interpret2[F[_], G[_], M[_]](f: F ~> M, g: G ~> M): Coproduct[F, G, ?] ~> M =
     new (Coproduct[F, G, ?] ~> M) {
       def apply[A](fa: Coproduct[F, G, A]) =
