@@ -220,7 +220,7 @@ object QueryFile {
           .foldLeft(rootDir[Sandboxed])((d, n) => d </> dir(n.value)) </>
           file(fn.value))
 
-    private def lift[A](qf: QueryFile[A]): F[A] =
+    def lift[A](qf: QueryFile[A]): F[A] =
       Free.liftF(S1.inj(Coyoneda.lift(qf)))
   }
 

@@ -173,7 +173,7 @@ object ManageFile {
 
     ////
 
-    private def lift[A](fs: ManageFile[A]): F[A] =
+    def lift[A](fs: ManageFile[A]): F[A] =
       Free.liftF(S1.inj(Coyoneda.lift(fs)))
   }
 

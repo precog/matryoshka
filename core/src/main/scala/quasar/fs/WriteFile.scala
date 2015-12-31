@@ -229,7 +229,7 @@ object WriteFile {
 
     ////
 
-    private def lift[A](wf: WriteFile[A]): F[A] =
+    def lift[A](wf: WriteFile[A]): F[A] =
       Free.liftF(S1.inj(Coyoneda.lift(wf)))
   }
 

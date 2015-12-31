@@ -122,7 +122,7 @@ object ReadFile {
 
     ////
 
-    private def lift[A](rf: ReadFile[A]): F[A] =
+    def lift[A](rf: ReadFile[A]): F[A] =
       Free.liftF(S1.inj(Coyoneda.lift(rf)))
   }
 
