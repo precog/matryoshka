@@ -20,6 +20,7 @@ import quasar.Predef._
 import quasar.Variables
 import quasar.config
 import quasar.fp.prism._
+import quasar.fs.FileSystemType
 import quasar.sql._
 
 import argonaut._, Argonaut._

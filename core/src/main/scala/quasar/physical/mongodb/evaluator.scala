@@ -22,8 +22,7 @@ import quasar.recursionschemes._, Recursive.ops._
 import quasar._, Errors._, Evaluator._
 import quasar.fs.Path, Path.PathError.NonexistentPathError
 import quasar.javascript._
-import quasar.physical.mongodb.accumulator._
-import quasar.physical.mongodb.expression._
+import quasar.physical.mongodb.execution._
 import Workflow._
 
 import scala.Predef.classOf
@@ -73,22 +72,6 @@ object Col {
   final case class Tmp(collection: Collection) extends Col
   final case class User(collection: Collection) extends Col
 }
-
-final case class Find(
-  query:      Option[Selector],
-  projection: Option[Bson.Doc],
-  sort:       Option[NonEmptyList[(BsonField, SortType)]],
-  skip:       Option[Long],
-  limit:      Option[Long])
-
-final case class Count(
-  query:      Option[Selector],
-  skip:       Option[Long],
-  limit:      Option[Long])
-
-final case class Distinct(
-  field:      BsonField.Name,
-  query:      Option[Selector])
 
 class MongoDbEvaluator(impl: MongoDbEvaluatorImpl[
     StateT[EvaluationTask, SequenceNameGenerator.EvalState, ?],
@@ -302,60 +285,6 @@ trait MongoDbEvaluatorImpl[F[_], C] {
     } yield dstCol match {
       case Col.User(coll) => ResultPath.User(coll.asPath)
       case Col.Tmp(coll) => ResultPath.Temp(coll.asPath)
-    }
-
-  /** Extractor to determine whether a `$Group` represents a simple `count()`.
-    */
-  private object Countable {
-    def unapply(op: PipelineOp): Option[BsonField.Name] = op match {
-      case $Group((), Grouped(map), \/-($literal(Bson.Null)))
-          if map.size ≟ 1 =>
-        map.headOption.fold[Option[BsonField.Name]](None)(head =>
-          if (head._2 == $sum($literal(Bson.Int32(1))))
-            head._1.some
-          else None)
-      case _ => None
-    }
-  }
-
-  private object Projectable {
-    def unapply(op: PipelineOp): Option[Bson.Doc] = op match {
-      case proj @ $Project((), Reshape(map), _)
-          if map.all(_ == \/-($include())) =>
-        proj.rhs.some
-      case _ => None
-    }
-  }
-
-  private object Distinctable {
-    def unapply(pipeline: workflowtask.Pipeline): Option[(BsonField.Name, BsonField.Name)] =
-      pipeline match {
-        case List($Group((), Grouped(map), by), $Project((), Reshape(fields), IdHandling.IgnoreId | IdHandling.ExcludeId))
-            if map.isEmpty && fields.size ≟ 1 =>
-          fields.headOption.fold[Option[(BsonField.Name, BsonField.Name)]] (None)(field =>
-            (by, field) match {
-              case (\/-($var(DocField(origField @ BsonField.Name(_)))), (newField, \/-($var(DocField(IdName))))) =>
-                (origField, newField).some
-              case (-\/(Reshape(map)), (newField, \/-($var(DocField(BsonField.Path(NonEmptyList(IdName, x))))))) if map.size ≟ 1 =>
-                map.get(x).flatMap {
-                  case \/-($var(DocField(origField @ BsonField.Name(_)))) => (origField, newField).some
-                  case _ => None
-                }
-              case _ => None
-            })
-        case _ => None
-      }
-  }
-
-  private def extractRange(pipeline: workflowtask.Pipeline):
-      ((workflowtask.Pipeline, workflowtask.Pipeline),
-        (Option[Long], Option[Long])) =
-    pipeline match {
-      case Nil                                => ((Nil, Nil), (None,   None))
-      case $Limit((), l) :: $Skip((), s) :: t => ((Nil, t),   (s.some, (l - s).some))
-      case $Limit((), l)                 :: t => ((Nil, t),   (None,   l.some))
-      case                  $Skip((), s) :: t => ((Nil, t),   (s.some, None))
-      case h                             :: t => (h :: (_: workflowtask.Pipeline)).first.first(extractRange(t))
     }
 
   /** This tries to turn a Pipline into a simpler operation (eg, `count()` or

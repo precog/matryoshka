@@ -14,9 +14,7 @@
  * limitations under the License.
  */
 
-package quasar
-package physical
-package mongodb
+package quasar.physical.mongodb
 
 import quasar.Predef._
 import quasar.fp._
@@ -62,30 +60,28 @@ object MongoDbIO {
   /** Returns the stream of results of aggregating documents according to the
     * given aggregation pipeline.
     */
-  def aggregate(
+  def aggregated(
     src: Collection,
     pipeline: List[Bson.Doc],
     allowDiskUse: Boolean
   ): Process[MongoDbIO, BsonDocument] =
-    collection(src).liftM[Process] flatMap (c => iterableToProcess(
-      c.aggregate(pipeline.asJava)
-        .allowDiskUse(new JBoolean(allowDiskUse))
-        .useCursor(new JBoolean(true))))
+    aggregateIterable(src, pipeline, allowDiskUse)
+      .map(_.useCursor(new JBoolean(true)))
+      .liftM[Process]
+      .flatMap(iterableToProcess)
 
   /** Aggregates documents according to the given aggregation pipeline, which
     * must end with an `\$out` stage specifying the collection where results
     * may be found.
     */
-  def aggregate_(
+  def aggregate(
     src: Collection,
     pipeline: List[Bson.Doc],
     allowDiskUse: Boolean
   ): MongoDbIO[Unit] =
-    collection(src).flatMap(c => async[java.lang.Void](
-      c.aggregate(pipeline.asJava)
-        .allowDiskUse(new JBoolean(allowDiskUse))
-        .toCollection(_)
-    )).void
+    aggregateIterable(src, pipeline, allowDiskUse)
+      .flatMap(c => async[java.lang.Void](c.toCollection(_)))
+      .void
 
   def collectionExists(c: Collection): MongoDbIO[Boolean] =
     collectionsIn(c.databaseName)
@@ -191,15 +187,15 @@ object MongoDbIO {
   /** Returns the results of executing the map-reduce job described by `cfg`
     * on the documents from `src`.
     */
-  def mapReduce(src: Collection, cfg: MapReduce): Process[MongoDbIO, BsonDocument] =
-    configuredMapReduceIterable(src, cfg)
+  def mapReduced(src: Collection, cfg: MapReduce): Process[MongoDbIO, BsonDocument] =
+    mapReduceIterable(src, cfg)
       .liftM[Process]
       .flatMap(iterableToProcess)
 
   /** Executes the map-reduce job described by `cfg`, sourcing documents from
     * `src` and writing the output to `dst`.
     */
-  def mapReduce_(
+  def mapReduce(
     src: Collection,
     dst: MapReduce.OutputCollection,
     cfg: MapReduce
@@ -219,7 +215,7 @@ object MongoDbIO {
         case Reduce(_) => MapReduceAction.REDUCE
       }))
 
-    configuredMapReduceIterable(src, cfg) flatMap { it =>
+    mapReduceIterable(src, cfg) flatMap { it =>
       val itWithOutput =
         dst.withAction.traverse_(withAction)
           .exec(it.collectionName(dst.collectionName))
@@ -288,6 +284,52 @@ object MongoDbIO {
       def apply[A](t: Task[A]) = lift(_ => t)
     }
 
+  /** Returns the underlying, configured aggregate iterable for applying the
+    * given pipeline to the source collection.
+    */
+  private[mongodb] def aggregateIterable(
+    src: Collection,
+    pipeline: List[Bson.Doc],
+    allowDiskUse: Boolean
+  ): MongoDbIO[AggregateIterable[BsonDocument]] =
+    collection(src) map (c =>
+      c.aggregate(pipeline.asJava)
+        .allowDiskUse(new JBoolean(allowDiskUse)))
+
+  private[mongodb] def mapReduceIterable(
+    src: Collection,
+    cfg: MapReduce
+  ): MongoDbIO[MapReduceIterable[BsonDocument]] = {
+    type IT       = MapReduceIterable[BsonDocument]
+    type CfgIt[A] = State[IT, A]
+    val ms = MonadState[State, IT]
+
+    def foldIt[A](a: Option[A])(f: (IT, A) => IT): CfgIt[Unit] =
+      ms.modify(a.foldLeft(_)(f))
+
+    val nonEmptyScope =
+      cfg.scope.nonEmpty option cfg.scope
+
+    val sortRepr =
+      cfg.inputSort map (ts =>
+        Bson.Doc(ListMap(
+          ts.list.map(_.bimap(_.asText, _.bson)): _*
+        )).repr)
+
+    val configuredIt =
+      foldIt(cfg.selection)((i, s) => i.filter(s.bson.repr))           *>
+      foldIt(sortRepr)(_ sort _)                                       *>
+      foldIt(cfg.limit)(_ limit _.toInt)                               *>
+      foldIt(cfg.finalizer)((i, f) => i.finalizeFunction(f.pprint(0))) *>
+      foldIt(nonEmptyScope)((i, s) => i.scope(Bson.Doc(s).repr))       *>
+      foldIt(cfg.jsMode)(_ jsMode _)                                   *>
+      foldIt(cfg.verbose)(_ verbose _)
+
+    collection(src) map { c =>
+      configuredIt exec c.mapReduce(cfg.map.pprint(0), cfg.reduce.pprint(0))
+    }
+  }
+
   private[mongodb] def find(c: Collection): MongoDbIO[FindIterable[BsonDocument]] =
     collection(c) map (_.find)
 
@@ -318,7 +360,7 @@ object MongoDbIO {
   private val credentials: MongoDbIO[List[MongoCredential]] =
     MongoDbIO(_.getSettings.getCredentialList.asScala.toList)
 
-  private def collection(c: Collection): MongoDbIO[MongoCollection[BsonDocument]] =
+  private[mongodb] def collection(c: Collection): MongoDbIO[MongoCollection[BsonDocument]] =
     database(c.databaseName).map(_.getCollection(c.collectionName, classOf[BsonDocument]))
 
   private def database(named: String): MongoDbIO[MongoDatabase] =
@@ -326,37 +368,6 @@ object MongoDbIO {
 
   private def runCommand(dbName: String, cmd: Bson.Doc): MongoDbIO[BsonDocument] =
     database(dbName) flatMap (db => async[BsonDocument](db.runCommand(cmd, classOf[BsonDocument], _)))
-
-  private def configuredMapReduceIterable(src: Collection, cfg: MapReduce)
-                                         : MongoDbIO[MapReduceIterable[BsonDocument]] = {
-    type IT   = MapReduceIterable[BsonDocument]
-    type F[A] = State[IT, A]
-    val ms = MonadState[State, IT]
-
-    def foldIt[A](a: Option[A])(f: (IT, A) => IT): F[Unit] =
-      ms.modify(a.foldLeft(_)(f))
-
-    val nonEmptyScope =
-      cfg.scope.nonEmpty option cfg.scope
-
-    val sortRepr =
-      cfg.inputSort map (ts =>
-        Bson.Doc(ListMap(
-          ts.list.map(_.bimap(_.asText, _.bson)): _*)))
-
-    val configuredIt =
-      foldIt(cfg.selection)((i, s) => i.filter(s.bson))                *>
-      foldIt(sortRepr)(_ sort _)                                       *>
-      foldIt(cfg.limit)(_ limit _.toInt)                               *>
-      foldIt(cfg.finalizer)((i, f) => i.finalizeFunction(f.pprint(0))) *>
-      foldIt(nonEmptyScope)((i, s) => i.scope(Bson.Doc(s)))            *>
-      foldIt(cfg.jsMode)(_ jsMode _)                                   *>
-      foldIt(cfg.verbose)(_ verbose _)
-
-    collection(src) map { c =>
-      configuredIt exec c.mapReduce(cfg.map.pprint(0), cfg.reduce.pprint(0))
-    }
-  }
 
   private def iterableToProcess[A](it: MongoIterable[A]): Process[MongoDbIO, A] = {
     def go(c: AsyncBatchCursor[A]): Process[MongoDbIO, A] =

@@ -14,22 +14,20 @@
  * limitations under the License.
  */
 
-package quasar.mount
+package quasar.physical.mongodb
 
-import quasar.Predef._
+import com.mongodb.async.client.MongoIterable
+import com.mongodb.{Function => MFunction}
+import scalaz._
 
-import argonaut._, Argonaut._
-import scalaz._, Scalaz._
-
-final case class FileSystemType(value: String) extends scala.AnyVal
-
-object FileSystemType {
-  implicit val fileSystemTypeOrder: Order[FileSystemType] =
-    Order.orderBy(_.value)
-
-  implicit val fileSystemTypeShow: Show[FileSystemType] =
-    Show.showFromToString
-
-  implicit val fileSystemTypeCodecJson: CodecJson[FileSystemType] =
-    CodecJson.derived[String].xmap(FileSystemType(_))(_.value)
+object mongoiterable {
+  implicit val mongoIterableFunctor: Functor[MongoIterable] =
+    new Functor[MongoIterable] {
+      def map[A, B](ma: MongoIterable[A])(f: A => B) = {
+        val fn = new MFunction[A, B] {
+          def apply(a: A) = f(a)
+        }
+        ma map fn
+      }
+    }
 }

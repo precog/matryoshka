@@ -14,11 +14,10 @@
  * limitations under the License.
  */
 
-package quasar
-package physical
-package mongodb
+package quasar.physical.mongodb
 
 import quasar.Predef._
+import quasar.RenderTree
 import quasar.fp._
 import quasar.physical.mongodb.workflowtask._
 
@@ -36,6 +35,9 @@ object WorkflowExecutionError {
 
     final case class InsertFailed(bson: Bson, reason: String)
       extends WorkflowExecutionError
+
+    final case object NoDatabase
+      extends WorkflowExecutionError
   }
 
   val InvalidTask: (WorkflowTask, String) => WorkflowExecutionError =
@@ -43,6 +45,9 @@ object WorkflowExecutionError {
 
   val InsertFailed: (Bson, String) => WorkflowExecutionError =
     Case.InsertFailed(_, _)
+
+  val NoDatabase: WorkflowExecutionError =
+    Case.NoDatabase
 
   val invalidTask: Prism[WorkflowExecutionError, (WorkflowTask, String)] =
     Prism[WorkflowExecutionError, (WorkflowTask, String)] {
@@ -56,6 +61,12 @@ object WorkflowExecutionError {
       case _ => None
     } (InsertFailed.tupled)
 
+  val noDatabase: Prism[WorkflowExecutionError, Unit] =
+    Prism[WorkflowExecutionError, Unit] {
+      case Case.NoDatabase => Some(())
+      case _ => None
+    } (κ(NoDatabase))
+
   implicit val workflowExecutionErrorShow: Show[WorkflowExecutionError] =
     Show.shows { err =>
       val msg = err match {
@@ -63,6 +74,8 @@ object WorkflowExecutionError {
           s"Invalid task, $r\n\n" + RenderTree[WorkflowTask].render(t).shows
         case Case.InsertFailed(b, r) =>
           s"Failed to insert BSON, `$b`, $r"
+        case Case.NoDatabase =>
+          "No database"
       }
 
       s"Error executing workflow: $msg"

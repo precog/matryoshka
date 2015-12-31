@@ -14,33 +14,29 @@
  * limitations under the License.
  */
 
-package quasar
-package physical
-package mongodb
-package fs
+package quasar.physical.mongodb.fs
 
 import quasar.Predef._
 import quasar.fp.TaskRef
 import quasar.fs._
+import quasar.physical.mongodb._
+import quasar.physical.mongodb.fs.bsoncursor._
 
-import scala.collection.JavaConverters._
-
-import com.mongodb.async.AsyncBatchCursor
 import com.mongodb.async.client.MongoClient
-import org.bson.BsonDocument
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 
 object readfile {
   import ReadFile._, FileSystemError._, PathError2._, MongoDbIO._
 
-  type BsonCursor          = AsyncBatchCursor[BsonDocument]
   type ReadState           = (Long, Map[ReadHandle, BsonCursor])
   type ReadStateT[F[_], A] = ReaderT[F, TaskRef[ReadState], A]
   type MongoRead[A]        = ReadStateT[MongoDbIO, A]
 
   /** Interpret the `ReadFile` algebra using MongoDB */
   val interpret: ReadFile ~> MongoRead = new (ReadFile ~> MongoRead) {
+    val DC = DataCursor[MongoDbIO, BsonCursor]
+
     def apply[A](rf: ReadFile[A]) = rf match {
       case Open(file, offset, limit) =>
         Collection.fromPathy(file).fold(
@@ -51,13 +47,13 @@ object readfile {
 
       case Read(h) =>
         lookupCursor(h)
-          .flatMapF(nextChunk)
+          .flatMapF(c => DC.nextChunk(c).liftM[ReadStateT])
           .toRight(UnknownReadHandle(h))
           .run
 
       case Close(h) =>
         OptionT[MongoRead, BsonCursor](MongoRead(cursorL(h) <:= None))
-          .flatMapF(c => liftTask(Task.delay(c.close())).liftM[ReadStateT])
+          .flatMapF(c => DC.close(c).liftM[ReadStateT])
           .run.void
     }
   }
@@ -107,18 +103,4 @@ object readfile {
       cur  <- async(ltd.batchCursor).liftM[ReadStateT]
       h    <- recordCursor(cur)
     } yield h
-
-  private def nextChunk(c: BsonCursor): MongoRead[Vector[Data]] = {
-    val withoutId: BsonDocument => BsonDocument =
-      d => (d: Id[BsonDocument]) map (_ remove "_id") as d
-
-    val toData: BsonDocument => Data =
-      (BsonCodec.toData _) <<< Bson.fromRepr <<< withoutId
-
-    // NB: `null` is used as a sentinel value to indicate input is exhausted,
-    //     because Java.
-    async(c.next)
-      .map(r => Option(r).map(_.asScala.toVector).orZero.map(toData))
-      .liftM[ReadStateT]
-  }
 }
