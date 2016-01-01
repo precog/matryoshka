@@ -77,8 +77,8 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   concurrentRestrictions in Global := Seq(
     Tags.exclusive(ExclusiveTest)
   ),
+
   console <<= console in Test, // console alias test:console
-  initialCommands in (Test, console) := """ammonite.repl.Repl.run("prompt.update(\"λ \")")""",
 
   scalazVersion  := "7.1.4",
   slcVersion     := "0.4",
