@@ -92,6 +92,10 @@ object ManageFile {
         case Case.DirToDir(sd, dd)   => d2d(sd, dd)
         case Case.FileToFile(sf, df) => f2f(sf, df)
       }
+
+    def src: APath
+
+    def dst: APath
   }
 
   object MoveScenario {
