@@ -44,9 +44,11 @@ trait FileSystemFixture {
     def parent = fileParent(file)
     def filename = fileName(file)
   }
-  def segAt[B,T,S](index: Int, path: pathy.Path[B,T,S]): Option[RPath] = {
+
+  def segAt[B,T,S](index: Int, path: pathy.Path[B,T,S]): Option[FileName \/ DirName] = {
     scala.Predef.require(index >= 0)
-    val list = pathy.Path.flatten(none,none,none,dir(_).some,file(_).some,path).toIList.unite
+    val list =
+      pathy.Path.flatten(none, none, none, DirName(_).right.some,FileName(_).left.some,path).toIList.unite
     list.drop(index).headOption
   }
 
@@ -60,7 +62,8 @@ trait FileSystemFixture {
       InMemState fromFiles fileMapping.toList.toMap
     }
     def relFiles = filesInDir.unzip._1.map(_.path)
-    def ls = relFiles.map(segAt(0,_)).list.flatten.distinct.sortBy((path: RPath) => printPath(path))
+    def ls = relFiles.map(segAt(0,_)).list.flatten.distinct
+      .sortBy((seg: FileName \/ DirName) => printPath(seg.fold(file1, dir1)))
   }
 
   implicit val arbSingleFileMemState: Arbitrary[SingleFileMemState] = Arbitrary(
