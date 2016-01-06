@@ -3,12 +3,12 @@ package fs
 
 import quasar.Predef._
 import quasar.fp._
+import quasar.scalacheck._
 
 import org.specs2.mutable.Specification
 import org.specs2.ScalaCheck
 import pathy.Path._
 import pathy.scalacheck.PathyArbitrary._
-import scalaz.scalacheck.ScalazArbitrary._
 
 import scalaz._, Scalaz._
 
@@ -18,21 +18,18 @@ class QueryFileSpec extends Specification with ScalaCheck with FileSystemFixture
   "QueryFile" should {
     "descendantFiles" >> {
       "returns all descendants of the given directory" ! prop {
-        (dp: ADir, dc1: RDir, dc2: RDir, od: ADir, fns: NonEmptyList[String]) =>
-          ((dp != od) && depth(dp) > 0 && depth(od) > 0) ==> {
-            val body = Vector(Data.Str("foo"))
-            val fs  = fns.list take 5 map file
-            val f1s = fs map (f => (dp </> dc1 </> f, body))
-            val f2s = fs map (f => (dp </> dc2 </> f, body))
-            val fds = fs map (f => (od </> f, body))
+        (target: ADir, descendants: NonEmptyList[RFile], others: List[AFile]) =>
+          val data = Vector(Data.Str("foo"))
+          val outsideOfTarget = others.filterNot(_.relativeTo(target).isDefined)
+          val insideOfTarget = descendants.list.map(target </> _)
 
-            val state = InMemState fromFiles (f1s ::: f2s ::: fds).toMap
-            val expectedFiles = (fs.map(dc1 </> _) ::: fs.map(dc2 </> _)).distinct
+          val state = InMemState fromFiles (insideOfTarget ++ outsideOfTarget).map((_,data)).toMap
+          val expected = descendants.list
 
-            Mem.interpret(query.descendantFiles(dp)).eval(state).toEither must
-              beRight(containTheSameElementsAs(expectedFiles))
-        }
-      }
+          Mem.interpret(query.descendantFiles(target)).eval(state).toEither must
+            beRight(containTheSameElementsAs(expected))
+      }(implicitly,implicitly,implicitly,nonEmptyListSmallerThan(10),implicitly,listSmallerThan(5),implicitly) // Use better syntax once specs2 3.x
+        .set(workers = java.lang.Runtime.getRuntime.availableProcessors)
 
       "returns not found when dir does not exist" ! prop { d: ADir =>
         Mem.interpret(query.descendantFiles(d)).eval(emptyMem).toEither must beLeft(PathError(PathNotFound(d)))
