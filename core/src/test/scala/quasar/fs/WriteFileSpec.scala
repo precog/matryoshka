@@ -51,7 +51,7 @@ class WriteFileSpec extends Specification with ScalaCheck with FileSystemFixture
 
     "save with empty input should create an empty file" ! prop { f: AFile =>
       val p = write.save(f, Process.empty) ++
-              (query.fileExists(f).liftM[FileSystemErrT]: query.M[Boolean]).liftM[Process]
+              (query.fileExists(f)).liftM[Process]
 
       MemTask.runLogEmpty(p).run must_== \/-(Vector(true))
     }

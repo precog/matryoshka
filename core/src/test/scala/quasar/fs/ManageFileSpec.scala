@@ -19,7 +19,7 @@ class ManageFileSpec extends Specification with ScalaCheck with FileSystemFixtur
           val rename =
             manage.renameFile(s.file, name).liftM[Process]
           val existsP: Process[manage.M, Boolean] =
-            query.fileExists(s.file).liftM[FileSystemErrT].liftM[Process]
+            query.fileExists(s.file).liftM[Process]
           val existsAndData: Process[manage.M, (Boolean, Data)] =
             existsP tuple read.scanAll(fileParent(s.file) </> file(name))
 

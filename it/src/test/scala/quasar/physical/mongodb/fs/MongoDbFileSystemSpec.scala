@@ -24,6 +24,7 @@ import scalaz.stream._
 import scalaz.std.vector._
 import scalaz.syntax.monad._
 import scalaz.syntax.show._
+import scalaz.syntax.either._
 import scalaz.concurrent.Task
 
 /** Unit tests for the MongoDB filesystem implementation. */
@@ -206,7 +207,7 @@ class MongoDbFileSystemSpec
             val out = renameFile(file, κ(FileName("out")))
 
             def check0(expr: sql.Expr) =
-              (run(query.fileExists(file)).run must beFalse) and
+              (run(query.fileExists(file).run).run ==== false.right) and
               (errP.getOption(
                 runExec(query.executeQuery(expr, Variables.fromMap(Map()), out))
                   .run.value.run

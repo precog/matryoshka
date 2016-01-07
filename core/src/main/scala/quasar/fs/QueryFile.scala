@@ -67,6 +67,9 @@ object QueryFile {
   final case class ListContents(dir: ADir)
     extends QueryFile[FileSystemError \/ Set[Node]]
 
+  final case class FileExists(file: AFile)
+    extends QueryFile[FileSystemError \/ Boolean]
+
   @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
   final class Ops[S[_]](implicit S0: Functor[S], S1: QueryFileF :<: S)
     extends LiftedOps[QueryFile, S] {
@@ -170,13 +173,8 @@ object QueryFile {
     }
 
     /** Returns whether the given file exists. */
-    def fileExists(file: AFile): F[Boolean] = {
-      val parent = fileParent(file)
-
-      ls(parent)
-        .map(_ flatMap (_.file.map(parent </> _).toSet) exists (identicalPath(file, _)))
-        .getOrElse(false)
-    }
+    def fileExists(file: AFile): M[Boolean] =
+      EitherT(lift(FileExists(file)))
 
     ////
 

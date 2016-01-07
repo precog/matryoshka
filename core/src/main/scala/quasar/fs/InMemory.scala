@@ -188,6 +188,9 @@ object InMemory {
 
       case ListContents(dir) =>
         ls(dir)
+
+      case FileExists(file) =>
+        contentsL.st.map(_.contains(file).right)
     }
 
     private def evalPlan[A](lp: Fix[LogicalPlan])
