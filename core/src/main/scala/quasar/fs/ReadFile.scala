@@ -18,6 +18,7 @@ package quasar
 package fs
 
 import quasar.Predef._
+import quasar.effect.LiftedOps
 
 import scalaz._
 import scalaz.std.anyVal._
@@ -94,8 +95,10 @@ object ReadFile {
   /** Low-level, unsafe operations. Clients are responsible for resource-safety
     * when using these.
     */
-  final class Unsafe[S[_]](implicit S0: Functor[S], S1: ReadFileF :<: S) {
-    type F[A] = Free[S, A]
+  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
+  final class Unsafe[S[_]](implicit S0: Functor[S], S1: ReadFileF :<: S)
+    extends LiftedOps[ReadFile, S] {
+
     type M[A] = FileSystemErrT[F, A]
 
     /** Returns a read handle for the given file, positioned at the given
@@ -119,11 +122,6 @@ object ReadFile {
     /** Closes the given read handle, freeing any resources it was using. */
     def close(rh: ReadHandle): F[Unit] =
       lift(Close(rh))
-
-    ////
-
-    def lift[A](rf: ReadFile[A]): F[A] =
-      Free.liftF(S1.inj(Coyoneda.lift(rf)))
   }
 
   object Unsafe {

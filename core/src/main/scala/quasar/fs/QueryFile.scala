@@ -18,6 +18,7 @@ package quasar.fs
 
 import quasar.Predef._
 import quasar._
+import quasar.effect.LiftedOps
 import quasar.fp._
 import quasar.fs.{Path => QPath}
 import quasar.recursionschemes._
@@ -66,8 +67,10 @@ object QueryFile {
   final case class ListContents(dir: ADir)
     extends QueryFile[FileSystemError \/ Set[Node]]
 
-  final class Ops[S[_]](implicit S0: Functor[S], S1: QueryFileF :<: S) {
-    type F[A] = Free[S, A]
+  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
+  final class Ops[S[_]](implicit S0: Functor[S], S1: QueryFileF :<: S)
+    extends LiftedOps[QueryFile, S] {
+
     type M[A] = FileSystemErrT[F, A]
 
     val unsafe = Unsafe[S]
@@ -183,9 +186,6 @@ object QueryFile {
       compToCompExec(queryPlan(query, vars))
         .flatMap(lp => execToCompExec(f(lp)))
     }
-
-    def lift[A](qf: QueryFile[A]): F[A] =
-      Free.liftF(S1.inj(Coyoneda.lift(qf)))
   }
 
   object Ops {
@@ -196,8 +196,9 @@ object QueryFile {
   /** Low-level, unsafe operations. Clients are responsible for resource-safety
     * when using these.
     */
-  final class Unsafe[S[_]](implicit S0: Functor[S], S1: QueryFileF :<: S) {
-    type F[A] = Free[S, A]
+  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
+  final class Unsafe[S[_]](implicit S0: Functor[S], S1: QueryFileF :<: S)
+    extends LiftedOps[QueryFile, S] {
 
     val transforms = Transforms[F]
     import transforms._
@@ -222,11 +223,6 @@ object QueryFile {
     /** Closes the given result handle, freeing any resources it was using. */
     def close(rh: ResultHandle): F[Unit] =
       lift(Close(rh))
-
-    ////
-
-    private def lift[A](rf: QueryFile[A]): F[A] =
-      Free.liftF(S1.inj(Coyoneda.lift(rf)))
   }
 
   object Unsafe {
