@@ -18,6 +18,7 @@ package quasar
 package fs
 
 import quasar.Predef._
+import quasar.effect.LiftedOps
 import quasar.fp._
 
 import scala.Ordering
@@ -130,8 +131,10 @@ object ManageFile {
 
   // TODO{scalaz}: Refactor, dropping Coyoneda and Functor constraint once we
   //               update to scalaz-7.2
-  final class Ops[S[_]](implicit S0: Functor[S], S1: ManageFileF :<: S) {
-    type F[A] = Free[S, A]
+  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
+  final class Ops[S[_]](implicit S0: Functor[S], S1: ManageFileF :<: S)
+    extends LiftedOps[ManageFile, S] {
+
     type M[A] = FileSystemErrT[F, A]
 
     /** Request the given move scenario be applied to the file system, using the
@@ -174,11 +177,6 @@ object ManageFile {
       */
     def tempFileNear(file: AFile): F[AFile] =
       tempFile(Some(file))
-
-    ////
-
-    def lift[A](fs: ManageFile[A]): F[A] =
-      Free.liftF(S1.inj(Coyoneda.lift(fs)))
   }
 
   object Ops {

@@ -18,6 +18,7 @@ package quasar.mount
 
 import quasar.Predef._
 import quasar.Variables
+import quasar.effect.LiftedOps
 import quasar.fp._
 import quasar.fs.{Path => _, _}
 import quasar.sql._
@@ -45,10 +46,12 @@ object Mounting {
   final case class Unmount(path: APath)
     extends Mounting[MountingError \/ Unit]
 
-  final class Ops[S[_]](implicit S0: Functor[S], S1: MountingF :<: S) {
+  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
+  final class Ops[S[_]](implicit S0: Functor[S], S1: MountingF :<: S)
+    extends LiftedOps[Mounting, S] {
+
     import MountConfig2._
 
-    type F[A] = Free[S, A]
     type M[A] = EitherT[F, MountingError, A]
 
     /** Returns the mount configuration for the given mount path or nothing
@@ -127,9 +130,6 @@ object Mounting {
                }
       } yield ()
     }
-
-    private def lift[A](m: Mounting[A]): F[A] =
-      Free.liftF(S1.inj(Coyoneda.lift(m)))
   }
 
   object Ops {

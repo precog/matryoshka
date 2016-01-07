@@ -18,6 +18,7 @@ package quasar
 package fs
 
 import quasar.Predef._
+import quasar.effect.LiftedOps
 import quasar.fp._
 
 import scalaz._, Scalaz._
@@ -201,8 +202,10 @@ object WriteFile {
   /** Low-level, unsafe operations. Clients are responsible for resource-safety
     * when using these.
     */
-  final class Unsafe[S[_]](implicit S0: Functor[S], S1: WriteFileF :<: S) {
-    type F[A] = Free[S, A]
+  @SuppressWarnings(Array("org.brianmckenna.wartremover.warts.NonUnitStatements"))
+  final class Unsafe[S[_]](implicit S0: Functor[S], S1: WriteFileF :<: S)
+    extends LiftedOps[WriteFile, S] {
+
     type M[A] = FileSystemErrT[F, A]
 
     /** Returns a write handle for the specified file which may be used to
@@ -226,11 +229,6 @@ object WriteFile {
     /** Close the write handle, freeing any resources it was using. */
     def close(h: WriteHandle): F[Unit] =
       lift(Close(h))
-
-    ////
-
-    def lift[A](wf: WriteFile[A]): F[A] =
-      Free.liftF(S1.inj(Coyoneda.lift(wf)))
   }
 
   object Unsafe {
