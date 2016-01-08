@@ -18,13 +18,59 @@ package quasar.std
 
 import quasar.Predef._
 import quasar.fp._
-import quasar.{Data, Func, Type, Mapping, SemanticError}, SemanticError._
+import quasar.recursionschemes._, Recursive.ops._
+import quasar.{Data, Func, LogicalPlan, Type, Mapping, SemanticError}, LogicalPlan._, SemanticError._
 
-import scalaz._, NonEmptyList.nel, Validation.{success, failure}
+import scalaz._, NonEmptyList.nel, Scalaz._, Validation.{success, failure}
 
 trait MathLib extends Library {
   private val MathRel = Type.Numeric ⨿ Type.Interval
   private val MathAbs = Type.Numeric ⨿ Type.Interval ⨿ Type.Temporal
+
+  object Zero {
+    def apply() = Data.Int(0)
+    def unapply(obj: Data): Boolean = obj match {
+      case Data.Number(v) if v == 0 => true
+      case _                        => false
+    }
+  }
+  object One {
+    def apply() = Data.Int(1)
+    def unapply(obj: Data): Boolean = obj match {
+      case Data.Number(v) if v == 1 => true
+      case _                        => false
+    }
+  }
+
+  object ZeroF {
+    def apply() = ConstantF(Zero())
+    def unapply[A](obj: LogicalPlan[A]): Boolean = obj match {
+      case ConstantF(Zero()) => true
+      case _                 => false
+    }
+  }
+  object OneF {
+    def apply() = ConstantF(One())
+    def unapply[A](obj: LogicalPlan[A]): Boolean = obj match {
+      case ConstantF(One()) => true
+      case _                => false
+    }
+  }
+
+  object TZero {
+    def apply() = Type.Const(Zero())
+    def unapply(obj: Type): Boolean = obj match {
+      case Type.Const(Zero()) => true
+      case _                  => false
+    }
+  }
+  object TOne {
+    def apply() = Type.Const(One())
+    def unapply(obj: Type): Boolean = obj match {
+      case Type.Const(One()) => true
+      case _                 => false
+    }
+  }
 
   private val biReflexiveUnapply: Func.Untyper = partialUntyperV {
     case Type.Const(d) => success(d.dataType :: d.dataType :: Nil)
@@ -36,10 +82,15 @@ trait MathLib extends Library {
    */
   val Add = Mapping("(+)", "Adds two numeric or temporal values",
     MathAbs, MathAbs :: MathRel :: Nil,
-    noSimplification,
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
+        orig match {
+          case IsInvoke(_, List(x, ZeroF())) => x.some
+          case IsInvoke(_, List(ZeroF(), x)) => x.some
+          case _                             => None
+        }
+    },
     (partialTyper {
-      case Type.Const(Data.Number(v1)) :: t2 :: Nil if (v1.signum == 0) && (Type.Numeric contains t2) => t2
-      case t1 :: Type.Const(Data.Number(v2)) :: Nil if (Type.Numeric contains t1) && (v2.signum == 0) => t1
       case Type.Const(Data.Int(v1)) :: Type.Const(Data.Int(v2)) :: Nil => Type.Const(Data.Int(v1 + v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Dec(v1 + v2))
 
@@ -60,10 +111,17 @@ trait MathLib extends Library {
    */
   val Multiply = Mapping("(*)", "Multiplies two numeric values or one interval and one numeric value",
     MathRel, MathRel :: Type.Numeric :: Nil,
-    noSimplification,
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
+        orig match {
+          case IsInvoke(_, List(x, OneF())) => x.some
+          case IsInvoke(_, List(OneF(), x)) => x.some
+          case _                            => None
+        }
+    },
     (partialTyper {
-      case (zero @ Type.Const(Data.Number(v1))) :: v2 :: Nil if (v1.signum == 0) => zero
-      case v1 :: (zero @ Type.Const(Data.Number(v2))) :: Nil if (v2.signum == 0) => zero
+      case TZero() :: _ :: Nil => TZero()
+      case _ :: TZero() :: Nil => TZero()
       case Type.Const(Data.Int(v1)) :: Type.Const(Data.Int(v2)) :: Nil => Type.Const(Data.Int(v1 * v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Dec(v1 * v2))
 
@@ -74,14 +132,46 @@ trait MathLib extends Library {
     }) ||| numericWidening,
     biReflexiveUnapply)
 
-  /**
-   * Subtracts one value from another, promoting to decimal if either operand is decimal.
-   */
+  val Power = Mapping("(^)", "Raises the first argument to the power of the second",
+    Type.Numeric, Type.Numeric :: Type.Numeric :: Nil,
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
+        orig match {
+          case IsInvoke(_, List(x, OneF())) => x.some
+          case _                            => None
+        }
+    },
+    (partialTyper {
+      case _      :: TZero() :: Nil => TOne()
+      case v1     :: TOne()  :: Nil => v1
+      case TZero() :: _      :: Nil => TZero()
+      case Type.Const(Data.Int(v1)) :: Type.Const(Data.Int(v2)) :: Nil
+          if v2.isValidInt =>
+        Type.Const(Data.Int(v1.pow(v2.toInt)))
+      case Type.Const(Data.Number(v1)) :: Type.Const(Data.Int(v2)) :: Nil
+          if v2.isValidInt =>
+        Type.Const(Data.Dec(v1.pow(v2.toInt)))
+    }) ||| numericWidening,
+    biReflexiveUnapply)
+
+  /** Subtracts one value from another, promoting to decimal if either operand
+    * is decimal.
+    */
   val Subtract = Mapping("(-)", "Subtracts two numeric or temporal values",
     MathAbs, MathAbs :: MathAbs :: Nil,
-    noSimplification,
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
+        orig match {
+          case IsInvoke(_, List(x, ZeroF())) => x.some
+          case InvokeF(_, List(c, x)) => c.project match {
+            case ZeroF() => Negate(x).some
+            case _       => None
+          }
+          case _ => None
+        }
+    },
     (partialTyper {
-      case v1 :: Type.Const(Data.Number(v2)) :: Nil if (v2.signum == 0) => v1
+      case v1 :: TZero() :: Nil => v1
       case Type.Const(Data.Int(v1)) :: Type.Const(Data.Int(v2)) :: Nil => Type.Const(Data.Int(v1 - v2))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => Type.Const(Data.Dec(v1 - v2))
       case Type.Timestamp :: Type.Timestamp :: Nil => Type.Interval
@@ -103,10 +193,16 @@ trait MathLib extends Library {
    */
   val Divide = Mapping("(/)", "Divides one numeric or interval value by another (non-zero) numeric value",
     MathRel, MathAbs :: MathRel :: Nil,
-    noSimplification,
+    new Func.Simplifier {
+      def apply[T[_[_]]: Recursive: FunctorT](orig: LogicalPlan[T[LogicalPlan]]) =
+        orig match {
+          case IsInvoke(_, List(x, OneF())) => x.some
+          case _                            => None
+        }
+    },
     (partialTyperV {
-      case v1 :: Type.Const(Data.Number(v2)) :: Nil if (v2.doubleValue == 1.0) => success(v1)
-      case v1 :: Type.Const(Data.Number(v2)) :: Nil if (v2.doubleValue == 0.0) => failure(NonEmptyList(GenericError("Division by zero")))
+      case v1 :: TOne()  :: Nil => success(v1)
+      case v1 :: TZero() :: Nil => failure(NonEmptyList(GenericError("Division by zero")))
       case Type.Const(Data.Int(v1)) :: Type.Const(Data.Int(v2)) :: Nil => success(Type.Const(Data.Int(v1 / v2)))
       case Type.Const(Data.Number(v1)) :: Type.Const(Data.Number(v2)) :: Nil => success(Type.Const(Data.Dec(v1 / v2)))
 
@@ -146,9 +242,8 @@ trait MathLib extends Library {
     MathRel, MathRel :: Type.Numeric :: Nil,
     noSimplification,
     (partialTyperV {
-      case v1 :: Type.Const(Data.Number(v2)) :: Nil if (v2.doubleValue == 1.0) =>
-        success(v1)
-      case v1 :: Type.Const(Data.Number(v2)) :: Nil if (v2.doubleValue == 0.0) =>
+      case v1 :: TOne()  :: Nil => success(v1)
+      case v1 :: TZero() :: Nil =>
         failure(NonEmptyList(GenericError("Division by zero")))
       case Type.Const(Data.Int(v1)) :: Type.Const(Data.Int(v2)) :: Nil =>
         success(Type.Const(Data.Int(v1 % v2)))
@@ -157,6 +252,6 @@ trait MathLib extends Library {
     }) ||| numericWidening,
     biReflexiveUnapply)
 
-  def functions = Add :: Multiply :: Subtract :: Divide :: Negate :: Modulo :: Nil
+  def functions = Add :: Multiply :: Subtract :: Divide :: Negate :: Modulo :: Power :: Nil
 }
 object MathLib extends MathLib

@@ -1,23 +1,15 @@
 package quasar.std
 
 import quasar.Predef._
+import quasar.TypeGen
+import quasar.specs2.PendingWithAccurateCoverage
 
+import org.scalacheck.{Arbitrary, Gen, Prop}, Arbitrary.arbitrary
+import org.specs2.matcher.Matcher
 import org.specs2.mutable._
 import org.specs2.scalaz._
 import org.specs2.ScalaCheck
-import org.scalacheck.Arbitrary
-import org.scalacheck.Arbitrary.arbitrary
-import org.scalacheck.Gen
-import org.scalacheck.Prop
-import org.specs2.matcher.Matcher
-import quasar.specs2.PendingWithAccurateCoverage
-
-import scalaz.Validation
-import scalaz.Validation.FlatMap._
-import scalaz.Success
-import scalaz.Failure
-
-import quasar.TypeGen
+import scalaz.{Failure, Success, Validation}, Validation.FlatMap._
 
 class RelationsSpec extends Specification with ScalaCheck with TypeGen with ValidationMatchers with PendingWithAccurateCoverage {
   import RelationsLib._

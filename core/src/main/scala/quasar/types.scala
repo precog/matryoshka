@@ -251,6 +251,8 @@ final case object Type extends TypeInstances {
 
       case (Top, _)    => succeed(())
       case (_, Bottom) => succeed(())
+      case (_, Top)    => fail(superType, subType, "Top is not a subtype of anything")
+      case (Bottom, _) => fail(superType, subType, "Bottom is not a supertype of anything")
 
       case (superType @ Coproduct(_, _), subType @ Coproduct(_, _)) =>
         typecheckCC(superType.flatten, subType.flatten)

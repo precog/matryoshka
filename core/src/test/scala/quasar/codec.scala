@@ -204,17 +204,14 @@ class DataCodecSpecs extends Specification with ScalaCheck with DisjunctionMatch
       UnescapedKeyError(sample).message must_== s"un-escaped key: $sample"
     }
   }
- }
- object DataGen {
-   val LargeInt = Data.Int(new java.math.BigInteger(Long.MaxValue.toString + "0"))  // Too big for Long
+}
+object DataGen {
+  val LargeInt = Data.Int(new java.math.BigInteger(Long.MaxValue.toString + "0"))  // Too big for Long
 
-  implicit val dataArbitrary: Arbitrary[Data] = Arbitrary {
+  val simpleData: Gen[Data] =
     Gen.oneOf(
       Data.Null, Data.True, Data.False,
       Data.Str("abc"), Data.Int(0), Data.Dec(1.1),
-      Data.Obj(ListMap("a" -> Data.Int(0), "b" -> Data.Int(1))),
-      Data.Arr(List(Data.Int(0), Data.Int(1))),
-      Data.Set(List(Data.Int(0), Data.Int(1))),
       Data.Timestamp(Instant.now),
       Data.Interval(Duration.ofSeconds(1)),
       Data.Date(LocalDate.now),
@@ -225,10 +222,19 @@ class DataCodecSpecs extends Specification with ScalaCheck with DisjunctionMatch
 
       // Tricky cases:
       LargeInt,
-      Data.Dec(2.0),  // Looks like an Int, so needs special handling
-      Data.Obj(ListMap("$date" -> Data.Str("Jan 1"))),
-      Data.Obj(ListMap(
-        "$obj" -> Data.Obj(ListMap(
-          "$obj" -> Data.Int(1))))))
+      Data.Dec(2.0)) // Looks like an Int, so needs special handling
+
+  implicit val arbitraryData: Arbitrary[Data] = Arbitrary {
+    Gen.oneOf(
+      simpleData,
+      Gen.oneOf(
+        Data.Obj(ListMap("a" -> Data.Int(0), "b" -> Data.Int(1))),
+        Data.Arr(List(Data.Int(0), Data.Int(1))),
+        Data.Set(List(Data.Int(0), Data.Int(1))),
+        // Tricky cases:
+        Data.Obj(ListMap("$date" -> Data.Str("Jan 1"))),
+        Data.Obj(ListMap(
+          "$obj" -> Data.Obj(ListMap(
+            "$obj" -> Data.Int(1)))))))
   }
 }

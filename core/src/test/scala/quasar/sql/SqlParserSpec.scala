@@ -425,7 +425,7 @@ class SQLParserSpec extends Specification with ScalaCheck with DisjunctionMatche
         r  <- exprGen(depth)
         op <- Gen.oneOf(
           Or, And, Eq, Neq, Ge, Gt, Le, Lt,
-          Plus, Minus, Mult, Div, Mod,
+          Plus, Minus, Mult, Div, Mod, Pow,
           In)
       } yield Binop(l, r, op)),
       1 -> (for {

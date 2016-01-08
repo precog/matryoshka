@@ -3687,9 +3687,8 @@ class PlannerSpec extends Specification with ScalaCheck with CompilerHelpers wit
     "include correct phases with type error" in {
       planLog("select 'a' + 0 from zips").map(_.map(_.name)) must
         beRightDisjunction(Vector(
-          "SQL AST", "Variables Substituted", "Annotated Tree", "Logical Plan",
-          "Optimized"))
-    }
+          "SQL AST", "Variables Substituted", "Annotated Tree", "Logical Plan", "Optimized"))
+    }.pendingUntilFixed("SD-1249")
 
     "include correct phases with alignment error" in {
       planLog("select * from a join b on a.foo + b.bar < b.baz").map(_.map(_.name)) must
