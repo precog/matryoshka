@@ -155,6 +155,9 @@ object chroot {
         case ListContents(d) =>
           Coyoneda.lift(ListContents(rebase(d, prefix)))
             .map(_.bimap(stripPathError(prefix), _ map stripNodePrefix(prefix)))
+
+        case FileExists(f) => Coyoneda.lift(FileExists(rebase(f,prefix)))
+            .map(_.leftMap(stripPathError(prefix)))
       }
     }
 

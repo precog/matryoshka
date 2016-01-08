@@ -37,13 +37,15 @@ class QueryFileSpec extends Specification with ScalaCheck with FileSystemFixture
     }
 
     "fileExists" >> {
+      val interpret = Mem.interpretT[FileSystemErrT]
+
       "return true when file exists" ! prop { s: SingleFileMemState =>
-        Mem.interpret(query.fileExists(s.file)).eval(s.state) must beTrue
+        interpret(query.fileExists(s.file)).run.eval(s.state) ==== true.right
       }
 
       "return false when file doesn't exist" ! prop { (absentFile: AFile, s: SingleFileMemState) =>
         absentFile ≠ s.file ==> {
-          Mem.interpret(query.fileExists(absentFile)).eval(s.state) must beFalse
+          interpret(query.fileExists(absentFile)).run.eval(s.state) ==== false.right
         }
       }
 
@@ -51,7 +53,7 @@ class QueryFileSpec extends Specification with ScalaCheck with FileSystemFixture
         val n = fileName(f)
         val fd = parentDir(f).get </> dir(n.value) </> file("different.txt")
 
-        Mem.interpret(query.fileExists(f)).eval(InMemState fromFiles Map(fd -> data)) must beFalse
+        interpret(query.fileExists(f)).run.eval(InMemState fromFiles Map(fd -> data)) ==== false.right
       }
     }
 

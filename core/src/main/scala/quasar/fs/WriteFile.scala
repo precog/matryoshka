@@ -125,7 +125,7 @@ object WriteFile {
       def shouldNotExist: M[FileSystemError] =
         MonadError[G, FileSystemError].raiseError(PathError(PathExists(dst)))
 
-      fileExistsM(dst).liftM[Process].ifM(
+      QF.fileExists(dst).liftM[Process].ifM(
         shouldNotExist.liftM[Process],
         saveChunked0(dst, src, MoveSemantics.FailIfExists))
     }
@@ -146,7 +146,7 @@ object WriteFile {
       def shouldExist: M[FileSystemError] =
         MonadError[G, FileSystemError].raiseError(PathError(PathNotFound(dst)))
 
-      fileExistsM(dst).liftM[Process].ifM(
+      QF.fileExists(dst).liftM[Process].ifM(
         saveChunked0(dst, src, MoveSemantics.FailIfMissing),
         shouldExist.liftM[Process])
     }
@@ -162,13 +162,6 @@ object WriteFile {
     }
 
     ////
-
-    private def fileExistsM(file: AFile)
-                           (implicit QF: QueryFile.Ops[S])
-                           : M[Boolean] = {
-
-      QF.fileExists(file).liftM[FileSystemErrT]
-    }
 
     private def saveChunked0(dst: AFile, src: Process[F, Vector[Data]], sem: MoveSemantics)
                             (implicit MF: ManageFile.Ops[S])

@@ -154,6 +154,9 @@ private final class QueryFileInterpreter[C](
         case None =>
           nonExistentParent[Set[Node]](dir).run
       }).liftM[QRT].liftM[WorkflowExecErrT]
+
+    case FileExists(file) =>
+      collFromPathM(file).flatMap(MongoDbIO.collectionExists(_).liftM[FileSystemErrT]).run.liftM[QRT].liftM[WorkflowExecErrT]
   }
 
   ////
