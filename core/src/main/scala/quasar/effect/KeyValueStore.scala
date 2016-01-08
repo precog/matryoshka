@@ -17,8 +17,11 @@
 package quasar.effect
 
 import quasar.Predef._
+import quasar.fp.TaskRef
 
-import scalaz._
+import monocle.Lens
+import scalaz.{Lens => _, _}, Scalaz._
+import scalaz.concurrent.Task
 
 /** Provides the ability to read, write and delete from a store of values
   * indexed by keys.
@@ -59,4 +62,32 @@ object KeyValueStore {
     def apply[K, V, S[_]: Functor](implicit S: KeyValueStoreF[K, V, ?] :<: S): Ops[K, V, S] =
       new Ops[K, V, S]
   }
+
+  def taskRefKeyValueStore[A, B](initial: Map[A, B]): Task[KeyValueStore[A, B, ?] ~> Task] = {
+    TaskRef(initial).map(ref =>
+      new (KeyValueStore[A, B, ?] ~> Task) {
+        def apply[C](fa: KeyValueStore[A, B, C]): Task[C] = fa match {
+          case Put(key, value) =>
+            ref.modifyS(m => (m + (key -> value), ()))
+          case Get(key) =>
+            ref.read.map(_.get(key))
+          case Delete(key) =>
+            ref.modifyS(m => ((m - key), ()))
+        }
+      })
+  }
+
+  def stateKeyValueStore[F[_]: Monad, K, V, S](l: Lens[S, Map[K, V]]) =
+    new (KeyValueStore[K, V, ?] ~> StateT[F, S, ?]) {
+      def apply[A](fa: KeyValueStore[K, V, A]): StateT[F, S, A] = fa match {
+        case Put(key, value) =>
+          StateT[F, S, A](s => (l.modify(_ + (key -> value))(s), ()).point[F])
+
+        case Get(key) =>
+          StateT.stateTMonadState[S, F].gets(s => l.get(s).get(key))
+
+        case Delete(key) =>
+          StateT.stateTMonadState[S, F].modify(s => l.modify(_ - key)(s))
+      }
+    }
 }

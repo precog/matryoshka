@@ -3,6 +3,8 @@ package fs
 
 import quasar.Predef._
 import quasar.fp._
+import quasar.fp.free._
+import quasar.effect._
 import quasar.config.MongoDbConfig
 import quasar.physical.mongodb.{filesystems => mongofs}
 
@@ -91,8 +93,8 @@ object FileSystemTest {
   //--- FileSystems to Test ---
 
   def allFsUT: Task[IList[FileSystemUT[FileSystem]]] =
-    (inMemUT |@| externalFsUT) { (mem, ext) =>
-      (mem :: ext) map (ut => ut.contramap(chroot.fileSystem(ut.testDir)))
+    (inMemUT |@| nullViewUT |@| externalFsUT) { (mem, viw, ext) =>
+      (mem :: viw :: ext) map (ut => ut.contramap(chroot.fileSystem(ut.testDir)))
     }
 
   def externalFsUT = TestConfig.externalFileSystems {
@@ -106,6 +108,20 @@ object FileSystemTest {
                    .map(_ compose InMemory.fileSystem)
                    .run
 
-    Task.delay(FileSystemUT(BackendName("in-memory"), f, rootDir))
+    Task.delay(FileSystemUT(BackendName("In-memory"), f, rootDir))
+  }
+
+  val nullViewUT: Task[FileSystemUT[FileSystem]] = {
+    (inMemUT |@| MonotonicSeq.taskRefMonotonicSeq(0) |@|
+        KeyValueStore.taskRefKeyValueStore[ReadFile.ReadHandle, ReadFile.ReadHandle \/ QueryFile.ResultHandle](Map())) {
+        (mem, seq, viewState) =>
+
+      val memPlus: ViewFileSystem ~> Task =
+        interpretViewFileSystem(viewState, seq, mem.run)
+
+      val fs = foldMapNT(memPlus) compose view.fileSystem[ViewFileSystem](Views(Map.empty))
+
+      FileSystemUT(BackendName("No-view"), fs, mem.testDir)
+    }
   }
 }

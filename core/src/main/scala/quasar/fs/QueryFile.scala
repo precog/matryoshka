@@ -249,6 +249,9 @@ object QueryFile {
     val toExec: F ~> ExecM =
       liftMT[G, FileSystemErrT] compose liftMT[F, PhaseResultT]
 
+    def fsErrToExec: FileSystemErrT[F, ?] ~> ExecM =
+      Hoist[FileSystemErrT].hoist[F, PhaseResultT[F, ?]](liftMT[F, PhaseResultT])
+
     val toCompExec: F ~> CompExecM =
       execToCompExec compose toExec
   }
