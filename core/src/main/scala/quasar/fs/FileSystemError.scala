@@ -23,6 +23,7 @@ import quasar.recursionschemes._
 import quasar.Planner.{PlannerError => PlannerErr}
 
 import monocle.Prism
+import pathy.Path.posixCodec
 import scalaz._
 import scalaz.syntax.show._
 
@@ -122,9 +123,9 @@ object FileSystemError {
       case Case.UnknownResultHandle(h) =>
         s"Attempted to get results from an unknown or closed handle: ${h.run}"
       case Case.UnknownReadHandle(h) =>
-        s"Attempted to read from an unknown or closed handle: ${h.run}"
+        s"Attempted to read from '${posixCodec.printPath(h.file)}' using an unknown or closed handle: ${h.id}"
       case Case.UnknownWriteHandle(h) =>
-        s"Attempted to write to an unknown or closed handle: ${h.run}"
+        s"Attempted to write to '${posixCodec.printPath(h.file)}' using an unknown or closed handle: ${h.id}"
       case Case.PartialWrite(n) =>
         s"Failed to write $n data."
       case Case.WriteFailed(d, r) =>

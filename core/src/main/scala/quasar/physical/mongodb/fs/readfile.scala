@@ -39,11 +39,7 @@ object readfile {
 
     def apply[A](rf: ReadFile[A]) = rf match {
       case Open(file, offset, limit) =>
-        Collection.fromPathy(file).fold(
-          err  => PathError(err).left.point[MongoRead],
-          coll => collectionExists(coll).liftM[ReadStateT].ifM(
-                    openCursor(coll, offset, limit) map (_.right[FileSystemError]),
-                    PathError(PathNotFound(file)).left.point[MongoRead]))
+        openCursor(file, offset, limit)
 
       case Read(h) =>
         lookupCursor(h)
@@ -86,21 +82,33 @@ object readfile {
   private def readState: MongoRead[ReadState] =
     MongoRead(_.read)
 
-  private def freshHandle: MongoRead[ReadHandle] =
-    MongoRead(seqL <%= (_ + 1)) map (ReadHandle(_))
+  private def freshHandle(f: AFile): MongoRead[ReadHandle] =
+    MongoRead(seqL <%= (_ + 1)) map (ReadHandle(f, _))
 
-  private def recordCursor(c: BsonCursor): MongoRead[ReadHandle] =
-    freshHandle flatMap (h => MongoRead(cursorL(h) := Some(c)) as h)
+  private def recordCursor(f: AFile, c: BsonCursor): MongoRead[ReadHandle] =
+    freshHandle(f) flatMap (h => MongoRead(cursorL(h) := Some(c)) as h)
 
   private def lookupCursor(h: ReadHandle): OptionT[MongoRead, BsonCursor] =
     OptionT[MongoRead, BsonCursor](readState map (cursorL(h).get))
 
-  private def openCursor(c: Collection, off: Natural, lim: Option[Positive]): MongoRead[ReadHandle] =
-    for {
-      it   <- find(c).liftM[ReadStateT]
-      skpd =  it skip off.value.toInt
-      ltd  =  lim cata (n => skpd.limit(n.value.toInt), skpd)
-      cur  <- async(ltd.batchCursor).liftM[ReadStateT]
-      h    <- recordCursor(cur)
-    } yield h
+  private def openCursor(
+    f: AFile,
+    off: Natural,
+    lim: Option[Positive]
+  ): MongoRead[FileSystemError \/ ReadHandle] = {
+    def openCursor0(c: Collection): MongoRead[ReadHandle] =
+      for {
+        it   <- find(c).liftM[ReadStateT]
+        skpd =  it skip off.value.toInt
+        ltd  =  lim cata (n => skpd.limit(n.value.toInt), skpd)
+        cur  <- async(ltd.batchCursor).liftM[ReadStateT]
+        h    <- recordCursor(f, cur)
+      } yield h
+
+    Collection.fromPathy(f).fold(
+      err  => PathError(err).left.point[MongoRead],
+      coll => collectionExists(coll).liftM[ReadStateT].ifM(
+                openCursor0(coll) map (_.right[FileSystemError]),
+                PathError(PathNotFound(f)).left.point[MongoRead]))
+  }
 }
