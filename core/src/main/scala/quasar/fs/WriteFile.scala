@@ -27,14 +27,15 @@ import scalaz.stream._
 sealed trait WriteFile[A]
 
 object WriteFile {
-  final case class WriteHandle(run: Long) extends scala.AnyVal
+  final case class WriteHandle(file: AFile, id: Long)
 
   object WriteHandle {
     implicit val writeHandleShow: Show[WriteHandle] =
       Show.showFromToString
 
-    implicit val writeHandleOrder: Order[WriteHandle] =
-      Order.orderBy(_.run)
+    // TODO: Switch to order once Order[Path[B,T,S]] exists
+    implicit val writeHandleEqual: Equal[WriteHandle] =
+      Equal.equalBy(h => (h.file, h.id))
   }
 
   final case class Open(file: AFile)

@@ -75,7 +75,7 @@ object InMemory {
           case Some(_) =>
             for {
               i <- nextSeq
-              h =  ReadHandle(i)
+              h =  ReadHandle(f, i)
               _ <- readingL(h) := Reading(f, off, lim, 0).some
             } yield h.right
 
@@ -120,7 +120,7 @@ object InMemory {
       case WriteFile.Open(f) =>
         for {
           i <- nextSeq
-          h =  WriteHandle(i)
+          h =  WriteHandle(f, i)
           _ <- wFileL(h) := Some(f)
           _ <- fileL(f) %= (_ orElse Some(Vector()))
         } yield h.right

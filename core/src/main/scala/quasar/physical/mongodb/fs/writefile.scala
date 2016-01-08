@@ -41,7 +41,7 @@ object writefile {
         Collection.fromPathy(file) fold (
           err => PathError(err).left.point[MongoWrite],
           col => ensureCollection(col).liftM[WriteStateT] *>
-                 recordCollection(col) map \/.right)
+                 recordCollection(file, col) map \/.right)
 
       case Write(h, data) =>
         val (errs, docs) = data foldMap { d =>
@@ -93,11 +93,11 @@ object writefile {
   private def writeState: MongoWrite[WriteState] =
     MongoWrite(_.read)
 
-  private def freshHandle: MongoWrite[WriteHandle] =
-    MongoWrite(seqL <%= (_ + 1)) map (WriteHandle(_))
+  private def freshHandle(f: AFile): MongoWrite[WriteHandle] =
+    MongoWrite(seqL <%= (_ + 1)) map (WriteHandle(f, _))
 
-  private def recordCollection(c: Collection): MongoWrite[WriteHandle] =
-    freshHandle flatMap (h => MongoWrite(collectionL(h) := Some(c)) as h)
+  private def recordCollection(f: AFile, c: Collection): MongoWrite[WriteHandle] =
+    freshHandle(f) flatMap (h => MongoWrite(collectionL(h) := Some(c)) as h)
 
   private def lookupCollection(h: WriteHandle): MongoWrite[Option[Collection]] =
     writeState map (collectionL(h).get)

@@ -56,7 +56,7 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
       }
 
       "read unopened file handle returns UnknownReadHandle" >>* {
-        val h = ReadHandle(42)
+        val h = ReadHandle(rootDir </> file("f1"), 42)
         read.unsafe.read(h).run map { r =>
           r.toEither must beLeft(UnknownReadHandle(h))
         }

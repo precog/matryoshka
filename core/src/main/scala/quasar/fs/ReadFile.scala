@@ -22,20 +22,22 @@ import quasar.effect.LiftedOps
 
 import scalaz._
 import scalaz.std.anyVal._
+import scalaz.std.tuple._
 import scalaz.syntax.monad._
 import scalaz.stream._
 
 sealed trait ReadFile[A]
 
 object ReadFile {
-  final case class ReadHandle(run: Long) extends scala.AnyVal
+  final case class ReadHandle(file: AFile, id: Long)
 
   object ReadHandle {
     implicit val readHandleShow: Show[ReadHandle] =
       Show.showFromToString
 
-    implicit val readHandleOrder: Order[ReadHandle] =
-      Order.orderBy(_.run)
+    // TODO: Switch to order once Order[Path[B,T,S]] exists
+    implicit val readHandleEqual: Equal[ReadHandle] =
+      Equal.equalBy(h => (h.file, h.id))
   }
 
   final case class Open(file: AFile, offset: Natural, limit: Option[Positive])
