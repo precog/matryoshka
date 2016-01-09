@@ -13,9 +13,11 @@ import monocle.macros.GenLens
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
 import pathy.{Path => PPath}, PPath._
+import pathy.scalacheck.PathyArbitrary._
 import scalaz._, Scalaz._
+import org.scalacheck.{Arbitrary, Gen}
 
-class ViewFSSpec extends Specification {
+class ViewFSSpec extends Specification with ScalaCheck {
   import TraceFS._
   import FileSystemError._
 
@@ -28,22 +30,24 @@ class ViewFSSpec extends Specification {
   val _seq = GenLens[VS](_.seq)
   val _handles = GenLens[VS](_.handles)
 
+  implicit val arbLogicalPlan: Arbitrary[Fix[LogicalPlan]] = Arbitrary(Gen.const(Read(Path("/zips"))))
+
   type VSF[F[_], A] = StateT[F, VS, A]
   type VST[A] = VSF[Trace, A]
 
-  val traceViewFs: ViewFileSystem ~> VST =
+  def traceViewFs(nodes: Map[ADir, Set[Node]]): ViewFileSystem ~> VST =
     interpretViewFileSystem[VST](
       KeyValueStore.stateKeyValueStore[Trace, ReadFile.ReadHandle, ReadFile.ReadHandle \/ QueryFile.ResultHandle, VS](_handles),
       MonotonicSeq.stateMonotonicSeq[Trace, VS](_seq),
       liftMT[Trace, VSF] compose interpretFileSystem[Trace](
-        inj[QueryFile] compose qfTrace(DefaultNodes),
+        inj[QueryFile] compose qfTrace(nodes),
         inj[ReadFile] compose rfTrace,
         inj[WriteFile] compose wfTrace,
         inj[ManageFile] compose mfTrace))
 
-  def viewInterp[A](views: Views, t: Free[FileSystem, A]): (Vector[FSAction[_]], A) =
+  def viewInterp[A](views: Views, nodes: Map[ADir, Set[Node]], t: Free[FileSystem, A]): (Vector[FSAction[_]], A) =
     (t flatMapSuspension view.fileSystem[ViewFileSystem](views))
-      .foldMap(traceViewFs)
+      .foldMap(traceViewFs(nodes))
       .eval(VS(0, Map.empty)).run
 
   "ReadFile.open" should {
@@ -67,7 +71,7 @@ class ViewFSSpec extends Specification {
                 EitherT.right(query.unsafe.close(h)))
       } yield ()).run.run
 
-      viewInterp(views, f)._1 must_== traceInterp(exp)._1
+      viewInterp(views, DefaultNodes, f)._1 must_== traceInterp(exp)._1
     }
 
     "translate limited read to query" in {
@@ -96,7 +100,7 @@ class ViewFSSpec extends Specification {
                 EitherT.right(query.unsafe.close(h)))
       } yield ()).run.run
 
-      viewInterp(views, f)._1 must_== traceInterp(exp)._1
+      viewInterp(views, DefaultNodes, f)._1 must_== traceInterp(exp)._1
     }
 
     "read from closed handle (error)" in {
@@ -111,7 +115,7 @@ class ViewFSSpec extends Specification {
         _ <- read.unsafe.read(h)
       } yield ()).run
 
-      viewInterp(views, f)._2 must_== -\/(UnknownReadHandle(ReadFile.ReadHandle(p, 0)))
+      viewInterp(views, DefaultNodes, f)._2 must_== -\/(UnknownReadHandle(ReadFile.ReadHandle(p, 0)))
     }
 
     "double close (no-op)" in {
@@ -126,7 +130,7 @@ class ViewFSSpec extends Specification {
         _ <- EitherT.right(read.unsafe.close(h))
       } yield ()).run
 
-      viewInterp(views, f)._2 must_== \/-(())
+      viewInterp(views, DefaultNodes, f)._2 must_== \/-(())
     }
   }
 
@@ -139,7 +143,7 @@ class ViewFSSpec extends Specification {
 
       val f = write.unsafe.open(p).run
 
-      viewInterp(views, f) must_==(
+      viewInterp(views, DefaultNodes, f) must_==(
         (Vector.empty,
           -\/(FileSystemError.PathError(PathError2.InvalidPath(p, "cannot write to view")))))
     }
@@ -157,7 +161,7 @@ class ViewFSSpec extends Specification {
 
       val f = manage.move(FileToFile(viewPath, otherPath), Overwrite).run
 
-      viewInterp(views, f) must_==(
+      viewInterp(views, DefaultNodes, f) must_==(
         (Vector.empty,
           -\/(FileSystemError.PathError(PathError2.InvalidPath(viewPath, "cannot move view")))))
     }
@@ -171,7 +175,7 @@ class ViewFSSpec extends Specification {
 
       val f = manage.move(FileToFile(otherPath, viewPath), Overwrite).run
 
-      viewInterp(views, f) must_==(
+      viewInterp(views, DefaultNodes, f) must_==(
         (Vector.empty,
           -\/(FileSystemError.PathError(PathError2.InvalidPath(viewPath, "cannot move file to view location")))))
     }
@@ -186,7 +190,7 @@ class ViewFSSpec extends Specification {
 
       val f = manage.delete(p).run
 
-      viewInterp(views, f) must_==(
+      viewInterp(views, DefaultNodes, f) must_==(
         (Vector.empty,
           -\/(FileSystemError.PathError(PathError2.InvalidPath(p, "cannot delete view")))))
     }
@@ -203,7 +207,7 @@ class ViewFSSpec extends Specification {
 
       val exp = query.execute(Read(Path("/zips")), rootDir </> file("tmp")).run.run
 
-      viewInterp(views, f)._1 must_== traceInterp(exp)._1
+      viewInterp(views, DefaultNodes, f)._1 must_== traceInterp(exp)._1
     }
   }
 
@@ -230,7 +234,7 @@ class ViewFSSpec extends Specification {
               query.unsafe.close(h))
       } yield ()).run.run
 
-      viewInterp(views, f)._1 must_== traceInterp(exp)._1
+      viewInterp(views, DefaultNodes, f)._1 must_== traceInterp(exp)._1
     }
   }
 
@@ -247,7 +251,7 @@ class ViewFSSpec extends Specification {
 
       // NB: can't supply the tmp path to query.explain, so there's no way to
       // construct the identical sequence via traceInterp.
-      viewInterp(views, f)._1 must_== traceInterp(exp)._1
+      viewInterp(views, DefaultNodes, f)._1 must_== traceInterp(exp)._1
     }
   }
 
@@ -259,7 +263,7 @@ class ViewFSSpec extends Specification {
 
       val f = query.ls(rootDir).run
 
-      viewInterp(views, f) must_==(
+      viewInterp(views, DefaultNodes, f) must_==(
         (Vector(Inject[QueryFile, FSAction].inj(QueryFile.ListContents(rootDir))),
           \/-(Set(
             Node.Plain(currentDir </> file("afile")),
@@ -275,11 +279,39 @@ class ViewFSSpec extends Specification {
 
       val f = query.ls(rootDir).run
 
-      viewInterp(views, f) must_==(
+      viewInterp(views, DefaultNodes, f) must_==(
         (Vector(Inject[QueryFile, FSAction].inj(QueryFile.ListContents(rootDir))),
           \/-(Set(
             Node.View(currentDir </> file("afile")),    // hides the regular file
             Node.Plain(currentDir </> dir("adir"))))))  // no conflict with same dir
+    }
+  }
+
+  "QueryFile.fileExists" should {
+    "behave as underlying interpreter" ! prop { file: AFile =>
+      val program = query.fileExists(file).run
+
+      val ops = Vector(Inject[QueryFile, FSAction].inj(QueryFile.FileExists(file)))
+
+      val hasFile = {
+        val nodes = Map(fileParent(file) -> Set(Node.Plain(file1(fileName(file)))))
+        val expected = (ops, true.right)
+        viewInterp(Views.empty, nodes, program) must_== expected
+      }
+      val noFile = {
+        val expected = (ops, false.right)
+        viewInterp(Views.empty, Map(), program) must_== expected
+      }
+      hasFile and noFile
+    }
+    "return true is there is a view at that path" ! prop { (file: AFile, lp: Fix[LogicalPlan]) =>
+      val program = query.fileExists(file).run
+
+      val ops = Vector(Inject[QueryFile, FSAction].inj(QueryFile.FileExists(file)))
+
+      val expected = (ops, true.right)
+
+      viewInterp(Views(Map(file -> lp)), Map(),program) must_== expected
     }
   }
 }

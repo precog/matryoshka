@@ -82,3 +82,7 @@ final case class Views(map: Map[AFile, Fix[LogicalPlan]]) {
       case t => t
     }
 }
+
+object Views {
+  def empty: Views = Views(Map.empty)
+}

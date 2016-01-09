@@ -20,6 +20,8 @@ object TraceFS {
   def qfTrace(nodes: Map[ADir, Set[Node]]) = new (QueryFile ~> Writer[Vector[QueryFile[_]], ?]) {
     import QueryFile._
 
+    def ls(dir: ADir) = nodes.getOrElse(dir, Set())
+
     def apply[A](qf: QueryFile[A]): Writer[Vector[QueryFile[_]], A] =
       WriterT.writer((Vector(qf),
         qf match {
@@ -28,7 +30,11 @@ object TraceFS {
           case More(handle)         => \/-(Vector.empty)
           case Close(handle)        => ()
           case Explain(lp)          => (Vector.empty, \/-(ExecutionPlan(FsType, lp.toString)))
-          case ListContents(dir)    => \/-(nodes.get(dir).getOrElse(Set()))
+          case ListContents(dir)    => \/-(ls(dir))
+          case FileExists(file)     =>
+            val relevantNodes = ls(fileParent(file))
+            val rFile = file1[Sandboxed](fileName(file))
+            (relevantNodes.exists(node => node === Node.Case.Plain(rFile) || node === Node.Case.View(rFile))).right
         }))
   }
 
