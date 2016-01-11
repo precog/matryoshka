@@ -183,6 +183,9 @@ object view {
         case ListContents(dir) =>
           val viewNodes = views.ls(dir).map(_.fold(Node.Plain(_), Node.View(_)))
           query.ls(dir).map(ns => overlay(ns, viewNodes)).run
+
+        case FileExists(file) =>
+           query.fileExists(file).map(_ || views.contains(file)).run
       }
     }
   }
