@@ -72,7 +72,7 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
                 EitherT.right(query.unsafe.close(h)))
       } yield ()).run.run
 
-      viewInterp(views, DefaultNodes, f)._1 must beTree(traceInterp(exp)._1)
+      viewInterp(views, Map(), f)._1 must beTree(traceInterp(exp, Map())._1)
     }
 
     "translate limited read to query" in {
@@ -101,7 +101,7 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
                 EitherT.right(query.unsafe.close(h)))
       } yield ()).run.run
 
-      viewInterp(views, DefaultNodes, f)._1 must beTree(traceInterp(exp)._1)
+      viewInterp(views, Map(), f)._1 must beTree(traceInterp(exp, Map())._1)
     }
 
     "read from closed handle (error)" in {
@@ -116,7 +116,7 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
         _ <- read.unsafe.read(h)
       } yield ()).run
 
-      viewInterp(views, DefaultNodes, f)._2 must_== -\/(UnknownReadHandle(ReadFile.ReadHandle(p, 0)))
+      viewInterp(views, Map(), f)._2 must_== -\/(UnknownReadHandle(ReadFile.ReadHandle(p, 0)))
     }
 
     "double close (no-op)" in {
@@ -131,7 +131,7 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
         _ <- EitherT.right(read.unsafe.close(h))
       } yield ()).run
 
-      viewInterp(views, DefaultNodes, f)._2 must_== \/-(())
+      viewInterp(views, Map(), f)._2 must_== \/-(())
     }
   }
 
@@ -144,7 +144,7 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
 
       val f = write.unsafe.open(p).run
 
-      viewInterp(views, DefaultNodes, f) must_==(
+      viewInterp(views, Map(), f) must_==(
         (Vector.empty,
           -\/(FileSystemError.PathError(PathError2.InvalidPath(p, "cannot write to view")))))
     }
@@ -162,7 +162,7 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
 
       val f = manage.move(FileToFile(viewPath, otherPath), Overwrite).run
 
-      viewInterp(views, DefaultNodes, f) must_==(
+      viewInterp(views, Map(), f) must_==(
         (Vector.empty,
           -\/(FileSystemError.PathError(PathError2.InvalidPath(viewPath, "cannot move view")))))
     }
@@ -176,7 +176,7 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
 
       val f = manage.move(FileToFile(otherPath, viewPath), Overwrite).run
 
-      viewInterp(views, DefaultNodes, f) must_==(
+      viewInterp(views, Map(), f) must_==(
         (Vector.empty,
           -\/(FileSystemError.PathError(PathError2.InvalidPath(viewPath, "cannot move file to view location")))))
     }
@@ -191,7 +191,7 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
 
       val f = manage.delete(p).run
 
-      viewInterp(views, DefaultNodes, f) must_==(
+      viewInterp(views, Map(), f) must_==(
         (Vector.empty,
           -\/(FileSystemError.PathError(PathError2.InvalidPath(p, "cannot delete view")))))
     }
@@ -208,7 +208,7 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
 
       val exp = query.execute(Read(Path("/zips")), rootDir </> file("tmp")).run.run
 
-      viewInterp(views, DefaultNodes, f)._1 must beTree(traceInterp(exp)._1)
+      viewInterp(views, Map(), f)._1 must beTree(traceInterp(exp, Map())._1)
     }
   }
 
@@ -235,7 +235,7 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
               query.unsafe.close(h))
       } yield ()).run.run
 
-      viewInterp(views, DefaultNodes, f)._1 must beTree(traceInterp(exp)._1)
+      viewInterp(views, Map(), f)._1 must beTree(traceInterp(exp, Map())._1)
     }
   }
 
@@ -250,22 +250,24 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
 
       val exp = query.explain(Read(Path("/zips"))).run.run
 
-      // NB: can't supply the tmp path to query.explain, so there's no way to
-      // construct the identical sequence via traceInterp.
-      viewInterp(views, DefaultNodes, f)._1 must beTree(traceInterp(exp)._1)
+      viewInterp(views, Map(), f)._1 must beTree(traceInterp(exp, Map())._1)
     }
   }
 
   "QueryFile.ls" should {
-    "preserve files and dirs in the presence of non-conflicting views" in {
+    def twoNodes(aDir: ADir) = Map(aDir -> Set[Node](
+        Node.Plain(currentDir </> file("afile")),
+        Node.Plain(currentDir </> dir("adir"))))
+
+    "preserve files and dirs in the presence of non-conflicting views" ! prop { (aDir: ADir) =>
       val views = Views(Map(
-        (rootDir </> file("view1")) -> Read(Path("/zips")),
-        (rootDir </> dir("views") </> file("view2")) -> Read(Path("/zips"))))
+        (aDir </> file("view1")) -> Read(Path("/zips")),
+        (aDir </> dir("views") </> file("view2")) -> Read(Path("/zips"))))
 
-      val f = query.ls(rootDir).run
+      val f = query.ls(aDir).run
 
-      viewInterp(views, DefaultNodes, f) must_==(
-        (traceInterp(f)._1,
+      viewInterp(views, twoNodes(aDir), f) must_==(
+        (traceInterp(f, twoNodes(aDir))._1,
           \/-(Set(
             Node.Plain(currentDir </> file("afile")),
             Node.Plain(currentDir </> dir("adir")),
@@ -273,15 +275,15 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
             Node.Plain(currentDir </> dir("views"))))))
     }
 
-    "overlay files and dirs with conflicting paths" in {
+    "overlay files and dirs with conflicting paths" ! prop { (aDir: ADir) =>
       val views = Views(Map(
-        (rootDir </> file("afile")) -> Read(Path("/zips")),
-        (rootDir </> dir("adir") </> file("view1")) -> Read(Path("/zips"))))
+        (aDir </> file("afile")) -> Read(Path("/zips")),
+        (aDir </> dir("adir") </> file("view1")) -> Read(Path("/zips"))))
 
-      val f = query.ls(rootDir).run
+      val f = query.ls(aDir).run
 
-      viewInterp(views, DefaultNodes, f) must_==(
-        (traceInterp(f)._1,
+      viewInterp(views, twoNodes(aDir), f) must_==(
+        (traceInterp(f, twoNodes(aDir))._1,
           \/-(Set(
             Node.View(currentDir </> file("afile")),    // hides the regular file
             Node.Plain(currentDir </> dir("adir"))))))  // no conflict with same dir
@@ -292,7 +294,7 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
     "behave as underlying interpreter" ! prop { file: AFile =>
       val program = query.fileExists(file).run
 
-      val ops = traceInterp(program)._1
+      val ops = traceInterp(program, Map())._1
 
       val hasFile = {
         val nodes = Map(fileParent(file) -> Set(Node.Plain(file1(fileName(file)))))
@@ -309,7 +311,7 @@ class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {
     "return true if there is a view at that path" ! prop { (file: AFile, lp: Fix[LogicalPlan]) =>
       val program = query.fileExists(file).run
 
-      val ops = traceInterp(program)._1
+      val ops = traceInterp(program, Map())._1
 
       val expected = (ops, true.right)
 

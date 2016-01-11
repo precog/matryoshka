@@ -73,14 +73,10 @@ object TraceFS {
         }))
   }
 
-  val DefaultNodes = Map[ADir, Set[Node]](rootDir -> Set(
-    Node.Plain(currentDir </> file("afile")),
-    Node.Plain(currentDir </> dir("adir"))))
+  def traceFs(nodes: Map[ADir, Set[Node]]): FileSystem ~> Trace =
+    interpretFileSystem[Trace](qfTrace(nodes), rfTrace, wfTrace, mfTrace)
 
-  def traceFs: FileSystem ~> Trace =
-    interpretFileSystem[Trace](qfTrace(DefaultNodes), rfTrace, wfTrace, mfTrace)
-
-  def traceInterp[A](t: Free[FileSystem, A]): (Vector[RenderedTree], A) = {
-    new Interpreter(traceFs).interpret(t).run
+  def traceInterp[A](t: Free[FileSystem, A], nodes: Map[ADir, Set[Node]]): (Vector[RenderedTree], A) = {
+    new Interpreter(traceFs(nodes)).interpret(t).run
   }
 }
