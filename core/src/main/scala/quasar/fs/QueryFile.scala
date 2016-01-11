@@ -17,7 +17,7 @@
 package quasar.fs
 
 import quasar.Predef._
-import quasar._
+import quasar._, RenderTree.ops._
 import quasar.effect.LiftedOps
 import quasar.fp._
 import quasar.fs.{Path => QPath}
@@ -258,4 +258,18 @@ object QueryFile {
     def apply[F[_]: Monad]: Transforms[F] =
       new Transforms[F]
   }
+
+
+  implicit def RenderQueryFile[A](implicit RLP: RenderTree[Fix[LogicalPlan]], RAF: RenderTree[AFile], RAD: RenderTree[ADir]) =
+    new RenderTree[QueryFile[A]] {
+      def render(qf: QueryFile[A]) = qf match {
+        case ExecutePlan(lp, out) => NonTerminal(List("ExecutePlan"), None, List(lp.render, out.render))
+        case EvaluatePlan(lp)     => NonTerminal(List("EvaluatePlan"), None, List(lp.render))
+        case More(handle)         => Terminal(List("More"), handle.toString.some)
+        case Close(handle)        => Terminal(List("Close"), handle.toString.some)
+        case Explain(lp)          => NonTerminal(List("Explain"), None, List(lp.render))
+        case ListContents(dir)    => NonTerminal(List("ListContents"), None, List(dir.render))
+        case FileExists(file)     => NonTerminal(List("FileExists"), None, List(file.render))
+      }
+    }
 }

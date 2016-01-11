@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package quasar
-package fs
+package quasar.fs
 
 import quasar.Predef._
+import quasar._, RenderTree.ops._
 import quasar.effect.LiftedOps
 import quasar.fp._
 
@@ -229,4 +229,15 @@ object WriteFile {
     implicit def apply[S[_]](implicit S0: Functor[S], S1: WriteFileF :<: S): Unsafe[S] =
       new Unsafe[S]
   }
+
+  implicit def RenderWriteFile[A] =
+    new RenderTree[WriteFile[A]] {
+      def render(wf: WriteFile[A]) = wf match {
+        case Open(file)           => NonTerminal(List("Open"), None, List(file.render))
+        case Write(handle, chunk) =>
+          NonTerminal(List("Read"), handle.toString.some,
+            chunk.map(d => Terminal(List("Data"), d.toString.some)).toList)
+        case Close(handle)        => Terminal(List("Close"), handle.toString.some)
+      }
+    }
 }

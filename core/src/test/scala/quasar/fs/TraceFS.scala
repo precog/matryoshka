@@ -2,6 +2,8 @@ package quasar.fs
 
 import quasar.Predef._
 
+import quasar._, RenderTree.ops._
+import quasar.fp._
 import quasar.fp.free.{Interpreter}
 
 import pathy.{Path => PPath}, PPath._
@@ -11,19 +13,15 @@ import scalaz._, Scalaz._
 object TraceFS {
   val FsType = FileSystemType("trace")
 
-  type __FSAction0[A] = Coproduct[WriteFile, ReadFile, A]
-  type __FSAction1[A] = Coproduct[ManageFile, __FSAction0, A]
-  type FSAction[A] = Coproduct[QueryFile, __FSAction1, A]
+  type Trace[A] = Writer[Vector[RenderedTree], A]
 
-  type Trace[A] = Writer[Vector[FSAction[_]], A]
-
-  def qfTrace(nodes: Map[ADir, Set[Node]]) = new (QueryFile ~> Writer[Vector[QueryFile[_]], ?]) {
+  def qfTrace(nodes: Map[ADir, Set[Node]]) = new (QueryFile ~> Trace) {
     import QueryFile._
 
     def ls(dir: ADir) = nodes.getOrElse(dir, Set())
 
-    def apply[A](qf: QueryFile[A]): Writer[Vector[QueryFile[_]], A] =
-      WriterT.writer((Vector(qf),
+    def apply[A](qf: QueryFile[A]): Trace[A] =
+      WriterT.writer((Vector(qf.render),
         qf match {
           case ExecutePlan(lp, out) => (Vector.empty, \/-(out))
           case EvaluatePlan(lp)     => (Vector.empty, \/-(ResultHandle(0)))
@@ -38,11 +36,11 @@ object TraceFS {
         }))
   }
 
-  def rfTrace = new (ReadFile ~> Writer[Vector[ReadFile[_]], ?]) {
+  def rfTrace = new (ReadFile ~> Trace) {
     import ReadFile._
 
-    def apply[A](rf: ReadFile[A]): Writer[Vector[ReadFile[_]], A] =
-      WriterT.writer((Vector(rf),
+    def apply[A](rf: ReadFile[A]): Trace[A] =
+      WriterT.writer((Vector(rf.render),
         rf match {
           case Open(file, off, lim) => \/-(ReadHandle(file, 0))
           case Read(handle)         => \/-(Vector.empty)
@@ -50,11 +48,11 @@ object TraceFS {
         }))
   }
 
-  def wfTrace = new (WriteFile ~> Writer[Vector[WriteFile[_]], ?]) {
+  def wfTrace = new (WriteFile ~> Trace) {
     import WriteFile._
 
-    def apply[A](wf: WriteFile[A]): Writer[Vector[WriteFile[_]], A] =
-      WriterT.writer((Vector(wf),
+    def apply[A](wf: WriteFile[A]): Trace[A] =
+      WriterT.writer((Vector(wf.render),
         wf match {
           case Open(file)           => \/-(WriteHandle(file, 0))
           case Write(handle, chunk) => Vector.empty
@@ -62,11 +60,11 @@ object TraceFS {
         }))
   }
 
-  def mfTrace = new (ManageFile ~> Writer[Vector[ManageFile[_]], ?]) {
+  def mfTrace = new (ManageFile ~> Trace) {
     import ManageFile._
 
-    def apply[A](mf: ManageFile[A]): Writer[Vector[ManageFile[_]], A] =
-      WriterT.writer((Vector(mf),
+    def apply[A](mf: ManageFile[A]): Trace[A] =
+      WriterT.writer((Vector(mf.render),
         mf match {
           case Move(scenario, semantics) => \/-(())
           case Delete(path)              => \/-(())
@@ -80,19 +78,9 @@ object TraceFS {
     Node.Plain(currentDir </> dir("adir"))))
 
   def traceFs: FileSystem ~> Trace =
-    interpretFileSystem[Writer[Vector[FSAction[_]], ?]](
-      inj[QueryFile] compose qfTrace(DefaultNodes),
-      inj[ReadFile] compose rfTrace,
-      inj[WriteFile] compose wfTrace,
-      inj[ManageFile] compose mfTrace)
+    interpretFileSystem[Trace](qfTrace(DefaultNodes), rfTrace, wfTrace, mfTrace)
 
-  def inj[F[_]](implicit I: F :<: FSAction) =
-    new (Writer[Vector[F[_]], ?] ~> Writer[Vector[FSAction[_]], ?]) {
-      def apply[A](w: Writer[Vector[F[_]], A]): Writer[Vector[FSAction[_]], A] =
-        w.mapWritten(_.map(I.inj(_)))
-      }
-
-  def traceInterp[A](t: Free[FileSystem, A]): (Vector[FSAction[_]], A) = {
+  def traceInterp[A](t: Free[FileSystem, A]): (Vector[RenderedTree], A) = {
     new Interpreter(traceFs).interpret(t).run
   }
 }
