@@ -14,16 +14,15 @@
  * limitations under the License.
  */
 
-package quasar
-package fs
+package quasar.fs
 
 import quasar.Predef._
-import quasar.effect.LiftedOps
 
-import scalaz._
-import scalaz.std.anyVal._
-import scalaz.std.tuple._
-import scalaz.syntax.monad._
+import quasar._, RenderTree.ops._
+import quasar.effect.LiftedOps
+import quasar.fp._
+
+import scalaz._, Scalaz._
 import scalaz.stream._
 
 sealed trait ReadFile[A]
@@ -130,4 +129,15 @@ object ReadFile {
     implicit def apply[S[_]](implicit S0: Functor[S], S1: ReadFileF :<: S): Unsafe[S] =
       new Unsafe[S]
   }
+
+  implicit def RenderReadFile[A] =
+    new RenderTree[ReadFile[A]] {
+      def render(rf: ReadFile[A]) = rf match {
+        case Open(file, off, lim) => NonTerminal(List("Open"), None,
+          file.render :: Terminal(List("Offset"), Some(off.toString)) ::
+            lim.map(l => Terminal(List("Limit"), Some(l.toString))).toList)
+        case Read(handle)         => Terminal(List("Read"), handle.toString.some)
+        case Close(handle)        => Terminal(List("Close"), handle.toString.some)
+      }
+    }
 }

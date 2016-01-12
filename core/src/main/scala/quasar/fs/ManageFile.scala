@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package quasar
-package fs
+package quasar.fs
 
 import quasar.Predef._
+import quasar._, RenderTree.ops._
 import quasar.effect.LiftedOps
 import quasar.fp._
 
@@ -183,4 +183,16 @@ object ManageFile {
     implicit def apply[S[_]](implicit S0: Functor[S], S1: ManageFileF :<: S): Ops[S] =
       new Ops[S]
   }
+
+  implicit def RenderManageFile[A] =
+    new RenderTree[ManageFile[A]] {
+      def render(mf: ManageFile[A]) = mf match {
+        case Move(scenario, semantics) => NonTerminal(List("Move"), semantics.toString.some,
+          scenario.fold(
+            (from, to) => List(from.render, to.render),
+            (from, to) => List(from.render, to.render)))
+        case Delete(path) => NonTerminal(List("Delete"), None, List(path.render))
+        case TempFile(nearTo) => NonTerminal(List("TempFile"), None, nearTo.map(_.render).toList)
+      }
+    }
 }
