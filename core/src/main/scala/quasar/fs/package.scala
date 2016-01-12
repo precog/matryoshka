@@ -40,12 +40,15 @@ package object fs {
   /** Adds ViewStateF and MonotonicSeqF to FileSystem. */
   type ViewFileSystem[A]  = Coproduct[ViewStateF, ViewFileSystem0, A]
 
+  type AbsPath[T] = pathy.Path[Abs,T,Sandboxed]
+  type RelPath[T] = pathy.Path[Rel,T,Sandboxed]
+
   type ADir  = AbsDir[Sandboxed]
   type RDir  = RelDir[Sandboxed]
   type AFile = AbsFile[Sandboxed]
   type RFile = RelFile[Sandboxed]
-  type APath = pathy.Path[Abs,_,Sandboxed]
-  type RPath = pathy.Path[Rel,_,Sandboxed]
+  type APath = AbsPath[_]
+  type RPath = RelPath[_]
 
   type PathErr2T[F[_], A] = EitherT[F, PathError2, A]
   type FileSystemErrT[F[_], A] = EitherT[F, FileSystemError, A]
@@ -93,33 +96,19 @@ package object fs {
     interpret3[ViewStateF, MonotonicSeqF, FileSystem, M](
       Coyoneda.liftTF(v), Coyoneda.liftTF(s), fs)
 
-  /** Rebases the given absolute path onto the provided absolute directory, so
-    * `rebaseA(/foo/bar, /baz)` becomes `/baz/foo/bar`.
+  /** Rebases absolute paths onto the provided absolute directory, so
+    * `rebaseA(/baz)(/foo/bar)` becomes `/baz/foo/bar`.
     */
-  def rebaseA[T](apath: PPath[Abs,T,Sandboxed], onto: ADir): PPath[Abs,T,Sandboxed] =
-    apath.relativeTo(rootDir[Sandboxed]).fold(apath)(onto </> _)
-
-  /** Removes the given prefix from an `APath`, if present. */
-  def stripAPathPrefix(prefix: ADir): APath => APath =
-    p => stripPrefixA(prefix)(p)
-
-  /** Removes the given prefix from an `RPath`, if present. */
-  def stripRPathPrefix(prefix: ADir): RPath => RPath =
-    p => stripPrefixR(prefix)(p)
-
-  /** Removes the given prefix from a relative path, if present. */
-  def stripPrefixR[T](prefix: ADir): PPath[Rel,T,Sandboxed] => PPath[Rel,T,Sandboxed] =
-    p => prefix.relativeTo(rootDir).flatMap(p relativeTo _) getOrElse p
+  def rebaseA(onto: ADir): AbsPath ~> AbsPath =
+    new (AbsPath ~> AbsPath) {
+      def apply[T](apath: AbsPath[T]) =
+        apath.relativeTo(rootDir[Sandboxed]).fold(apath)(onto </> _)
+    }
 
   /** Removes the given prefix from an absolute path, if present. */
-  def stripPrefixA[T](prefix: ADir): PPath[Abs,T,Sandboxed] => PPath[Abs,T,Sandboxed] =
-    p => p.relativeTo(prefix).fold(p)(rootDir </> _)
-
-  // Remove once we have fully migrated to Pathy
-  def convert(path: PPath[_,_,Sandboxed]): Path =
-    Path(posixCodec.printPath(path))
-
-  // Remove once we have fully migrated to Pathy
-  def convertToAFile(path: Path): Option[AFile] =
-    posixCodec.parseAbsFile(path.pathname) flatMap (sandbox(rootDir, _)) map (rootDir </> _)
+  def stripPrefixA(prefix: ADir): AbsPath ~> AbsPath =
+    new (AbsPath ~> AbsPath) {
+      def apply[T](apath: AbsPath[T]) =
+        apath.relativeTo(prefix).fold(apath)(rootDir </> _)
+    }
 }

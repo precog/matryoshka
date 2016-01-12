@@ -61,10 +61,10 @@ final case class Views(map: Map[AFile, Fix[LogicalPlan]]) {
   def rewrite(lp: Fix[LogicalPlan]): Fix[LogicalPlan] = rewrite0(lp, Set())
 
   private def rewrite0(lp: Fix[LogicalPlan], expanded: Set[AFile]): Fix[LogicalPlan] = {
-    val expandedP = expanded.map(convert)
+    val expandedP = expanded.map(Path.fromAPath)
     lp.transCata(once {
       case LogicalPlan.ReadF(p) if !(expandedP contains p) =>
-        convertToAFile(p).flatMap(f => map.get(f).map { lp =>
+        p.asAFile.flatMap(f => map.get(f).map { lp =>
           val q = absolutize(lp, fileParent(f))
           rewrite0(q, expanded + f).unFix
         })
@@ -76,7 +76,7 @@ final case class Views(map: Map[AFile, Fix[LogicalPlan]]) {
   private def absolutize(lp: Fix[LogicalPlan], dir: ADir): Fix[LogicalPlan] =
     lp.transCata {
       case read @ LogicalPlan.ReadF(p) =>
-        p.from(convert(dir)).fold(
+        p.from(Path.fromAPath(dir)).fold(
           κ(read),
           LogicalPlan.ReadF(_))
       case t => t

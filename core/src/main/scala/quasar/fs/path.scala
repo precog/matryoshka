@@ -73,6 +73,12 @@ final case class Path(dir: List[DirNode], file: Option[FileNode]) {
     abs.file.map(n => absDir </> PPath.file(n.value)) getOrElse absDir
   }
 
+  def asADir: Option[ADir] =
+    PPath.maybeDir(asAPath)
+
+  def asAFile: Option[AFile] =
+    PPath.maybeFile(asAPath)
+
   def relative = dir.headOption == Some(DirNode.Current)
 
   def absolute = !relative
@@ -146,6 +152,9 @@ object Path {
   def fileRel(file0: String) = file("." :: Nil, file0)
 
   def canonicalize(value: String): String = Path(value).pathname
+
+  def fromAPath(apath: APath): Path =
+    Path(PPath.posixCodec.printPath(apath))
 
   type PathErrT[F[_], A] = EitherT[F, PathError, A]
 

@@ -60,7 +60,7 @@ class QueryFileSpec extends Specification with ScalaCheck with FileSystemFixture
 
     "evaluate" >> {
       "streams the results of evaluating the logical plan" ! prop { s: SingleFileMemState =>
-        val query = LogicalPlan.Read(convert(s.file))
+        val query = LogicalPlan.Read(Path.fromAPath(s.file))
         val state = s.state.copy(queryResps = Map(query -> s.contents))
         val result = MemTask.runLog[FileSystemError, PhaseResults, Data](evaluate(query)).run.run.eval(state)
         result.run._2.toEither must beRight(s.contents)
