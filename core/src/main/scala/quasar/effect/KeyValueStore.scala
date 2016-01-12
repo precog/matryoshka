@@ -20,7 +20,7 @@ import quasar.Predef._
 import quasar.fp.TaskRef
 
 import monocle.Lens
-import scalaz.{Lens => _, _}, Scalaz._
+import scalaz.{Lens => _, _}
 import scalaz.concurrent.Task
 
 /** Provides the ability to read, write and delete from a store of values
@@ -63,8 +63,10 @@ object KeyValueStore {
       new Ops[K, V, S]
   }
 
-  def taskRefKeyValueStore[A, B](initial: Map[A, B]): Task[KeyValueStore[A, B, ?] ~> Task] = {
-    TaskRef(initial).map(ref =>
+  def taskRefKeyValueStore[A, B](
+    initial: Map[A, B]
+  ): Task[KeyValueStore[A, B, ?] ~> Task] =
+    TaskRef(initial) map { ref =>
       new (KeyValueStore[A, B, ?] ~> Task) {
         def apply[C](fa: KeyValueStore[A, B, C]): Task[C] = fa match {
           case Put(key, value) =>
@@ -74,20 +76,39 @@ object KeyValueStore {
           case Delete(key) =>
             ref.modifyS(m => ((m - key), ()))
         }
-      })
-  }
-
-  def stateKeyValueStore[F[_]: Monad, K, V, S](l: Lens[S, Map[K, V]]) =
-    new (KeyValueStore[K, V, ?] ~> StateT[F, S, ?]) {
-      def apply[A](fa: KeyValueStore[K, V, A]): StateT[F, S, A] = fa match {
-        case Put(key, value) =>
-          StateT[F, S, A](s => (l.modify(_ + (key -> value))(s), ()).point[F])
-
-        case Get(key) =>
-          StateT.stateTMonadState[S, F].gets(s => l.get(s).get(key))
-
-        case Delete(key) =>
-          StateT.stateTMonadState[S, F].modify(s => l.modify(_ - key)(s))
       }
     }
+
+  /** Returns an interpreter of `KeyValueStore[K, V, ?]` into `StateT[F, S, ?]`,
+    * given a `Lens[S, Map[K, V]]`.
+    *
+    * NB: Uses partial application of `F[_]` for better type inference, usage:
+    *
+    *   `stateKeyValueStore[F](lens)`
+    */
+  object stateKeyValueStore {
+    def apply[F[_]]: Aux[F] =
+      new Aux[F]
+
+    final class Aux[F[_]] {
+      type ST[S, A] = StateT[F, S, A]
+
+      def apply[K, V, S](l: Lens[S, Map[K, V]])(implicit F: Monad[F])
+                        : KeyValueStore[K, V, ?] ~> ST[S, ?] = {
+        new(KeyValueStore[K, V, ?] ~> ST[S, ?]) {
+          def apply[A](fa: KeyValueStore[K, V, A]): ST[S, A] = fa match {
+            case Put(key, value) =>
+              st.modify(l.modify(_ + (key -> value)))
+
+            case Get(key) =>
+              st.gets(s => l.get(s).get(key))
+
+            case Delete(key) =>
+              st.modify(l.modify(_ - key))
+          }
+          val st = MonadState[ST, S]
+        }
+      }
+    }
+  }
 }

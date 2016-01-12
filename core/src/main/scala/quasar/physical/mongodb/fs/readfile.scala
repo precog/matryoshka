@@ -17,7 +17,9 @@
 package quasar.physical.mongodb.fs
 
 import quasar.Predef._
+import quasar.Data
 import quasar.fp.TaskRef
+import quasar.fp.prism._
 import quasar.fs._
 import quasar.physical.mongodb._
 import quasar.physical.mongodb.fs.bsoncursor._
@@ -44,7 +46,7 @@ object readfile {
       case Read(h) =>
         lookupCursor(h)
           .flatMapF(c => DC.nextChunk(c).liftM[ReadStateT])
-          .toRight(UnknownReadHandle(h))
+          .toRight(unknownReadHandle(h))
           .run
 
       case Close(h) =>
@@ -106,9 +108,9 @@ object readfile {
       } yield h
 
     Collection.fromPathy(f).fold(
-      err  => PathError(err).left.point[MongoRead],
+      err  => pathError(err).left.point[MongoRead],
       coll => collectionExists(coll).liftM[ReadStateT].ifM(
                 openCursor0(coll) map (_.right[FileSystemError]),
-                PathError(PathNotFound(f)).left.point[MongoRead]))
+                pathError(pathNotFound(f)).left.point[MongoRead]))
   }
 }

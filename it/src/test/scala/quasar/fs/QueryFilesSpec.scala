@@ -1,5 +1,4 @@
-package quasar
-package fs
+package quasar.fs
 
 import quasar.Predef._
 import quasar.fp._
@@ -43,7 +42,7 @@ class QueryFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
 
       "listing nonexistent directory returns dir NotFound" >> {
         val d = queryPrefix </> dir("lsdne")
-        runT(run)(query.ls(d)).runEither must beLeft(PathError(PathNotFound(d)))
+        runT(run)(query.ls(d)).runEither must beLeft(pathError(PathNotFound(d)))
       }
 
       "listing results should not contain deleted files" >> {

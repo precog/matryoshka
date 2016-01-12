@@ -1,5 +1,6 @@
-package quasar
-package fs
+package quasar.fs
+
+import quasar.BackendName
 
 import scalaz._
 import scalaz.concurrent.Task

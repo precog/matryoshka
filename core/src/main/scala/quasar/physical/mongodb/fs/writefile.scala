@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
-package quasar
-package physical
-package mongodb
-package fs
+package quasar.physical.mongodb.fs
 
 import quasar.Predef._
+import quasar.Data
 import quasar.fp._
 import quasar.fs._
+import quasar.physical.mongodb._
 
 import com.mongodb.async.client.MongoClient
 import scalaz._, Scalaz._
@@ -39,7 +38,7 @@ object writefile {
     def apply[A](wf: WriteFile[A]) = wf match {
       case Open(file) =>
         Collection.fromPathy(file) fold (
-          err => PathError(err).left.point[MongoWrite],
+          err => pathError(err).left.point[MongoWrite],
           col => ensureCollection(col).liftM[WriteStateT] *>
                  recordCollection(file, col) map \/.right)
 
@@ -53,10 +52,10 @@ object writefile {
         lookupCollection(h) flatMap (_ cata (
           c => insertAny(c, docs.map(_.repr))
                  .filter(_ < docs.size)
-                 .map(n => PartialWrite(docs.size - n))
+                 .map(n => partialWrite(docs.size - n))
                  .run.map(errs ++ _.toList)
                  .liftM[WriteStateT],
-          (errs :+ UnknownWriteHandle(h)).point[MongoWrite]))
+          (errs :+ unknownWriteHandle(h)).point[MongoWrite]))
 
       case Close(h) =>
         MongoWrite(collectionL(h) := None).void
@@ -104,9 +103,9 @@ object writefile {
 
   private def dataToDocument(d: Data): FileSystemError \/ Bson.Doc =
     BsonCodec.fromData(d)
-      .leftMap(err => WriteFailed(d, err.toString))
+      .leftMap(err => writeFailed(d, err.toString))
       .flatMap {
         case doc @ Bson.Doc(_) => doc.right
-        case otherwise         => WriteFailed(d, "MongoDB is only able to store documents").left
+        case otherwise         => writeFailed(d, "MongoDB is only able to store documents").left
       }
 }

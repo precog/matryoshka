@@ -19,7 +19,8 @@ package quasar
 import quasar.Predef._
 import quasar.RenderTree.ops._
 
-import scalaz._, Liskov._, Scalaz._
+import monocle.Lens
+import scalaz.{Lens => _, _}, Liskov._, Scalaz._
 import scalaz.stream._
 import scalaz.concurrent.Task
 import simulacrum.{typeclass, op}
@@ -467,4 +468,24 @@ package object fp extends TreeInstances with ListMapInstances with EitherTInstan
     new (F ~> G) {
       def apply[A](fa: F[A]) = I inj fa
     }
+
+  /** Lift a `State` computation to operate over a "larger" state given a `Lens`.
+    *
+    * NB: Uses partial application of `F[_]` for better type inference, usage:
+    *
+    *   `zoomNT[F](lens)`
+    */
+  object zoomNT {
+    def apply[F[_]]: Aux[F] =
+      new Aux[F]
+
+    final class Aux[F[_]] {
+      type ST[S, A] = StateT[F, S, A]
+      def apply[A, B](lens: Lens[A, B])(implicit F: Functor[F]): ST[B, ?] ~> ST[A, ?] =
+        new (ST[B, ?] ~> ST[A, ?]) {
+          def apply[C](s: ST[B, C]) =
+            StateT((a: A) => s.run(lens.get(a)).map(_.leftMap(lens.set(_)(a))))
+        }
+    }
+  }
 }

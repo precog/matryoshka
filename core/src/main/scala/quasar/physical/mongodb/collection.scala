@@ -78,21 +78,30 @@ object Collection {
   def fromPathy(path: APath): PathError2 \/ Collection = {
     import PathError2._
 
+    val collResult = for {
+      tpl  <- dbNameAndRest(path)
+      (db, r) = tpl
+      ss   <- r.toNel.toRightDisjunction("path names a database, but no collection")
+      segs <- ss.traverseU(CollectionSegmentParser(_))
+      coll =  segs.toList mkString "."
+      len  =  utf8length(db) + 1 + utf8length(coll)
+      _    <- if (len > 120)
+                s"database+collection name too long ($len > 120 bytes): $db.$coll".left
+              else ().right
+    } yield Collection(db, coll)
+
+    collResult leftMap (InvalidPath(path, _))
+  }
+
+  /** Returns the database name determined by the given path. */
+  def dbNameFromPath(path: APath): PathError2 \/ String =
+    dbNameAndRest(path) bimap (PathError2.InvalidPath(path, _), _._1)
+
+  private def dbNameAndRest(path: APath): String \/ (String, IList[String]) =
     flatten(None, None, None, Some(_), Some(_), path)
       .toIList.unite.uncons(
-        InvalidPath(path, "no database specified").left,
-        (h, t) => t.toNel.cata(
-          ss => (for {
-              db   <- DatabaseNameParser(h)
-              segs <- ss.traverseU(CollectionSegmentParser(_))
-              coll =  segs.toList mkString "."
-              len  =  utf8length(db) + 1 + utf8length(coll)
-              _    <- if (len > 120)
-                        s"database+collection name too long ($len > 120 bytes): $db.$coll".left
-                      else ().right
-            } yield Collection(db, coll)) leftMap (InvalidPath(path, _)),
-          InvalidPath(path, "path names a database, but no collection").left))
-  }
+        "no database specified".left,
+        (h, t) => DatabaseNameParser(h) strengthR t)
 
   private trait PathParser extends RegexParsers {
     override def skipWhitespace = false

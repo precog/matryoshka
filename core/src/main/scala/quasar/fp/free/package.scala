@@ -23,6 +23,9 @@ package object free {
   type Coproduct4[F[_], G[_], H[_], I[_], A] = Coproduct[F, Coproduct3[G, H, I, ?], A]
   type Coproduct5[F[_], G[_], H[_], I[_], J[_], A] = Coproduct[F, Coproduct4[G, H, I, J, ?], A]
 
+  /** Given `F[_]` and `G[_]` such that `F :<: G`, lifts a natural transformation
+    * `F ~> F` to `G ~> G`.
+    */
   def injectedNT[F[_], G[_]](f: F ~> F)(implicit G: F :<: G): G ~> G =
     new (G ~> G) {
       def apply[A](ga: G[A]) = G.prj(ga).fold(ga)(fa => G.inj(f(fa)))
@@ -37,6 +40,15 @@ package object free {
     def apply[A](fa: Free[F, A]): G[A] =
       fa.foldMap(f)
   }
+
+  /** Given `F[_]` and `S[_]` such that `F :<: S`, returns a natural
+    * transformation, `S ~> G`, where `f` is used to transform an `F[_]` and `g`
+    * used otherwise.
+    */
+  def transformIn[F[_], S[_], G[_]: Functor](f: F ~> G, g: S ~> G)(implicit S: F :<: S): S ~> G =
+    new (S ~> G) {
+      def apply[A](sa: S[A]) = S.prj(sa).fold(g(sa))(f)
+    }
 
   def interpret2[F[_], G[_], M[_]](f: F ~> M, g: G ~> M): Coproduct[F, G, ?] ~> M =
     new (Coproduct[F, G, ?] ~> M) {

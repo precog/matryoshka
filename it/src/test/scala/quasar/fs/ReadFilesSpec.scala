@@ -1,17 +1,14 @@
-package quasar
-package fs
+package quasar.fs
 
 import quasar.Predef._
+import quasar.{Data, DataGen}
 import quasar.fp._
 
 import java.lang.RuntimeException
-
-import monocle.std.{disjunction => D}
-
-import pathy.Path._
-
 import scala.annotation.tailrec
 
+import monocle.std.{disjunction => D}
+import pathy.Path._
 import scalaz.{EphemeralStream => EStream, _}, Scalaz._
 import scalaz.concurrent.Task
 import scalaz.stream._
@@ -51,14 +48,14 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
       "open returns PathNotFound when file DNE" >>* {
         val dne = rootDir </> dir("doesnt") </> file("exist")
         read.unsafe.open(dne, Natural._0, None).run map { r =>
-          r.toEither must beLeft(PathError(PathNotFound(dne)))
+          r.toEither must beLeft(pathError(PathNotFound(dne)))
         }
       }
 
       "read unopened file handle returns UnknownReadHandle" >>* {
         val h = ReadHandle(rootDir </> file("f1"), 42)
         read.unsafe.read(h).run map { r =>
-          r.toEither must beLeft(UnknownReadHandle(h))
+          r.toEither must beLeft(unknownReadHandle(h))
         }
       }
 

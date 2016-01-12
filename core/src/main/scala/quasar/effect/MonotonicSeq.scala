@@ -20,8 +20,9 @@ import quasar.Predef._
 import quasar.fp.TaskRef
 
 import monocle.Lens
-import scalaz.{Lens => _, _}, Scalaz._
+import scalaz.{Lens => _, _}
 import scalaz.concurrent.Task
+import scalaz.syntax.applicative._
 
 /** Provides the ability to request the next element of a monotonically
   * increasing numeric sequence.
@@ -57,17 +58,31 @@ object MonotonicSeq {
     TaskRef(initial).map(ref =>
       new (MonotonicSeq ~> Task) {
         def apply[A](fa: MonotonicSeq[A]): Task[A] = fa match {
-          case Next =>
-            ref.modifyS(n => (n+1, n))
+          case Next => ref.modifyS(n => (n+1, n))
         }
       })
   }
 
-  def stateMonotonicSeq[F[_]: Applicative, S](l: Lens[S, Long]) =
-    new (MonotonicSeq ~> StateT[F, S, ?]) {
-      def apply[A](fa: MonotonicSeq[A]): StateT[F, S, A] = fa match {
-        case Next =>
-          StateT[F, S, A](s => (l.modify(_+1)(s), l.get(s)).point[F])
+  /** Returns an interpreter of `MonotonicSeq` into `StateT[F, S, ?]`,
+    * given a `Lens[S, Long]`.
+    *
+    * NB: Uses partial application of `F[_]` for better type inference, usage:
+    *
+    *   `stateMonotonicSeq[F](lens)`
+    */
+  object stateMonotonicSeq {
+    def apply[F[_]]: Aux[F] =
+      new Aux[F]
+
+    final class Aux[F[_]] {
+      def apply[S](l: Lens[S, Long])(implicit F: Applicative[F])
+                  : MonotonicSeq ~> StateT[F, S, ?] = {
+        new (MonotonicSeq ~> StateT[F, S, ?]) {
+          def apply[A](seq: MonotonicSeq[A]) = seq match {
+            case Next => StateT((s: S) => (l.modify(_ + 1)(s), l.get(s)).point[F])
+          }
+        }
       }
     }
+  }
 }

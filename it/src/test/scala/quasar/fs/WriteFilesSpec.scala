@@ -1,5 +1,4 @@
-package quasar
-package fs
+package quasar.fs
 
 import quasar.Predef._
 import quasar.fp._
@@ -43,7 +42,7 @@ class WriteFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
       "write to unknown handle returns UnknownWriteHandle" >>* {
         val h = WriteHandle(rootDir </> file("f1"), 42)
         write.unsafe.write(h, Vector()) map { r =>
-          r must_== Vector(UnknownWriteHandle(h))
+          r must_== Vector(unknownWriteHandle(h))
         }
       }
 

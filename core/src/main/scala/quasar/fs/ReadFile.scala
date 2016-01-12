@@ -22,7 +22,12 @@ import quasar._, RenderTree.ops._
 import quasar.effect.LiftedOps
 import quasar.fp._
 
-import scalaz._, Scalaz._
+import monocle.Iso
+import scalaz._
+import scalaz.std.anyVal._
+import scalaz.std.tuple._
+import scalaz.syntax.monad._
+import scalaz.syntax.std.option._
 import scalaz.stream._
 
 sealed trait ReadFile[A]
@@ -31,12 +36,15 @@ object ReadFile {
   final case class ReadHandle(file: AFile, id: Long)
 
   object ReadHandle {
+    val tupleIso: Iso[ReadHandle, (AFile, Long)] =
+      Iso((h: ReadHandle) => (h.file, h.id))((ReadHandle(_, _)).tupled)
+
     implicit val readHandleShow: Show[ReadHandle] =
       Show.showFromToString
 
     // TODO: Switch to order once Order[Path[B,T,S]] exists
     implicit val readHandleEqual: Equal[ReadHandle] =
-      Equal.equalBy(h => (h.file, h.id))
+      Equal.equalBy(tupleIso.get)
   }
 
   final case class Open(file: AFile, offset: Natural, limit: Option[Positive])

@@ -1,7 +1,7 @@
-package quasar
-package fs
+package quasar.fs
 
 import quasar.Predef._
+import quasar.{Data, DataGen, LogicalPlan, PhaseResults}
 import quasar.fp._
 import quasar.scalacheck._
 
@@ -32,7 +32,8 @@ class QueryFileSpec extends Specification with ScalaCheck with FileSystemFixture
         .set(workers = java.lang.Runtime.getRuntime.availableProcessors)
 
       "returns not found when dir does not exist" ! prop { d: ADir =>
-        Mem.interpret(query.descendantFiles(d)).eval(emptyMem).toEither must beLeft(PathError(PathNotFound(d)))
+        Mem.interpret(query.descendantFiles(d)).eval(emptyMem)
+          .toEither must beLeft(pathError(PathNotFound(d)))
       }
     }
 
@@ -59,7 +60,7 @@ class QueryFileSpec extends Specification with ScalaCheck with FileSystemFixture
 
     "evaluate" >> {
       "streams the results of evaluating the logical plan" ! prop { s: SingleFileMemState =>
-        val query = LogicalPlan.Read(convert(s.file))
+        val query = LogicalPlan.Read(Path.fromAPath(s.file))
         val state = s.state.copy(queryResps = Map(query -> s.contents))
         val result = MemTask.runLog[FileSystemError, PhaseResults, Data](evaluate(query)).run.run.eval(state)
         result.run._2.toEither must beRight(s.contents)

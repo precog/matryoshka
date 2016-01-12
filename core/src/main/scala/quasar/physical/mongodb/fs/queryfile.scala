@@ -91,7 +91,7 @@ private final class QueryFileInterpreter[C](
         (for {
           _      <- checkPathsExist(lp)
           dst    <- EitherT(Collection.fromPathy(out)
-                              .leftMap(PathError)
+                              .leftMap(pathError(_))
                               .point[MongoLogWF])
           wf     <- convertPlanR(lp)(MongoDbPlanner plan lp)
           prefix <- liftMQ(genPrefix)
@@ -113,7 +113,7 @@ private final class QueryFileInterpreter[C](
 
     case More(h) =>
       moreResults(h)
-        .toRight(UnknownResultHandle(h))
+        .toRight(unknownResultHandle(h))
         .run
 
     case Close(h) =>
@@ -213,7 +213,7 @@ private final class QueryFileInterpreter[C](
   private def convertPlanR(lp: Fix[LogicalPlan]): PlanR ~> MongoLogWFR =
     new (PlanR ~> MongoLogWFR) {
       def apply[A](pa: PlanR[A]) = {
-        val r = pa.leftMap(PlannerError(lp, _)).run
+        val r = pa.leftMap(plannerError(lp, _)).run
         val f: MongoLogWF[FileSystemError \/ A] = WriterT(r.point[MQ])
         EitherT(f)
       }
@@ -254,9 +254,9 @@ private final class QueryFileInterpreter[C](
   private def checkPathsExist(lp: Fix[LogicalPlan]): MongoLogWFR[Unit] = {
     def checkPathExists(p: QPath): MongoFsM[Unit] = for {
       coll <- EitherT.fromDisjunction[MongoDbIO](Collection.fromPath(p))
-                .leftMap(e => PathError(InvalidPath(qPathToPathy(p), e.message)))
+                .leftMap(e => pathError(InvalidPath(p.asAPath, e.message)))
       _    <- EitherT(MongoDbIO.collectionExists(coll)
-                .map(_ either (()) or PathError(PathNotFound(qPathToPathy(p)))))
+                .map(_ either (()) or pathError(PathNotFound(p.asAPath))))
     } yield ()
 
     EitherT[MongoLogWF, FileSystemError, Unit](
@@ -271,14 +271,6 @@ private final class QueryFileInterpreter[C](
       case ReadF(p) => Set(p)
       case other    => other.fold
     })
-
-  // TODO: This is a hack, but is only used to create a Pathy.Path for error
-  //       messages and will go away once LogicalPlan is converted to Pathy.
-  private def qPathToPathy(p: QPath): APath = {
-    val abs = p.asAbsolute
-    val absDir = abs.dir.foldLeft(rootDir[Sandboxed])((d, n) => d </> dir(n.value))
-    abs.file.map(n => absDir </> file(n.value)) getOrElse absDir
-  }
 
   private def moreResults(h: ResultHandle): OptionT[MQ, Vector[Data]] = {
     def pureNextChunk(bsons: List[Bson]) =

@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package quasar
-package fs
+package quasar.fs
 
 import quasar.Predef._
+import quasar.{Data, PhaseResult, LogicalPlan, PhaseResults}
 import quasar.fp._
 import quasar.recursionschemes.{Fix, Recursive}
 import quasar.Planner.UnsupportedPlan
@@ -107,7 +107,7 @@ object InMemory {
             }
 
           case None =>
-            UnknownReadHandle(h).left.point[InMemoryFs]
+            unknownReadHandle(h).left.point[InMemoryFs]
         }
 
       case ReadFile.Close(h) =>
@@ -131,7 +131,7 @@ object InMemory {
             fileL(f) mods (_ map (_ ++ xs) orElse Some(xs)) as Vector.empty
 
           case None =>
-            Vector(UnknownWriteHandle(h)).point[InMemoryFs]
+            Vector(unknownWriteHandle(h)).point[InMemoryFs]
         }
 
       case WriteFile.Close(h) =>
@@ -147,10 +147,11 @@ object InMemory {
       case Delete(path) =>
         refineType(path).fold(deleteDir, deleteFile)
 
-      case TempFile(nearTo) =>
-        nextSeq map (n => nearTo.cata(
-          renameFile(_, κ(FileName(tmpName(n)))),
-          tmpDir </> file(tmpName(n))))
+      case TempFile(path) =>
+        nextSeq map (n => refineType(path).fold(
+          _ </> file(tmpName(n)),
+          renameFile(_, κ(FileName(tmpName(n))))
+        ).right[FileSystemError])
     }
   }
 
@@ -176,7 +177,7 @@ object InMemory {
             (resultL(h) := some(Vector())) as xs.right
 
           case None =>
-            UnknownResultHandle(h).left.point[InMemoryFs]
+            unknownResultHandle(h).left.point[InMemoryFs]
         }
 
       case QueryFile.Close(h) =>
@@ -213,17 +214,18 @@ object InMemory {
         import quasar.std.StdLib.set.{Drop, Take}
         import quasar.std.StdLib.identity.Squash
         Recursive[Fix].para[LogicalPlan, Option[Vector[Data]]](lp) {
-          case ReadF(path) => convertToAFile(path).flatMap{ pathyPath => fileL(pathyPath).get(mem)}
+          case ReadF(path) => path.asAFile.flatMap(pathyPath => fileL(pathyPath).get(mem))
           case InvokeF(Drop, (_,src) :: (Fix(ConstantF(Data.Int(skip))),_) :: Nil) => src.map(_.drop(skip.toInt))
           case InvokeF(Take, (_,src) :: (Fix(ConstantF(Data.Int(limit))),_) :: Nil) => src.map(_.take(limit.toInt))
           case InvokeF(Squash,(_,src) :: Nil) => src
+          case ConstantF(data) => Some(Vector(data))
           case other => queryResponsesL.get(mem).get(Fix(other.map(_._1)))
         }
       })
     }
 
     private def unsupported(lp: Fix[LogicalPlan]) =
-      PlannerError(lp, UnsupportedPlan(
+      plannerError(lp, UnsupportedPlan(
         lp.unFix,
         some("In Memory interpreter does not currently support this plan")))
   }
@@ -246,7 +248,6 @@ object InMemory {
 
   ////
 
-  private def tmpDir: ADir = rootDir </> dir("__quasar") </> dir("tmp")
   private def tmpName(n: Long) = s"__quasar.gen_$n"
 
   private val seqL: InMemState @> Long =
@@ -295,10 +296,10 @@ object InMemory {
   //----
 
   private def fsPathNotFound[A](f: AFile): InMemoryFs[FileSystemError \/ A] =
-    PathError(PathNotFound(f)).left.point[InMemoryFs]
+    pathError(PathNotFound(f)).left.point[InMemoryFs]
 
   private def fsPathExists[A](f: AFile): InMemoryFs[FileSystemError \/ A] =
-    PathError(PathExists(f)).left.point[InMemoryFs]
+    pathError(PathExists(f)).left.point[InMemoryFs]
 
   private def moveDir(src: ADir, dst: ADir, s: MoveSemantics): InMemoryFs[FileSystemError \/ Unit] =
     for {
@@ -306,7 +307,7 @@ object InMemory {
       sufxs =  m.keys.toStream.map(_ relativeTo src).unite
       files =  sufxs map (src </> _) zip (sufxs map (dst </> _))
       r0    <- files.traverseU { case (sf, df) => EitherT(moveFile(sf, df, s)) }.run
-      r1    =  r0 flatMap (_.nonEmpty either (()) or PathError(PathNotFound(src)))
+      r1    =  r0 flatMap (_.nonEmpty either (()) or pathError(PathNotFound(src)))
     } yield r1
 
   private def moveFile(src: AFile, dst: AFile, s: MoveSemantics): InMemoryFs[FileSystemError \/ Unit] = {
@@ -332,11 +333,11 @@ object InMemory {
       m  <- contentsL.st
       ss =  m.keys.toStream.map(_ relativeTo d).unite
       r0 <- ss.traverseU(f => EitherT(deleteFile(d </> f))).run
-      r1 =  r0 flatMap (_.nonEmpty either (()) or PathError(PathNotFound(d)))
+      r1 =  r0 flatMap (_.nonEmpty either (()) or pathError(PathNotFound(d)))
     } yield r1
 
   private def deleteFile(f: AFile): InMemoryFs[FileSystemError \/ Unit] =
-    (fileL(f) <:= None) map (_.void \/> PathError(PathNotFound(f)))
+    (fileL(f) <:= None) map (_.void \/> pathError(PathNotFound(f)))
 
   //----
 
@@ -350,5 +351,5 @@ object InMemory {
     contentsL.st map (
       _.keys.toList.map(_ relativeTo d).unite.toNel
         .map(_ foldMap (f => Node.fromFirstSegmentOf(f).toSet))
-        .toRightDisjunction(PathError(PathNotFound(d))))
+        .toRightDisjunction(pathError(PathNotFound(d))))
 }

@@ -1,7 +1,7 @@
-package quasar
-package fs
+package quasar.fs
 
 import quasar.Predef._
+import quasar.Data
 import quasar.fp._
 
 import pathy.Path._
@@ -51,7 +51,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
                 write.save(f2, oneDoc.toProcess).drain ++
                 manage.moveFile(f1, f2, MoveSemantics.FailIfExists).liftM[Process]
 
-        (execT(run, p).runOption must beSome(PathError(PathExists(f2)))) and
+        (execT(run, p).runOption must beSome(pathError(PathExists(f2)))) and
         (runT(run)(ls).runEither must beRight(containTheSameElementsAs(expectedFiles)))
       }
 
@@ -81,7 +81,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
                 manage.moveFile(f1, f2, MoveSemantics.Overwrite)
                   .liftM[Process]
 
-        (execT(run, p).runOption must beSome(PathError(PathNotFound(f1)))) and
+        (execT(run, p).runOption must beSome(pathError(PathNotFound(f1)))) and
         (runT(run)(ls).runEither must beRight(containTheSameElementsAs(expectedFiles)))
       }
 
@@ -91,7 +91,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val f2 = d </> file("f2")
 
         runT(run)(manage.moveFile(f1, f2, MoveSemantics.Overwrite))
-          .runOption must beSome(PathError(PathNotFound(f1)))
+          .runOption must beSome(pathError(PathNotFound(f1)))
       }
 
       "moving a file to itself with FailIfExists semantics should fail with PathExists" >> {
@@ -99,7 +99,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val p  = write.save(f1, oneDoc.toProcess).drain ++
                  manage.moveFile(f1, f1, MoveSemantics.FailIfExists).liftM[Process]
 
-        execT(run, p).runOption must beSome(PathError(PathExists(f1)))
+        execT(run, p).runOption must beSome(pathError(PathExists(f1)))
       }
 
       "moving a file to a nonexistent path when using FailIfMissing sematics should fail with dst NotFound" >> {
@@ -110,7 +110,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val p  = write.save(f1, oneDoc.toProcess).drain ++
                  manage.moveFile(f1, f2, MoveSemantics.FailIfMissing).liftM[Process]
 
-        (execT(run, p).runOption must beSome(PathError(PathNotFound(f2)))) and
+        (execT(run, p).runOption must beSome(pathError(PathNotFound(f2)))) and
         (runT(run)(query.ls(d)).runEither must beRight(containTheSameElementsAs(expectedFiles)))
       }
 
@@ -129,7 +129,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
 
         (execT(run, p).runOption must beNone) and
         (runT(run)(query.ls(d2)).runEither must beRight(containTheSameElementsAs(expectedFiles))) and
-        (runT(run)(query.ls(d1)).runEither must beLeft(PathError(PathNotFound(d1))))
+        (runT(run)(query.ls(d1)).runEither must beLeft(pathError(PathNotFound(d1))))
       }
 
       "moving a nonexistent dir to another nonexistent dir fails with src NotFound" >> {
@@ -137,12 +137,12 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val d2 = managePrefix </> dir("dirdnetodirdne") </> dir("d2")
 
         runT(run)(manage.moveDir(d1, d2, MoveSemantics.FailIfExists))
-          .runOption must beSome(PathError(PathNotFound(d1)))
+          .runOption must beSome(pathError(PathNotFound(d1)))
       }
 
       "deleting a nonexistent file returns PathNotFound" >> {
         val f = managePrefix </> file("delfilenotfound")
-        runT(run)(manage.delete(f)).runEither must beLeft(PathError(PathNotFound(f)))
+        runT(run)(manage.delete(f)).runEither must beLeft(pathError(PathNotFound(f)))
       }
 
       "deleting a file makes it no longer accessible" >> {
@@ -150,7 +150,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val p  = write.save(f1, oneDoc.toProcess).drain ++ manage.delete(f1).liftM[Process]
 
         (execT(run, p).runOption must beNone) and
-        (runLogT(run, read.scanAll(f1)).runEither must beLeft(PathError(PathNotFound(f1))))
+        (runLogT(run, read.scanAll(f1)).runEither must beLeft(pathError(PathNotFound(f1))))
       }
 
       "deleting a file with siblings in directory leaves siblings untouched" >> {
@@ -163,7 +163,7 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
                 manage.delete(f1).liftM[Process]
 
         (execT(run, p).runOption must beNone) and
-        (runLogT(run, read.scanAll(f1)).runEither must beLeft(PathError(PathNotFound(f1)))) and
+        (runLogT(run, read.scanAll(f1)).runEither must beLeft(pathError(PathNotFound(f1)))) and
         (runLogT(run, read.scanAll(f2)).runEither must beRight(anotherDoc))
       }
 
@@ -177,14 +177,14 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
                 manage.delete(d).liftM[Process]
 
         (execT(run, p).runOption must beNone) and
-        (runLogT(run, read.scanAll(f1)).runEither must beLeft(PathError(PathNotFound(f1)))) and
-        (runLogT(run, read.scanAll(f2)).runEither must beLeft(PathError(PathNotFound(f2)))) and
-        (runT(run)(query.ls(d)).runEither must beLeft(PathError(PathNotFound(d))))
+        (runLogT(run, read.scanAll(f1)).runEither must beLeft(pathError(PathNotFound(f1)))) and
+        (runLogT(run, read.scanAll(f2)).runEither must beLeft(pathError(PathNotFound(f2)))) and
+        (runT(run)(query.ls(d)).runEither must beLeft(pathError(PathNotFound(d))))
       }
 
       "deleting a nonexistent directory returns PathNotFound" >> {
         val d = managePrefix </> dir("deldirnotfound")
-        runT(run)(manage.delete(d)).runEither must beLeft(PathError(PathNotFound(d)))
+        runT(run)(manage.delete(d)).runEither must beLeft(pathError(PathNotFound(d)))
       }
 
       "write/read from temp dir near existing" >> {
@@ -192,12 +192,11 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
         val f = d </> file("somefile")
 
         val p = write.save(f, oneDoc.toProcess).drain ++
-                (manage.tempFileNear(f).liftM[FileSystemErrT]: manage.M[AFile])
-                  .liftM[Process] flatMap { tf =>
-                    write.save(tf, anotherDoc.toProcess).drain ++
-                    read.scanAll(tf) ++
-                    manage.delete(tf).liftM[Process].drain
-                  }
+                manage.tempFile(f).liftM[Process] flatMap { tf =>
+                  write.save(tf, anotherDoc.toProcess).drain ++
+                  read.scanAll(tf) ++
+                  manage.delete(tf).liftM[Process].drain
+                }
 
         runLogT(run, p).runEither must beRight(anotherDoc)
       }
@@ -205,25 +204,13 @@ class ManageFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT)
       "write/read from temp dir near non existing" >> {
         val d = managePrefix </> dir("tmpnear2")
         val f = d </> file("somefile")
-        val p = (manage.tempFileNear(f).liftM[FileSystemErrT]: manage.M[AFile])
-                  .liftM[Process] flatMap { tf =>
-                    write.save(tf, anotherDoc.toProcess).drain ++
-                    read.scanAll(tf) ++
-                    manage.delete(tf).liftM[Process].drain
-                  }
+        val p = manage.tempFile(f).liftM[Process] flatMap { tf =>
+                  write.save(tf, anotherDoc.toProcess).drain ++
+                  read.scanAll(tf) ++
+                  manage.delete(tf).liftM[Process].drain
+                }
 
         runLogT(run, p).runEither must beRight(anotherDoc)
-      }
-
-      "write/read from arbitrary temp dir" >> {
-        val p = (manage.anyTempFile.liftM[FileSystemErrT]: manage.M[AFile])
-                  .liftM[Process] flatMap { tf =>
-                    write.save(tf, oneDoc.toProcess).drain ++
-                    read.scanAll(tf) ++
-                    manage.delete(tf).liftM[Process].drain
-                  }
-
-        runLogT(run, p).runEither must beRight(oneDoc)
       }
 
       step(deleteForManage(run).runVoid)

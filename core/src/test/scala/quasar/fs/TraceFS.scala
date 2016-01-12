@@ -1,10 +1,8 @@
 package quasar.fs
 
 import quasar.Predef._
-
 import quasar._, RenderTree.ops._
 import quasar.fp._
-import quasar.fp.free.{Interpreter}
 
 import pathy.{Path => PPath}, PPath._
 import scalaz._, Scalaz._
@@ -68,8 +66,8 @@ object TraceFS {
         mf match {
           case Move(scenario, semantics) => \/-(())
           case Delete(path)              => \/-(())
-          case TempFile(maybeNear) =>
-            maybeNear.fold[ADir](rootDir)(fileParent(_)) </> file("tmp")
+          case TempFile(near) =>
+            \/-(refineType(near).fold(ι, fileParent) </> file("tmp"))
         }))
   }
 
@@ -77,6 +75,6 @@ object TraceFS {
     interpretFileSystem[Trace](qfTrace(nodes), rfTrace, wfTrace, mfTrace)
 
   def traceInterp[A](t: Free[FileSystem, A], nodes: Map[ADir, Set[Node]]): (Vector[RenderedTree], A) = {
-    new Interpreter(traceFs(nodes)).interpret(t).run
+    new free.Interpreter(traceFs(nodes)).interpret(t).run
   }
 }
