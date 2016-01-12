@@ -1,10 +1,10 @@
-package quasar.fs
+package quasar.fs.mount
 
 import quasar.Predef._
 
-import quasar._
-import LogicalPlan.{Free => LPFree, _}
+import quasar._, LogicalPlan.{Free => LPFree, _}
 import quasar.fp._
+import quasar.fs._
 import quasar.recursionschemes._
 import quasar.std.StdLib._, set._, structural._
 

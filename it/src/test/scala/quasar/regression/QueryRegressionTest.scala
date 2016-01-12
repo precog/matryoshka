@@ -5,7 +5,7 @@ import quasar.Predef._
 import quasar.config._
 import quasar.fp._
 import quasar.fs.{Path => QPath, _}
-import quasar.mount.Mounts
+import quasar.fs.mount.{Mounts, hierarchical}
 import quasar.sql._
 
 import java.io.{File, FileInputStream}

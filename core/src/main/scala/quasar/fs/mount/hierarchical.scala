@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 
-package quasar.fs
+package quasar.fs.mount
 
 import quasar.Predef._
 import quasar.{Data, LogicalPlan, PhaseResult, PhaseResults}
 import quasar.effect._
 import quasar.fp._
+import quasar.fs._
 import quasar.recursionschemes.{free => _, _}, Recursive.ops._
-import quasar.mount.Mounts
 
 import monocle.{Iso, Prism}
 import monocle.syntax.fields._
 import monocle.std.tuple2._
 import pathy.Path._
-import scalaz.{Failure => _, _}, Scalaz._
+import scalaz.{Failure => _, Node => _, _}, Scalaz._
 
 object hierarchical {
   import QueryFile.ResultHandle
