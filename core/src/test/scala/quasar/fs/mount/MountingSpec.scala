@@ -1,4 +1,4 @@
-package quasar.mount
+package quasar.fs.mount
 
 import quasar.Predef._
 import quasar.Variables

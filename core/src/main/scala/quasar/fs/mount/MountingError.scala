@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package quasar.mount
+package quasar.fs.mount
 
 import quasar.Predef._
 import quasar.EnvironmentError2

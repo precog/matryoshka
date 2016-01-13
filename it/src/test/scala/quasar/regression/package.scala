@@ -10,7 +10,7 @@ import scalaz.syntax.apply._
 import scalaz.concurrent._
 
 package object regression {
-  import quasar.fs.hierarchical.{HFSFailureF, MountedResultHF}
+  import quasar.fs.mount.hierarchical.{HFSFailureF, MountedResultHF}
 
   type FileSystemIO[A] = Coproduct[Task, FileSystem, A]
 
@@ -20,7 +20,7 @@ package object regression {
 
   val interpretHfsIO: Task[HfsIO ~> Task] = {
     import QueryFile.ResultHandle
-    import quasar.fs.hierarchical._
+    import quasar.fs.mount.hierarchical._
 
     val handlesTask: Task[MountedResultHF ~> Task] =
       KeyValueStore.taskRefKeyValueStore[ResultHandle, (ADir, ResultHandle)](Map())

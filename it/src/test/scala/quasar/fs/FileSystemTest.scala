@@ -1,13 +1,13 @@
-package quasar
-package fs
+package quasar.fs
 
 import quasar.Predef._
-import quasar.fp.{eitherTCatchable, hoistFree, free}
+import quasar.{BackendName, Data, TestConfig, NameGenerator}
+import quasar.fp.{eitherTCatchable, hoistFree}
 import quasar.fp.free._
+import quasar.fs.mount._
 import quasar.effect._
 import quasar.config.MongoDbConfig
 import quasar.physical.mongodb.{filesystems => mongofs}
-import quasar.mount.Mounts
 import quasar.regression.{interpretHfsIO, HfsIO}
 
 import scala.Either

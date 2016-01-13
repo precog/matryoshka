@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-package quasar
-package fs
+package quasar.fs
 
 import quasar.Predef._
 import quasar.fp._

@@ -14,11 +14,12 @@
  * limitations under the License.
  */
 
-package quasar.fs
+package quasar.fs.mount
 
 import quasar.Predef._
 import quasar._
 import quasar.fp._
+import quasar.fs.{AFile, ADir, RFile, RDir, Path}
 import quasar.recursionschemes._, FunctorT.ops._
 
 import monocle.Optional

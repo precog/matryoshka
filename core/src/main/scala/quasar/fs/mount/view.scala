@@ -14,21 +14,20 @@
  * limitations under the License.
  */
 
-package quasar.fs
+package quasar.fs.mount
 
 import quasar.Predef._
 import quasar._
 import quasar.effect._
 import quasar.fp._
+import quasar.fs._, FileSystemError._, PathError2._
 import quasar.recursionschemes._
 import quasar.std.StdLib._, set._
-import FileSystemError._
-import PathError2._
 
 import monocle.Optional
 import monocle.function.Field1
 import pathy.{Path => PPath}, PPath._
-import scalaz._, Scalaz._
+import scalaz.{Node => _, _}, Scalaz._
 
 object view {
   /** Translate reads on view paths to the equivalent queries. */

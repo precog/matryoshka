@@ -1,11 +1,11 @@
-package quasar.fs
+package quasar.fs.mount
 
 import quasar.Predef._
 
-import quasar._
-import LogicalPlan.{Free => LPFree, _}
+import quasar._, LogicalPlan.{Free => LPFree, _}
 import quasar.effect._
 import quasar.fp._
+import quasar.fs._
 import quasar.recursionschemes._
 import quasar.std.StdLib._, set._
 
@@ -14,7 +14,7 @@ import org.specs2.mutable._
 import org.specs2.ScalaCheck
 import pathy.{Path => PPath}, PPath._
 import pathy.scalacheck.PathyArbitrary._
-import scalaz._, Scalaz._
+import scalaz.{Node => _, _}, Scalaz._
 import org.scalacheck.{Arbitrary, Gen}
 
 class ViewFSSpec extends Specification with ScalaCheck with TreeMatchers {

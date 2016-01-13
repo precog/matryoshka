@@ -1,4 +1,4 @@
-package quasar.mount
+package quasar.fs.mount
 
 import org.scalacheck._
 import pathy.Path._

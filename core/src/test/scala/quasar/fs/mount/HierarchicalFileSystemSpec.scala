@@ -1,10 +1,10 @@
-package quasar.fs
+package quasar.fs.mount
 
 import quasar.Predef._
 import quasar.{Data, LogicalPlan}
 import quasar.effect._
 import quasar.fp.{hoistFree, liftMT, free, zoomNT}
-import quasar.mount.Mounts
+import quasar.fs._
 import quasar.recursionschemes.Fix
 import quasar.std.IdentityLib.Squash
 import quasar.std.SetLib.Take
@@ -12,7 +12,7 @@ import quasar.std.SetLib.Take
 import monocle.Lens
 import org.specs2.mutable.Specification
 import pathy.Path._
-import scalaz.{Lens => _, Failure => _, _}, Id.Id
+import scalaz.{Lens => _, Failure => _, Node => _, _}, Id.Id
 import scalaz.syntax.either._
 import scalaz.std.list._
 
