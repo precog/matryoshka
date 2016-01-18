@@ -43,6 +43,9 @@ class Interpreter[F[_]: Functor, M[_]: Monad](val interpretTerm: F ~> M) {
   def interpretT2[T1[_[_],_]: Hoist, T2[_[_],_]: Hoist]: T1[T2[Program,?],?] ~> T1[T2[M,?],?] =
     Hoist[T1].hoist[T2[Program,?],T2[M,?]](interpretT[T2])(Hoist[T2].apply[Program])
 
+  def interpretT3[T1[_[_],_]: Hoist, T2[_[_],_]: Hoist, T3[_[_],_]: Hoist]: T1[T2[T3[Program,?],?],?] ~> T1[T2[T3[M,?],?],?] =
+    Hoist[T1].hoist[T2[T3[Program,?],?], T2[T3[M,?],?]](interpretT2[T2,T3])(Hoist[T2].apply[T3[Program,?]](Hoist[T3].apply[Program]))
+
   def runLog[A](p: Process[Program,A])(implicit catchable: Catchable[M]): M[IndexedSeq[A]] =
     p.translate(interpret).runLog
 
@@ -56,6 +59,13 @@ class Interpreter[F[_]: Functor, M[_]: Monad](val interpretTerm: F ~> M) {
     type ResultT[A] = T1[T2[M,?],A]
     val monadR: Monad[ResultT] = Hoist[T1].apply[T2[M,?]](Hoist[T2].apply)
     p.translate[ResultT](interpretT2[T1,T2]).runLog[ResultT,A](monadR,catchable)
+  }
+
+  def runLogT3[T1[_[_],_]:Hoist, T2[_[_],_]: Hoist, T3[_[_],_]: Hoist ,A](p: Process[T1[T2[T3[Program,?],?],?],A])(implicit catchable: Catchable[T1[T2[T3[M,?],?],?]])
+  : T1[T2[T3[M,?],?],IndexedSeq[A]] = {
+    type ResultT[A] = T1[T2[T3[M,?],?],A]
+    val monadR: Monad[ResultT] = Hoist[T1].apply[T2[T3[M,?],?]](Hoist[T2].apply[T3[M,?]](Hoist[T3].apply))
+    p.translate[ResultT](interpretT3[T1,T2,T3]).runLog[ResultT,A](monadR,catchable)
   }
 }
 
