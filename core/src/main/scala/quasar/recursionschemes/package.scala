@@ -28,6 +28,12 @@ import simulacrum.typeclass
 /** Generalized folds, unfolds, and refolds. */
 package object recursionschemes extends CofreeInstances with FreeInstances {
 
+  def lambek[T[_[_]]: Corecursive: Recursive, F[_]: Functor](tf: T[F]): F[T[F]] =
+    tf.cata[F[T[F]]](_.map(Corecursive[T].embed[F]))
+
+  def colambek[T[_[_]]: Corecursive: Recursive, F[_]: Functor](ft: F[T[F]]): T[F] =
+    Corecursive[T].ana(ft)(_.map(_.project))
+
   def cofCataM[S[_]: Traverse, M[_]: Monad, A, B](t: Cofree[S, A])(f: (A, S[B]) => M[B]): M[B] =
     t.tail.traverse(cofCataM(_)(f)).flatMap(f(t.head, _))
 
@@ -89,13 +95,13 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
 
   def distPara[T[_[_]], F[_]: Functor](implicit T: Corecursive[T]):
       λ[α => F[(T[F], α)]] ~> λ[α => (T[F], F[α])] =
-    distZygo(T.embed)
+    distZygo(T.embed[F])
 
   def distParaT[T[_[_]], F[_]: Functor, W[_]: Comonad](
     t: λ[α => F[W[α]]] ~> λ[α => W[F[α]]])(
     implicit T: Corecursive[T]):
       (λ[α => F[EnvT[T[F], W, α]]] ~> λ[α => EnvT[T[F], W, F[α]]]) =
-    distZygoT(T.embed, t)
+    distZygoT(T.embed[F], t)
 
   def distCata[F[_]]: λ[α => F[Id[α]]] ~> λ[α => Id[F[α]]] =
     NaturalTransformation.refl
@@ -310,7 +316,7 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
     def bindings[T[_[_]]: Recursive, A](t: F[T[F]], b: G[A])(f: F[T[F]] => A): G[A]
 
     // Possibly binds a free term to its definition:
-    def subst[T[_[_]]: Recursive, A](t: F[T[F]], b: G[A]): Option[A]
+    def subst[T[_[_]], A](t: F[T[F]], b: G[A]): Option[A]
   }
 
   /**

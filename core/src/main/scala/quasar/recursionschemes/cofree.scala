@@ -14,11 +14,10 @@
  * limitations under the License.
  */
 
-package quasar
-package recursionschemes
+package quasar.recursionschemes
 
 import quasar.Predef._
-import RenderTree.ops._
+import quasar.{NonTerminal, RenderTree},  RenderTree.ops._
 
 import scalaz._
 import scalaz.syntax.functor._
@@ -26,12 +25,12 @@ import scalaz.syntax.functor._
 trait CofreeInstances {
   implicit def cofreeRecursive[A]: Recursive[Cofree[?[_], A]] =
     new Recursive[Cofree[?[_], A]] {
-      def project[F[_]](t: Cofree[F, A]) = t.tail
+      def project[F[_]: Functor](t: Cofree[F, A]) = t.tail
     }
 
   implicit def cofreeTraverseT[A]: TraverseT[Cofree[?[_], A]] =
     new TraverseT[Cofree[?[_], A]] {
-      def traverse[M[_]: Applicative, F[_], G[_]](t: Cofree[F, A])(f: F[Cofree[F, A]] => M[G[Cofree[G, A]]]) =
+      def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: Cofree[F, A])(f: F[Cofree[F, A]] => M[G[Cofree[G, A]]]) =
         f(t.tail).map(Cofree(t.head, _))
     }
 

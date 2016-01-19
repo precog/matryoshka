@@ -27,11 +27,11 @@ final case class Fix[F[_]](unFix: F[Fix[F]]) {
 
 object Fix {
   implicit val fixRecursive: Recursive[Fix] = new Recursive[Fix] {
-    def project[F[_]](t: Fix[F]) = t.unFix
+    def project[F[_]: Functor](t: Fix[F]) = t.unFix
   }
 
   implicit val fixCorecursive: Corecursive[Fix] = new Corecursive[Fix] {
-    def embed[F[_]](t: F[Fix[F]]) = Fix(t)
+    def embed[F[_]: Functor](t: F[Fix[F]]) = Fix(t)
   }
 
   implicit def fixRenderTree[F[_]](implicit RF: RenderTree ~> λ[α => RenderTree[F[α]]]):

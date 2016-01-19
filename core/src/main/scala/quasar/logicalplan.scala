@@ -190,7 +190,7 @@ object LogicalPlan {
           case _                    => b
         }
 
-      def subst[T[_[_]]: Recursive, A](t: LogicalPlan[T[LogicalPlan]], b: G[A]): Option[A] =
+      def subst[T[_[_]], A](t: LogicalPlan[T[LogicalPlan]], b: G[A]): Option[A] =
         t match {
           case FreeF(symbol) => b.get(symbol)
           case _             => None

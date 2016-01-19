@@ -49,7 +49,8 @@ import simulacrum.{typeclass, op}
   * * `transCata` – akin to Fixplate’s `restructure`
   */
 @typeclass trait FunctorT[T[_[_]]] {
-  @op("∘") def map[F[_], G[_]](t: T[F])(f: F[T[F]] => G[T[G]]): T[G]
+  @op("∘") def map[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[G]]):
+      T[G]
 
   def transCataT[F[_]: Functor](t: T[F])(f: T[F] => T[F]): T[F] =
     f(map(t)(_.map(transCataT(_)(f))))
@@ -57,27 +58,27 @@ import simulacrum.{typeclass, op}
   def transAnaT[F[_]: Functor](t: T[F])(f: T[F] => T[F]): T[F] =
     map(f(t))(_.map(transAnaT(_)(f)))
 
-  def transCata[F[_]: Functor, G[_]](t: T[F])(f: F[T[G]] => G[T[G]]): T[G] =
+  def transCata[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[G]] => G[T[G]]): T[G] =
     map(t)(ft => f(ft.map(transCata(_)(f))))
 
-  def transAna[F[_], G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[F]]): T[G] =
+  def transAna[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[F]]): T[G] =
     map(t)(f(_).map(transAna(_)(f)))
 
-  def transPrepro[F[_]: Functor, G[_]](t: T[F])(f: F[T[G]] => G[T[G]])(g: F ~> F): T[G] =
+  def transPrepro[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[G]] => G[T[G]])(g: F ~> F): T[G] =
     map(t)(ft => f(g(ft.map(transPrepro(_)(f)(g)))))
 
-  def transPostpro[F[_], G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[F]])(g: G ~> G): T[G] =
+  def transPostpro[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[F]])(g: G ~> G): T[G] =
     map(t)(ft => g(f(ft).map(transPostpro(_)(f)(g))))
 
-  def transPara[F[_]: Functor, G[_]](t: T[F])(f: F[(T[F], T[G])] => G[T[G]]):
+  def transPara[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[(T[F], T[G])] => G[T[G]]):
       T[G] =
     map(t)(ft => f(ft.map(tf => (tf, transPara(tf)(f)))))
 
-  def transApo[F[_], G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[G] \/ T[F]]):
+  def transApo[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[G] \/ T[F]]):
       T[G] =
     map(t)(f(_).map(_.fold(ι, transApo(_)(f))))
 
-  def translate[F[_], G[_]: Functor](t: T[F])(f: F ~> G): T[G] =
+  def translate[F[_]: Functor, G[_]: Functor](t: T[F])(f: F ~> G): T[G] =
     map(t)(f(_).map(translate(_)(f)))
 
   def topDownCata[F[_]: Functor, A](t: T[F], a: A)(f: (A, T[F]) => (A, T[F])):
@@ -90,7 +91,7 @@ import simulacrum.{typeclass, op}
 object FunctorT {
   implicit def recCorecFunctorT[T[_[_]]: Recursive: Corecursive]: FunctorT[T] =
     new FunctorT[T] {
-      def map[F[_], G[_]](t: T[F])(f: F[T[F]] => G[T[G]]) =
+      def map[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[G]]) =
         Corecursive[T].embed(f(Recursive[T].project(t)))
     }
 }
