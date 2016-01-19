@@ -23,9 +23,10 @@ import scalaz._, Scalaz._
 import simulacrum.typeclass
 
 @typeclass trait TraverseT[T[_[_]]] extends FunctorT[T] {
-  def traverse[M[_]: Applicative, F[_], G[_]](t: T[F])(f: F[T[F]] => M[G[T[G]]]): M[T[G]]
+  def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => M[G[T[G]]]):
+      M[T[G]]
 
-  def map[F[_], G[_]](t: T[F])(f: F[T[F]] => G[T[G]]) = traverse[Id, F, G](t)(f)
+  def map[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[G]]) = traverse[Id, F, G](t)(f)
 
   def transCataTM[F[_]: Traverse, M[_]: Monad](t: T[F])(f: T[F] => M[T[F]]): M[T[F]] =
     traverse(t)(_.traverse(transCataTM(_)(f))).flatMap(f)
@@ -34,10 +35,10 @@ import simulacrum.typeclass
       M[T[F]] =
     f(t).flatMap(traverse(_)(_.traverse(transAnaTM(_)(f))))
 
-  def transCataM[M[_]: Monad, F[_]: Traverse, G[_]](t: T[F])(f: F[T[G]] => M[G[T[G]]]): M[T[G]] =
+  def transCataM[M[_]: Monad, F[_]: Traverse, G[_]: Functor](t: T[F])(f: F[T[G]] => M[G[T[G]]]): M[T[G]] =
     traverse(t)(_.traverse(transCataM(_)(f)).flatMap(f))
 
-  def transAnaM[M[_]: Monad, F[_], G[_]: Traverse](t: T[F])(f: F[T[F]] => M[G[T[F]]]): M[T[G]] =
+  def transAnaM[M[_]: Monad, F[_]: Functor, G[_]: Traverse](t: T[F])(f: F[T[F]] => M[G[T[F]]]): M[T[G]] =
     traverse(t)(f(_).flatMap(_.traverse(transAnaM(_)(f))))
 
   def topDownCataM[F[_]: Traverse, M[_]: Monad, A](
@@ -52,8 +53,8 @@ import simulacrum.typeclass
 object TraverseT {
   implicit def recCorecTraverseT[T[_[_]]: Recursive: Corecursive]: TraverseT[T] =
     new TraverseT[T] {
-      def traverse[M[_]: Applicative, F[_], G[_]](t: T[F])(f: F[T[F]] => M[G[T[G]]]) =
-        f(Recursive[T].project(t)).map(Corecursive[T].embed)
+      def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => M[G[T[G]]]) =
+        f(Recursive[T].project(t)).map(Corecursive[T].embed[G])
     }
 
   /** Import from this object instead of `ops._` to get just ops for the

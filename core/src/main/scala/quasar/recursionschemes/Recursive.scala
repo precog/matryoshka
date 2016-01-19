@@ -24,13 +24,13 @@ import simulacrum.typeclass
 
 /** Folds for recursive data types. */
 @typeclass trait Recursive[T[_[_]]] {
-  def project[F[_]](t: T[F]): F[T[F]]
+  def project[F[_]: Functor](t: T[F]): F[T[F]]
 
   def cata[F[_]: Functor, A](t: T[F])(f: F[A] => A): A =
     f(project(t).map(cata(_)(f)))
 
   def cataM[F[_]: Traverse, M[_]: Monad, A](t: T[F])(f: F[A] => M[A]): M[A] =
-    project(t).map(cataM(_)(f)).sequence.flatMap(f)
+    project(t).traverse(cataM(_)(f)).flatMap(f)
 
   def gcata[F[_]: Functor, W[_]: Comonad, A](
     t: T[F])(
@@ -46,7 +46,7 @@ import simulacrum.typeclass
 
   def paraM[F[_]: Traverse, M[_]: Monad, A](t: T[F])(f: F[(T[F], A)] => M[A]):
       M[A] =
-    project(t).map(v => paraM(v)(f).map(v -> _)).sequence.flatMap(f)
+    project(t).traverse(v => paraM(v)(f).map(v -> _)).flatMap(f)
 
   def gpara[F[_]: Functor, W[_]: Comonad, A](
     t: T[F])(
@@ -93,7 +93,7 @@ import simulacrum.typeclass
   def boundCata[F[_]: Functor, A](t: T[F])(f: F[A] => A)(implicit B: Binder[F]): A = {
     def loop(t: F[T[F]], b: B.G[A]): A = {
       val newB = B.bindings(t, b)(loop(_, b))(this)
-      B.subst(t, newB)(this).getOrElse(f(t.map(x => loop(project(x), newB))))
+      B.subst(t, newB).getOrElse(f(t.map(x => loop(project(x), newB))))
     }
 
     loop(project(t), B.initial)
@@ -102,7 +102,7 @@ import simulacrum.typeclass
   def boundParaM[M[_]: Monad, F[_]: Traverse, A](t: T[F])(f: F[(T[F], A)] => M[A])(implicit B: Binder[F]): M[A] = {
     def loop(t: F[T[F]], b: B.G[A]): M[A] = {
       Applicative[M].sequence(B.bindings[T, M[A]](t, B.G.map(b)(_.point[M]))(s => loop(s, b))(this))(B.G).flatMap { newB =>
-        B.subst(t, newB)(this).cata[M[A]](
+        B.subst(t, newB).cata[M[A]](
           _.point[M],
           t.traverse(x => loop(project(x), newB).map((x, _))).flatMap(f))
       }
@@ -117,20 +117,19 @@ import simulacrum.typeclass
   def boundPara[F[_]: Functor, A](t: T[F])(f: F[(T[F], A)] => A)(implicit B: Binder[F]): A = {
     def loop(t: F[T[F]], b: B.G[A]): A = {
       val newB = B.bindings(t, b)(loop(_, b))(this)
-      B.subst(t, newB)(this).getOrElse(f(t.map(x => (x, loop(project(x), newB)))))
+      B.subst(t, newB).getOrElse(f(t.map(x => (x, loop(project(x), newB)))))
     }
 
     loop(project(t), B.initial)
   }
 
+  def isLeaf[F[_]: Functor: Foldable](t: T[F]): Boolean =
+    !Tag.unwrap(project[F](t).foldMap(κ(true.disjunction)))
 
-  def isLeaf[F[_]: Foldable](t: T[F]): Boolean =
-    !Tag.unwrap(project(t).foldMap(κ(true.disjunction)))
+  def children[F[_]: Functor: Foldable](t: T[F]): List[T[F]] =
+    project[F](t).foldMap(_ :: Nil)
 
-  def children[F[_]: Foldable](t: T[F]): List[T[F]] =
-    project(t).foldMap(_ :: Nil)
-
-  def universe[F[_]: Foldable](t: T[F]): List[T[F]] =
+  def universe[F[_]: Functor: Foldable](t: T[F]): List[T[F]] =
     t :: children(t).flatMap(universe[F])
 
   def topDownCataM[F[_]: Traverse, M[_]: Monad, A](
@@ -148,29 +147,29 @@ import simulacrum.typeclass
   }
 
   // Foldable
-  def all[F[_]: Foldable](t: T[F])(p: T[F] ⇒ Boolean): Boolean =
+  def all[F[_]: Functor: Foldable](t: T[F])(p: T[F] ⇒ Boolean): Boolean =
     Tag.unwrap(foldMap(t)(p(_).conjunction))
 
-  def any[F[_]: Foldable](t: T[F])(p: T[F] ⇒ Boolean): Boolean =
+  def any[F[_]: Functor: Foldable](t: T[F])(p: T[F] ⇒ Boolean): Boolean =
     Tag.unwrap(foldMap(t)(p(_).disjunction))
 
-  def collect[F[_]: Foldable, B](t: T[F])(pf: PartialFunction[T[F], B]):
+  def collect[F[_]: Functor: Foldable, B](t: T[F])(pf: PartialFunction[T[F], B]):
       List[B] =
     foldMap(t)(pf.lift(_).toList)
 
-  def contains[F[_]: EqualF: Foldable](t: T[F], c: T[F])(implicit T: Equal[T[F]]):
+  def contains[F[_]: EqualF: Functor: Foldable](t: T[F], c: T[F])(implicit T: Equal[T[F]]):
       Boolean =
     any(t)(_ ≟ c)
 
-  def foldMap[F[_]: Foldable, Z: Monoid](t: T[F])(f: T[F] => Z): Z =
+  def foldMap[F[_]: Functor: Foldable, Z: Monoid](t: T[F])(f: T[F] => Z): Z =
     foldMapM[F, Free.Trampoline, Z](t)(f(_).pure[Free.Trampoline]).run
 
-  def foldMapM[F[_]: Foldable, M[_]: Monad, Z: Monoid](t: T[F])(f: T[F] => M[Z]):
+  def foldMapM[F[_]: Functor: Foldable, M[_]: Monad, Z: Monoid](t: T[F])(f: T[F] => M[Z]):
       M[Z] = {
     def loop(z0: Z, term: T[F]): M[Z] = {
       for {
         z1 <- f(term)
-        z2 <- project(term).foldLeftM(z0 ⊹ z1)(loop(_, _))
+        z2 <- project[F](term).foldLeftM(z0 ⊹ z1)(loop(_, _))
       } yield z2
     }
 
@@ -178,5 +177,5 @@ import simulacrum.typeclass
   }
 
   def convertTo[F[_]: Functor, R[_[_]]: Corecursive](t: T[F]): R[F] =
-    Corecursive[R].embed(project(t).map(convertTo[F, R]))
+    cata(t)(Corecursive[R].embed[F])
 }

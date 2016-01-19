@@ -25,13 +25,13 @@ import simulacrum.typeclass
 
 /** Unfolds for corecursive data types. */
 @typeclass trait Corecursive[T[_[_]]] {
-  def embed[F[_]](t: F[T[F]]): T[F]
+  def embed[F[_]: Functor](t: F[T[F]]): T[F]
 
   def ana[F[_]: Functor, A](a: A)(f: A => F[A]): T[F] =
     embed(f(a).map(ana(_)(f)))
 
   def anaM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[A]]): M[T[F]] =
-    f(a).flatMap(_.map(anaM(_)(f)).sequence).map(embed(_))
+    f(a).flatMap(_.traverse(anaM(_)(f))).map(embed(_))
 
   def gana[F[_]: Functor, M[_], A](
     a: A)(
@@ -70,7 +70,7 @@ import simulacrum.typeclass
   def futuM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[Free[F, A]]]):
       M[T[F]] = {
     def loop(free: Free[F, A]): M[T[F]] =
-      free.fold(futuM(_)(f), _.traverse(loop).map(embed))
-    f(a).flatMap(_.traverse(loop)).map(embed)
+      free.fold(futuM(_)(f), _.traverse(loop).map(embed[F]))
+    f(a).flatMap(_.traverse(loop)).map(embed[F])
   }
 }
