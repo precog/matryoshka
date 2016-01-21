@@ -279,9 +279,9 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "zipAlgebras" should {
       "both eval and find all constants" in {
-        mul(num(5), num(2)).cata(zipAlgebras[Exp, Id](eval, findConstants)) must
+        mul(num(5), num(2)).cata(AlgebraZip[Exp].zip(eval, findConstants)) must
           equal((10, List(5, 2)))
-        mul(num(5), num(2)).convertTo[Mu].cata(zipAlgebras[Exp, Id](eval, findConstants)) must
+        mul(num(5), num(2)).convertTo[Mu].cata(AlgebraZip[Exp].zip(eval, findConstants)) must
           equal((10, List(5, 2)))
       }
     }
@@ -441,8 +441,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "hylo" should {
       "factor and then evaluate" ! prop { (i: Int) =>
-
-        hylo(i)(eval, extractFactors) must equal(i)
+        i.hylo(eval, extractFactors) must equal(i)
       }
     }
 
@@ -610,20 +609,6 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       "not find child with bad index" in {
         project(-1, mul(num(0), num(1)).unFix) must beNone
         project(2, mul(num(0), num(1)).unFix) must beNone
-      }
-    }
-
-    "sizeF" should {
-      "be 0 for flat" in {
-        sizeF[Exp, Unit](Num(0)) must equal(0)
-      }
-
-      "be 2 for simple expr" in {
-        sizeF(mul(num(0), num(1)).unFix) must equal(2)
-      }
-
-      "be non-recursive" in {
-        sizeF(mul(num(0), mul(num(1), num(2))).unFix) must equal(2)
       }
     }
   }

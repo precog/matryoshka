@@ -22,17 +22,38 @@ import quasar.recursionschemes.Recursive.ops._
 
 import scala.Function0
 
-import scalaz.{Tree => ZTree, Node => _, _}, Id.Id, Scalaz._
+import scalaz._, Scalaz._
 import simulacrum.typeclass
 
 /** Generalized folds, unfolds, and refolds. */
 package object recursionschemes extends CofreeInstances with FreeInstances {
 
-  def lambek[T[_[_]]: Corecursive: Recursive, F[_]: Functor](tf: T[F]): F[T[F]] =
+  def lambek[T[_[_]]: Corecursive: Recursive, F[_]: Functor](tf: T[F]):
+      F[T[F]] =
     tf.cata[F[T[F]]](_.map(Corecursive[T].embed[F]))
 
-  def colambek[T[_[_]]: Corecursive: Recursive, F[_]: Functor](ft: F[T[F]]): T[F] =
+  def colambek[T[_[_]]: Corecursive: Recursive, F[_]: Functor](ft: F[T[F]]):
+      T[F] =
     Corecursive[T].ana(ft)(_.map(_.project))
+
+  type GAlgebraM[W[_], M[_], F[_], A] =                    F[W[A]] => M[A]
+  type GAlgebra[W[_], F[_], A] = GAlgebraM[W, Id, F, A] // F[W[A]] => A
+  type AlgebraM[M[_], F[_], A] = GAlgebraM[Id, M, F, A] // F[A]    => M[A]
+  type Algebra[F[_], A]        = GAlgebra[Id, F, A]     // F[A]    => A
+
+  type GCoalgebraM[N[_], M[_], F[_], A] =                      A => M[F[N[A]]]
+  type GCoalgebra[N[_], F[_], A] = GCoalgebraM[N, Id, F, A] // A => N[F[A]]
+  type CoalgebraM[M[_], F[_], A] = GCoalgebraM[Id, M, F, A] // A => F[M[A]]
+  type Coalgebra[F[_], A]        = GCoalgebra[Id, F, A]     // A => F[A]
+
+  type ElgotAlgebraM[M[_], F[_], A, B] = A => M[B \/ F[A]]
+  type ElgotAlgebra[F[_], A, B] = ElgotAlgebraM[Id, F, A, B] // A => B \/ F[A]
+
+  type CoelgotAlgebraM[M[_], F[_], A, B] = (A, F[B]) => M[B]
+  type CoelgotAlgebra[F[_], A, B] = CoelgotAlgebraM[Id, F, A, B] // (A, F[B]) => B
+
+  /** A NaturalTransformation that sequences two types */
+  type DistributiveLaw[F[_], G[_]] = λ[α => F[G[α]]] ~> λ[α => G[F[α]]]
 
   def cofCataM[S[_]: Traverse, M[_]: Monad, A, B](t: Cofree[S, A])(f: (A, S[B]) => M[B]): M[B] =
     t.tail.traverse(cofCataM(_)(f)).flatMap(f(t.head, _))
@@ -43,19 +64,24 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
       t.tail.traverseU(cs => self(cs)(f).map((Recursive[Cofree[?[_], A]].convertTo[S, T](cs), _))).flatMap(f(t.head, _))
   }
 
-  // refolds
-
+  /** Composition of an anamorphism and a catamorphism that avoids building the
+    * intermediate recursive data structure.
+    */
   def hylo[F[_]: Functor, A, B](a: A)(f: F[B] => B, g: A => F[A]): B =
     f(g(a).map(hylo(_)(f, g)))
 
+  /** A Kleisli hylomorphism. */
   def hyloM[M[_]: Monad, F[_]: Traverse, A, B](a: A)(f: F[B] => M[B], g: A => M[F[A]]):
       M[B] =
     g(a).flatMap(_.traverse(hyloM(_)(f, g)).flatMap(f))
 
+  /** A generalized version of a hylomorphism that composes any coalgebra and
+    * algebra.
+    */
   def ghylo[F[_]: Functor, W[_]: Comonad, M[_], A, B](
     a: A)(
-    w: λ[α => F[W[α]]] ~> λ[α => W[F[α]]],
-    m: λ[α => M[F[α]]] ~> λ[α => F[M[α]]],
+    w: DistributiveLaw[F, W],
+    m: DistributiveLaw[M, F],
     f: F[W[B]] => B,
     g: A => F[M[A]])(
     implicit M: Monad[M]):
@@ -64,10 +90,12 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
     h(a.point[M]).copoint
   }
 
+  /** Similar to a hylomorphism, this composes a futumorphism and a
+    * histomorphism.
+    */
   def chrono[F[_]: Functor, A, B](
     a: A)(
-    g: F[Cofree[F, B]] => B,
-    f: A => F[Free[F, A]]):
+    g: F[Cofree[F, B]] => B, f: A => F[Free[F, A]]):
       B =
     ghylo[F, Cofree[F, ?], Free[F, ?], A, B](a)(distHisto, distFutu, g, f)
 
@@ -91,30 +119,27 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
     }
   }
 
-  // distributive algebras
-
   def distPara[T[_[_]], F[_]: Functor](implicit T: Corecursive[T]):
-      λ[α => F[(T[F], α)]] ~> λ[α => (T[F], F[α])] =
+      DistributiveLaw[F, (T[F], ?)] =
     distZygo(T.embed[F])
 
   def distParaT[T[_[_]], F[_]: Functor, W[_]: Comonad](
-    t: λ[α => F[W[α]]] ~> λ[α => W[F[α]]])(
+    t: DistributiveLaw[F, W])(
     implicit T: Corecursive[T]):
-      (λ[α => F[EnvT[T[F], W, α]]] ~> λ[α => EnvT[T[F], W, F[α]]]) =
+      DistributiveLaw[F, EnvT[T[F], W, ?]] =
     distZygoT(T.embed[F], t)
 
-  def distCata[F[_]]: λ[α => F[Id[α]]] ~> λ[α => Id[F[α]]] =
-    NaturalTransformation.refl
+  def distCata[F[_]]: DistributiveLaw[F, Id] = NaturalTransformation.refl
 
   def distZygo[F[_]: Functor, B](g: F[B] => B) =
-    new (λ[α => F[(B, α)]] ~> λ[α => (B,  F[α])]) {
+    new DistributiveLaw[F, (B, ?)] {
       def apply[α](m: F[(B, α)]) = (g(m.map(_._1)), m.map(_._2))
     }
 
   def distZygoT[F[_], W[_]: Comonad, B](
-    g: F[B] => B, k: λ[α => F[W[α]]] ~> λ[α => W[F[α]]])(
+    g: F[B] => B, k: DistributiveLaw[F, W])(
     implicit F: Functor[F]) =
-    new (λ[α => F[EnvT[B, W, α]]] ~> λ[α => EnvT[B, W, F[α]]]) {
+    new DistributiveLaw[F, EnvT[B, W, ?]] {
       def apply[α](fe: F[EnvT[B, W, α]]) =
         EnvT((
           g(F.lift[EnvT[B, W, α], B](_.ask)(fe)),
@@ -122,35 +147,33 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
     }
 
   def distHisto[F[_]: Functor] =
-    new (λ[α => F[Cofree[F, α]]] ~> λ[α => Cofree[F, F[α]]]) {
+    new DistributiveLaw[F, Cofree[F, ?]] {
       def apply[α](m: F[Cofree[F, α]]) =
         distGHisto[F, F](NaturalTransformation.refl[λ[α => F[F[α]]]]).apply(m)
     }
 
   def distGHisto[F[_],  H[_]](
-    k: λ[α => F[H[α]]] ~> λ[α => H[F[α]]])(
+    k: DistributiveLaw[F, H])(
     implicit F: Functor[F], H: Functor[H]) =
-    new (λ[α => F[Cofree[H, α]]] ~> λ[α => Cofree[H, F[α]]]) {
+    new DistributiveLaw[F, Cofree[H, ?]] {
       def apply[α](m: F[Cofree[H, α]]) =
         Cofree.unfold(m)(as => (
           F.lift[Cofree[H, α], α](_.copure)(as),
           k(F.lift[Cofree[H, α], H[Cofree[H, α]]](_.tail)(as))))
     }
 
-  def distAna[F[_]: Functor, A]: λ[α => Id[F[α]]] ~> λ[α => F[Id[α]]] =
-    NaturalTransformation.refl
+  def distAna[F[_]]: DistributiveLaw[Id, F] = NaturalTransformation.refl
 
   def distFutu[F[_]: Functor] =
-    new (λ[α => Free[F, F[α]]] ~> λ[α => F[Free[F, α]]]) {
+    new DistributiveLaw[Free[F, ?], F] {
       def apply[α](m: Free[F, F[α]]) =
         distGFutu[F, F](NaturalTransformation.refl[λ[α => F[F[α]]]]).apply(m)
     }
 
   def distGFutu[H[_], F[_]](
-    k: λ[α => H[F[α]]] ~> λ[α => F[H[α]]])(
-    implicit H: Functor[H], F: Functor[F]):
-      (λ[α => Free[H, F[α]]] ~> λ[α => F[Free[H, α]]]) =
-    new (λ[α => Free[H, F[α]]] ~> λ[α => F[Free[H, α]]]) {
+    k: DistributiveLaw[H, F])(
+    implicit H: Functor[H], F: Functor[F]): DistributiveLaw[Free[H, ?], F] =
+    new DistributiveLaw[Free[H, ?], F] {
       def apply[α](m: Free[H, F[α]]) =
         m.fold(
           F.lift(Free.point[H, α](_)),
@@ -185,8 +208,6 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
   def project[F[_]: Foldable, A](index: Int, fa: F[A]): Option[A] =
    if (index < 0) None
    else fa.toList.drop(index).headOption
-
-  def sizeF[F[_]: Foldable, A](fa: F[A]): Int = fa.foldLeft(0)((a, _) => a + 1)
 
   /** Turns any F-algebra, into an identical one that attributes the tree with
     * the results for each node. */
@@ -236,25 +257,23 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
       f(_).map(_.point[M])
   }
 
-  def zipAlgebras[F[_], W[_]] = new ZipAlgebrasPartiallyApplied[F, W]
-  final class ZipAlgebrasPartiallyApplied[F[_], W[_]] {
-    def apply[A, B](f: F[W[A]] => A, g: F[W[B]] => B)(implicit F: Functor[F], W: Functor[W]):
-        F[W[(A, B)]] => (A, B) =
-      node => (f(node.map(_.map(_._1))), g(node.map(_.map(_._2))))
-  }
+  implicit def GAlgebraZip[W[_]: Functor, F[_]: Functor]:
+      Zip[GAlgebra[W, F, ?]] =
+    new Zip[GAlgebra[W, F, ?]] {
+      def zip[A, B](a: ⇒ GAlgebra[W, F, A], b: ⇒ GAlgebra[W, F, B]) =
+        node => (a(node.map(_.map(_._1))), b(node.map(_.map(_._2))))
+    }
+  implicit def AlgebraZip[F[_]: Functor] = GAlgebraZip[Id, F]
 
-  // NB: There are potentially two versions of this function – one as below, and
-  //     one where the annotation parameter should become a tuple, too.
-  def zipCoelgot[F[_]: Unzip, A, B, C](f: (A, F[B]) => B, g: (A, F[C]) => C):
-      (A, F[(B, C)]) => (B, C) =
-    (ann, node) => node.unfzip.bimap(f(ann, _), g(ann, _))
-
-  def zipCoelgotM[M[_]] = new ZipCoelgotMPartiallyApplied[M]
-  final class ZipCoelgotMPartiallyApplied[M[_]] {
-    def apply[F[_]: Functor, A, B, C](f: (A, F[B]) => M[B], g: (A, F[C]) => M[C])(implicit M: Applicative[M]):
-      (A, F[(B, C)]) => M[(B, C)] =
-    (ann, node) => Bitraverse[(?, ?)].bisequence((f(ann, node.map(_._1)), g(ann, node.map(_._2))))
-  }
+  implicit def CoelgotAlgebraMZip[M[_]: Applicative, F[_]: Functor, C]:
+      Zip[CoelgotAlgebraM[M, F, C, ?]] =
+    new Zip[CoelgotAlgebraM[M, F, C, ?]] {
+      def zip[A, B](a: ⇒ CoelgotAlgebraM[M, F, C, A], b: ⇒ CoelgotAlgebraM[M, F, C, B]) =
+        (ann, node) => Bitraverse[(?, ?)].bisequence((a(ann, node.map(_._1)), b(ann, node.map(_._2))))
+    }
+  implicit def CoelgotAlgebraZip[F[_]: Functor, C] =
+    CoelgotAlgebraMZip[Id, F, C]
+    // (ann, node) => node.unfzip.bimap(f(ann, _), g(ann, _))
 
   /** Repeatedly applies the function to the result as long as it returns Some.
     * Finally returns the last non-None value (which may be the initial input).
@@ -267,31 +286,15 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
     */
   def once[A](f: A => Option[A]): A => A = expr => f(expr).getOrElse(expr)
 
+  /** Count the instinces of `form` in the structure.
+    */
   def count[T[_[_]]: Recursive, F[_]: Functor: Foldable](form: T[F]): F[(T[F], Int)] => Int =
     e => e.foldRight(if (e.map(_._1) == form.project) 1 else 0)(_._2 + _)
 
-  // Inherited: inherit, inherit2, inherit3, inheritM, inheritM_
-  def inherit[F[_]: Functor, A, B](tree: Cofree[F, A], b: B)(f: (B, Cofree[F, A]) => B): Cofree[F, B] = {
-    val b2 = f(b, tree)
-    Cofree[F, B](b2, tree.tail.map(inherit(_, b2)(f)))
-  }
-
-  // TODO: Top down folds
-
-  def transform[F[_]: Functor, A](attrfa: Cofree[F, A])(f: A => Option[Cofree[F, A]]): Cofree[F, A] = {
-    val a = attrfa.head
-    f(a).map(transform(_)(f))
-      .getOrElse(Cofree(a, attrfa.tail.map(transform(_)(f))))
-  }
-
-  def swapTransform[F[_]: Functor, A, B](attrfa: Cofree[F, A])(f: A => B \/ Cofree[F, B]): Cofree[F, B] =
-    f(attrfa.head).fold(Cofree(_, attrfa.tail.map(swapTransform(_)(f))), ι)
-
-  /**
-   * Zips two attributed nodes together. This is unsafe in the sense that the
-   * user is responsible for ensuring both left and right parameters have the
-   * same shape (i.e. represent the same tree).
-   */
+  /** Zips two attributed nodes together. This is unsafe in the sense that the
+    * user is responsible for ensuring both left and right parameters have the
+    * same shape (i.e. represent the same tree).
+    */
   def unsafeZip2[F[_]: Traverse, A, B](left: Cofree[F, A], right: Cofree[F, B]):
       Cofree[F, (A, B)] = {
     val lunAnn: F[Cofree[F, A]] = left.tail
@@ -319,11 +322,10 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
     def subst[T[_[_]], A](t: F[T[F]], b: G[A]): Option[A]
   }
 
-  /**
-   Annotate (the original nodes of) a tree, by applying a function to the
-   "bound" nodes. The function is also applied to the bindings themselves
-   to determine their annotation.
-   */
+  /** Annotate (the original nodes of) a tree, by applying a function to the
+    * "bound" nodes. The function is also applied to the bindings themselves
+    * to determine their annotation.
+    */
   def boundAttribute[F[_]: Functor, A](t: Fix[F])(f: Fix[F] => A)(implicit B: Binder[F]): Cofree[F, A] = {
     def loop(t: F[Fix[F]], b: B.G[(Fix[F], Cofree[F, A])]): (Fix[F], Cofree[F, A]) = {
       val newB = B.bindings(t, b)(loop(_, b))
@@ -336,15 +338,73 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
     loop(t.unFix, B.initial)._2
   }
 
-  sealed class IdOps[T[_[_]], A](self: A)(implicit T: Corecursive[T]) {
+  sealed class IdOps[A](self: A) {
+    def hylo[F[_]: Functor, B](f: F[B] => B, g: A => F[A]): B =
+      recursionschemes.hylo(self)(f, g)
+    def hyloM[M[_]: Monad, F[_]: Traverse, B](f: F[B] => M[B], g: A => M[F[A]]):
+        M[B] =
+      recursionschemes.hyloM(self)(f, g)
+    def ghylo[F[_]: Functor, W[_]: Comonad, M[_]: Monad, B](
+      w: DistributiveLaw[F, W],
+      m: DistributiveLaw[M, F],
+      f: F[W[B]] => B,
+      g: A => F[M[A]]):
+        B =
+      recursionschemes.ghylo(self)(w, m, f, g)
+
+    def chrono[F[_]: Functor, B](
+      g: F[Cofree[F, B]] => B, f: A => F[Free[F, A]]):
+        B =
+      recursionschemes.chrono(self)(g, f)
+
+    def elgot[F[_]: Functor, B](φ: F[B] => B, ψ: A => B \/ F[A]): B =
+      recursionschemes.elgot(self)(φ, ψ)
+
+    def coelgot[F[_]: Functor, B](φ: (A, F[B]) => B, ψ: A => F[A]): B =
+      recursionschemes.coelgot(self)(φ, ψ)
+    def coelgotM[M[_]] = new CoelgotMPartiallyApplied[M]
+    final class CoelgotMPartiallyApplied[M[_]] {
+      def apply[F[_]: Traverse, B](φ: (A, F[B]) => M[B], ψ: A => M[F[A]])(implicit M: Monad[M]):
+          M[B] =
+        recursionschemes.coelgotM[M].apply[F, A, B](self)(φ, ψ)
+    }
+
+    // def ana[T[_[_]], F[_]: Functor](f: A => F[A])(implicit T: Corecursive[T]): T[F] =
+    //   T.ana(self)(f)
+    // def anaM[T[_[_]], F[_]: Traverse, M[_]: Monad](f: A => M[F[A]])(implicit T: Corecursive[T]): M[T[F]] =
+    //   T.anaM(self)(f)
+    // def gana[T[_[_]], F[_]: Functor, M[_]: Monad](
+    //   k: DistributiveLaw[M, F], f: A => F[M[A]])(
+    //   implicit T: Corecursive[T]):
+    //     T[F] =
+    //   T.gana(self)(k, f)
+    // def apo[T[_[_]], F[_]: Functor](f: A => F[T[F] \/ A])(implicit T: Corecursive[T]): T[F] =
+    //   T.apo(self)(f)
+    // def apoM[T[_[_]], F[_]: Traverse, M[_]: Monad](f: A => M[F[T[F] \/ A]])(implicit T: Corecursive[T]): M[T[F]] =
+    //   T.apoM(self)(f)
+    // def postpro[T[_[_]]: Recursive, F[_]: Functor](e: F ~> F, g: A => F[A])(implicit T: Corecursive[T]): T[F] =
+    //   T.postpro(self)(e, g)
+    // def gpostpro[T[_[_]]: Recursive, F[_]: Functor, M[_]: Monad](
+    //   k: DistributiveLaw[M, F], e: F ~> F, g: A => F[M[A]])(
+    //   implicit T: Corecursive[T]):
+    //       T[F] =
+    //   T.gpostpro(self)(k, e, g)
+    // def futu[T[_[_]], F[_]: Functor](f: A => F[Free[F, A]])(implicit T: Corecursive[T]): T[F] =
+    //   T.futu(self)(f)
+    // def futuM[T[_[_]], F[_]: Traverse, M[_]: Monad](f: A => M[F[Free[F, A]]])(implicit T: Corecursive[T]):
+    //     M[T[F]] =
+    //   T.futuM(self)(f)
+  }
+  implicit def ToIdOps[A](a: A): IdOps[A] = new IdOps[A](a)
+
+  sealed class CorecursiveIdOps[T[_[_]], A](self: A)(implicit T: Corecursive[T]) {
     def ana[F[_]: Functor](f: A => F[A]): T[F] =
       T.ana(self)(f)
     def anaM[F[_]: Traverse, M[_]: Monad](f: A => M[F[A]]): M[T[F]] =
       T.anaM(self)(f)
-    def gana[F[_]: Functor, M[_]](
-        k: λ[α => M[F[α]]] ~> λ[α => F[M[α]]], f: A => F[M[A]])(
-        implicit M: Monad[M]):
-          T[F] =
+    def gana[F[_]: Functor, M[_]: Monad](
+      k: DistributiveLaw[M, F], f: A => F[M[A]]):
+        T[F] =
       T.gana(self)(k, f)
     def apo[F[_]: Functor](f: A => F[T[F] \/ A]): T[F] =
       T.apo(self)(f)
@@ -353,7 +413,7 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
     def postpro[F[_]: Functor](e: F ~> F, g: A => F[A])(implicit R: Recursive[T]): T[F] =
       T.postpro(self)(e, g)
     def gpostpro[F[_]: Functor, M[_]](
-        k: λ[α => M[F[α]]] ~> λ[α => F[M[α]]], e: F ~> F, g: A => F[M[A]])(
+        k: DistributiveLaw[M, F], e: F ~> F, g: A => F[M[A]])(
         implicit R: Recursive[T], M: Monad[M]):
           T[F] =
       T.gpostpro(self)(k, e, g)
@@ -363,5 +423,6 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
         M[T[F]] =
       T.futuM(self)(f)
   }
-  implicit def ToFixIdOps[A](a: A): IdOps[Fix, A] = new IdOps[Fix, A](a)
+  implicit def ToFixIdOps[A](a: A): CorecursiveIdOps[Fix, A] =
+    new CorecursiveIdOps[Fix, A](a)
 }

@@ -357,13 +357,12 @@ trait SemanticAnalysis {
   def scopeTables(a: (TableScope, Expr)) = (scopeTablesƒ).tupled(a).disjunction
   def addAnnotations(a: (TableScope, Expr), node: ExprF[Cofree[ExprF, Annotations]]) =
     attributeCoelgotM(
-      zipCoelgotM(synthCoEƒ, inferProvenanceƒ)).apply(a._1, node).disjunction
+      CoelgotAlgebraMZip[ValidSem, ExprF, TableScope].zip(synthCoEƒ, inferProvenanceƒ)).apply(a._1, node).disjunction
 
   // NB: projectSortKeys >>> (identifySynthetics &&& (scopeTables >>> inferProvenance))
   def AllPhases(expr: Expr) =
-    coelgotM[NonEmptyList[SemanticError] \/ ?](
-      (TableScope(Map()), projectSortKeys(expr)))(
-      addAnnotations, scopeTables)
+    (TableScope(Map()), projectSortKeys(expr))
+      .coelgotM[NonEmptyList[SemanticError] \/ ?](addAnnotations, scopeTables)
 }
 
 object SemanticAnalysis extends SemanticAnalysis

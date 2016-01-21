@@ -1011,7 +1011,7 @@ object MongoDbPlanner extends Planner[Crystallized] with JsConversions {
 
   import Planner._
 
-  val annotateƒ = zipAlgebras[LogicalPlan, (Fix[LogicalPlan], ?)](
+  val annotateƒ = GAlgebraZip[(Fix[LogicalPlan], ?), LogicalPlan].zip(
     selectorƒ[OutputM[WorkflowBuilder]],
     generalizeAlgebra[(Fix[LogicalPlan], ?)](jsExprƒ[OutputM[WorkflowBuilder]]))
 
