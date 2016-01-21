@@ -21,10 +21,7 @@ import quasar.RenderTree
 
 import scalaz._
 
-final case class Fix[F[_]](unFix: F[Fix[F]]) {
-  override def toString = unFix.toString
-}
-
+final case class Fix[F[_]](unFix: F[Fix[F]])
 object Fix {
   implicit val fixRecursive: Recursive[Fix] = new Recursive[Fix] {
     def project[F[_]: Functor](t: Fix[F]) = t.unFix
