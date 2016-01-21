@@ -34,7 +34,7 @@ import simulacrum.typeclass
 
   def gcata[F[_]: Functor, W[_]: Comonad, A](
     t: T[F])(
-    k: λ[α => F[W[α]]] ~> λ[α => W[F[α]]], g: F[W[A]] => A):
+    k: DistributiveLaw[F, W], g: F[W[A]] => A):
       A = {
     def loop(t: T[F]): W[F[W[A]]] = k(project(t).map(loop(_).map(g).cojoin))
 
@@ -50,7 +50,7 @@ import simulacrum.typeclass
 
   def gpara[F[_]: Functor, W[_]: Comonad, A](
     t: T[F])(
-    e: λ[α => F[W[α]]] ~> λ[α => W[F[α]]], f: F[EnvT[T[F], W, A]] => A)(
+    e: DistributiveLaw[F, W], f: F[EnvT[T[F], W, A]] => A)(
     implicit T: Corecursive[T]):
       A =
     gzygo[F, W, A, T[F]](t)(T.embed(_), e, f)
@@ -60,9 +60,7 @@ import simulacrum.typeclass
 
   def gzygo[F[_]: Functor, W[_]: Comonad, A, B](
     t: T[F])(
-    f: F[B] => B,
-    w: λ[α => F[W[α]]] ~> λ[α => W[F[α]]],
-    g: F[EnvT[B, W, A]] => A):
+    f: F[B] => B, w: DistributiveLaw[F, W], g: F[EnvT[B, W, A]] => A):
       A =
     gcata[F, EnvT[B, W, ?], A](t)(distZygoT(f, w), g)
 
@@ -71,7 +69,7 @@ import simulacrum.typeclass
 
   def ghisto[F[_]: Functor, H[_]: Functor, A](
     t: T[F])(
-    g: λ[α => F[H[α]]] ~> λ[α => H[F[α]]], f: F[Cofree[H, A]] => A):
+    g: DistributiveLaw[F, H], f: F[Cofree[H, A]] => A):
       A =
     gcata[F, Cofree[H, ?], A](t)(distGHisto(g), f)
 

@@ -35,7 +35,7 @@ import simulacrum.typeclass
 
   def gana[F[_]: Functor, M[_], A](
     a: A)(
-    k: λ[α => M[F[α]]] ~> λ[α => F[M[α]]], f: A => F[M[A]])(
+    k: DistributiveLaw[M, F], f: A => F[M[A]])(
     implicit M: Monad[M]):
       T[F] = {
     def loop(x: M[F[M[A]]]): T[F] =
@@ -55,7 +55,7 @@ import simulacrum.typeclass
 
   def gpostpro[F[_]: Functor, M[_], A](
     a: A)(
-    k: λ[α => M[F[α]]] ~> λ[α => F[M[α]]], e: F ~> F, g: A => F[M[A]])(
+    k: DistributiveLaw[M, F], e: F ~> F, g: A => F[M[A]])(
     implicit T: Recursive[T], M: Monad[M]):
       T[F] = {
     def loop(ma: M[A]): T[F] =
