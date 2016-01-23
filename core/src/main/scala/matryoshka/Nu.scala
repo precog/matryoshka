@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-package quasar.recursionschemes
+package matryoshka
 
-import quasar.Predef._
-// import quasar.RenderTree
 import Recursive.ops._
 
 import scalaz._, Scalaz._
@@ -35,16 +33,6 @@ object Nu {
     //   def apply[A](fa: A): F[A] = f(fa)
     // }, a)
   }
-
-  // implicit def fixRenderTree[F[_]](implicit RF: RenderTree ~> λ[α => RenderTree[F[α]]]):
-  //     RenderTree[Fix[F]] =
-  //   new RenderTree[Fix[F]] {
-  //     def render(v: Fix[F]) =
-  //       RF(fixRenderTree[F]).render(v.unFix).retype {
-  //         case h :: t => ("Fix:" + h) :: t
-  //         case Nil    => "Fix" :: Nil
-  //       }
-  //   }
 
   // implicit def fixShow[F[_]](implicit F: Show ~> λ[α => Show[F[α]]]):
   //     Show[Fix[F]] =

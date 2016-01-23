@@ -1,9 +1,11 @@
-package quasar.recursionschemes
+package matryoshka
 
-import quasar.Predef._
-import quasar.{RenderTree, Terminal, NonTerminal}
-import quasar.fp._
 import Recursive.ops._, FunctorT.ops._, Fix._
+
+import java.lang.String
+import scala.{Function, Int, None, Option, Predef, Symbol, Unit},
+  Predef.{implicitly, wrapString}
+import scala.collection.immutable.{List, Map, Nil, ::}
 
 import org.scalacheck._
 import org.specs2.ScalaCheck
@@ -55,39 +57,45 @@ object Exp {
     }
   }
 
-  implicit val ExpRenderTree: RenderTree ~> λ[α => RenderTree[Exp[α]]] =
-    new (RenderTree ~> λ[α => RenderTree[Exp[α]]]) {
-      def apply[α](ra: RenderTree[α]) = new RenderTree[Exp[α]] {
-        def render(v: Exp[α]) = v match {
-          case Num(value)       => Terminal(List("Num"), Some(value.toString))
-          case Mul(l, r)        => NonTerminal(List("Mul"), None, List(ra.render(l), ra.render(r)))
-          case Var(sym)         => Terminal(List("Var"), Some(sym.toString))
-          case Lambda(param, body) =>
-            NonTerminal(List("Lambda"), Some(param.toString), List(ra.render(body)))
-          case Apply(to, expr) =>
-            NonTerminal(List("Apply"), None, List(ra.render(to), ra.render(expr)))
-          case Let(name, form, body)  => NonTerminal(List("Let"), Some(name.toString), List(ra.render(form), ra.render(body)))
-        }
-      }
-    }
-
-  implicit val IntRenderTree = RenderTree.fromToString[Int]("Int")
-
   // NB: an unusual definition of equality, in that only the first 3 characters
   //     of variable names are significant. This is to distinguish it from `==`
   //     as well as from a derivable Equal.
-  implicit val EqualExp: EqualF[Exp] = new EqualF[Exp] {
-    def equal[A: Equal](e1: Exp[A], e2: Exp[A]) = (e1, e2) match {
-      case (Num(v1), Num(v2))                 => v1 ≟ v2
-      case (Mul(a1, b1), Mul(a2, b2))         => a1 ≟ a2 && b1 ≟ b2
-      case (Var(s1), Var(s2))                 =>
-        s1.name.substring(0, 3 min s1.name.length) == s2.name.substring(0, 3 min s2.name.length)
-      case (Lambda(p1, a1), Lambda(p2, a2))   => p1 == p2 && a1 ≟ a2
-      case (Apply(f1, a1), Apply(f2, a2))     => f1 ≟ f2 && a1 ≟ a2
-      case (Let(n1, v1, i1), Let(n2, v2, i2)) => n1 == n2 && v1 ≟ v2 && i1 ≟ i2
-      case _                                  => false
+  implicit val ExpEqual: Equal ~> λ[α => Equal[Exp[α]]] =
+    new (Equal ~> λ[α => Equal[Exp[α]]]) {
+      def apply[α](eq: Equal[α]) =
+        Equal.equal[Exp[α]] {
+          case (Num(v1), Num(v2))                 => v1 ≟ v2
+          case (Mul(a1, b1), Mul(a2, b2))         =>
+            eq.equal(a1, a2) && eq.equal(b1, b2)
+          case (Var(s1), Var(s2))                 =>
+            s1.name.substring(0, 3 min s1.name.length) ==
+              s2.name.substring(0, 3 min s2.name.length)
+          case (Lambda(p1, a1), Lambda(p2, a2))   =>
+            p1 == p2 && eq.equal(a1, a2)
+          case (Apply(f1, a1), Apply(f2, a2))     =>
+            eq.equal(f1, f2) && eq.equal(a1, a2)
+          case (Let(n1, v1, i1), Let(n2, v2, i2)) =>
+            n1 == n2 && eq.equal(v1, v2) && eq.equal(i1, i2)
+          case _                                  => false
+        }
     }
-  }
+  implicit def ExpEqual2[A](implicit A: Equal[A]): Equal[Exp[A]] = ExpEqual(A)
+
+  implicit val ExpShow: Show ~> λ[α => Show[Exp[α]]] =
+    new (Show ~> λ[α => Show[Exp[α]]]) {
+      def apply[α](show: Show[α]) =
+        Show.show {
+          case Num(v)       => v.shows
+          case Mul(a, b)    =>
+            "Mul(" + show.shows(a) + ", " + show.shows(b) + ")"
+          case Var(s)       => "$" + s.name
+          case Lambda(p, a) => "Lambda(" + p.name + ", " + show.shows(a) + ")"
+          case Apply(f, a)  =>
+            "Apply(" + show.shows(f) + ", " + show.shows(a) + ")"
+          case Let(n, v, i) =>
+            "Let(" + n.name + ", " + show.shows(v) + ", " + show.shows(i) + ")"
+        }
+    }
 
   implicit val ExpUnzip = new Unzip[Exp] {
     def unzip[A, B](f: Exp[(A, B)]) = (f.map(_._1), f.map(_._2))
@@ -101,7 +109,7 @@ object Exp {
 
     def bindings[T[_[_]]: Recursive, A](t: Exp[T[Exp]], b: G[A])(f: Exp[T[Exp]] => A) =
       t match {
-        case Let(name, value, _) => b + (name -> f(value.project))
+        case Let(name, value, _) => b + ((name, f(value.project)))
         case _                   => b
       }
 
@@ -116,6 +124,9 @@ class ExpSpec extends Spec {
   import Exp._
 
   implicit val arbExpInt: Arbitrary[Exp[Int]] = arbExp(Arbitrary.arbInt)
+  // NB: These are just a sanity check that the data structure created for the
+  //     tests is lawful.
+  checkAll(equal.laws[Exp[Int]])
   checkAll(traverse.laws[Exp])
 }
 
@@ -136,8 +147,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
 
   val example1ƒ: Exp[Option[Int]] => Option[Int] = {
-    case Num(v)           => Some(v)
-    case Mul(left, right) => (left |@| right)(_ * _)
+    case Num(v)           => v.some
+    case Mul(left, right) => (left ⊛ right)(_ * _)
     case Var(v)           => None
     case Lambda(_, b)     => b
     case Apply(func, arg) => None
@@ -251,7 +262,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     val eval: Exp[Int] => Int = {
       case Num(x) => x
       case Mul(x, y) => x*y
-      case _ => ???
+      case _ => Predef.???
     }
 
     val findConstants: Exp[List[Int]] => List[Int] = {
@@ -308,7 +319,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     "topDownCata" should {
       def subst[T[_[_]]: Recursive](vars: Map[Symbol, T[Exp]], t: T[Exp]):
           (Map[Symbol, T[Exp]], T[Exp]) = t.project match {
-        case Let(sym, value, body) => (vars + (sym -> value), body)
+        case Let(sym, value, body) => (vars + ((sym, value)), body)
         case Var(sym)              => (vars, vars.get(sym).getOrElse(t))
         case _                     => (vars, t)
       }
@@ -333,7 +344,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
         case (_,      _)      => x * y
       }
       case Num(x) => x
-      case _ => ???
+      case _ => Predef.???
     }
 
     "para" should {
@@ -387,7 +398,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     "apomorphism" should {
       "pull out factors of two" in {
         def fM(x: Int): Option[Exp[Fix[Exp] \/ Int]] =
-          if (x == 5) None else Some(f(x))
+          if (x == 5) None else f(x).some
         def f(x: Int): Exp[Fix[Exp] \/ Int] =
           if (x % 2 == 0) Mul(-\/(num(2)), \/-(x.toInt / 2))
           else Num(x)
@@ -417,7 +428,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       "pull out factors of two" in {
         "anaM" should {
           def extractFactorsM(x: Int): Option[Exp[Int]] =
-            if (x == 5) None else Some(extractFactors(x))
+            if (x == 5) None else extractFactors(x).some
           "pull out factors of two" in {
             12.anaM(extractFactorsM) must beSome(
               mul(num(2), mul(num(2), num(3)))
@@ -449,7 +460,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       case Num(x) => x.toString
       case Mul((x, xs), (y, ys)) =>
         xs + " (" + x + ")" + ", " + ys + " (" + y + ")"
-      case _ => ???
+      case _ => Predef.???
     }
 
     "zygo" should {
@@ -521,47 +532,6 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
         chrono(i)(partialEval[Mu], extract2and3) must equal(num(i).convertTo[Mu])
       }
     }
-
-    "RenderTree" should {
-      "render nodes and leaves" in {
-        mul(num(0), num(1)).shows must
-          equal("""Fix:Mul
-                  |├─ Fix:Num(0)
-                  |╰─ Fix:Num(1)""".stripMargin)
-      }
-    }
-  }
-
-  // NB: This really tests stuff in the fp package, but that exists for Fix,
-  //     and here we have a fixpoint data type using Fix, so …
-  "EqualF" should {
-    "be true for same expr" in {
-      mul(num(0), num(1)) ≟ mul(num(0), num(1)) must beTrue
-    }
-
-    "be false for different types" in {
-      num(0) ≠ vari('x) must beTrue
-    }
-
-    "be false for different children" in {
-      mul(num(0), num(1)) ≠ mul(num(2), num(3)) must beTrue
-    }
-
-    "be true for variables with matching prefixes" in {
-      vari('abc1) ≟ vari('abc2) must beTrue
-    }
-
-    "be true for sub-exprs with variables with matching prefixes" in {
-      mul(num(1), vari('abc1)) ≟ mul(num(1), vari('abc2)) must beTrue
-    }
-
-    "be implemented for unfixed exprs" in {
-      Mul(num(1), vari('abc1)) ≟ Mul(num(1), vari('abc2)) must beTrue
-
-      // NB: need to cast both terms to a common type
-      def exp(x: Exp[Fix[Exp]]) = x
-      exp(Mul(num(1), vari('abc1))) ≠ exp(Num(1)) must beTrue
-    }
   }
 
   "Holes" should {
@@ -631,27 +601,12 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     "foldMap" should {
       "zeros" ! Prop.forAll(expGen) { exp =>
         Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrK(0)))(_ :: Nil) must
-          equal(exp.universe.map(κ(0)))
+          equal(exp.universe.map(Function.const(0)))
       }
 
       "selves" ! Prop.forAll(expGen) { exp =>
         Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrSelf))(_ :: Nil) must
           equal(exp.universe)
-      }
-    }
-
-    "RenderTree" should {
-      "render simple nested expr" in {
-        mul(num(0), num(1)).cata(attrK(())).shows must
-          equal("""Cofree
-                  |├─ ()
-                  |╰─ Mul
-                  |   ├─ Cofree
-                  |   │  ├─ ()
-                  |   │  ╰─ Num(0)
-                  |   ╰─ Cofree
-                  |      ├─ ()
-                  |      ╰─ Num(1)""".stripMargin)
       }
     }
 
@@ -727,7 +682,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
                     num(2),
                     Num(2))))))
 
-        boundAttribute(Example2)(ι) must equal(exp)
+        boundAttribute(Example2)(x => x) must equal(exp)
       }
     }
   }

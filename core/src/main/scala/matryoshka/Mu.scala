@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-package quasar.recursionschemes
+package matryoshka
 
-import quasar.Predef._
-import quasar.RenderTree
 import Recursive.ops._
 
 import scalaz._, Scalaz._
@@ -36,17 +34,11 @@ object Mu {
       })
   }
 
-  implicit def muRenderTree[F[_]: Functor](implicit RF: RenderTree ~> λ[α => RenderTree[F[α]]]):
-      RenderTree[Mu[F]] =
-    new RenderTree[Mu[F]] {
-      def render(v: Mu[F]) =
-        RF(muRenderTree[F]).render(v.project).retype {
-          case h :: t => ("Mu:" + h) :: t
-          case Nil    => "Mu" :: Nil
-        }
-    }
-
   implicit def muEqual[F[_]: Functor](implicit F: Equal ~> λ[α => Equal[F[α]]]):
       Equal[Mu[F]] =
     Equal.equal((a, b) => a.convertTo[Fix] ≟ b.convertTo[Fix])
+
+  implicit def muShow[F[_]: Functor](implicit F: Show ~> λ[α => Show[F[α]]]):
+      Show[Mu[F]] =
+    Show.show(_.convertTo[Fix].show)
 }

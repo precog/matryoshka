@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package quasar.recursionschemes
+package matryoshka
 
-import quasar.Predef._
-import quasar.fp._
 import Recursive.ops._
+
+import scala.{Function, Predef}
 
 import scalaz._, Scalaz._
 import simulacrum.typeclass
@@ -45,7 +45,7 @@ import simulacrum.typeclass
   }
 
   def apo[F[_]: Functor, A](a: A)(f: A => F[T[F] \/ A]): T[F] =
-    embed(f(a).map(_.fold(ι, apo(_)(f))))
+    embed(f(a).map(_.fold(Predef.identity, apo(_)(f))))
 
   def apoM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[T[F] \/ A]]): M[T[F]] =
     f(a).flatMap(_.traverse(_.fold(_.point[M], apoM(_)(f)))).map(embed(_))

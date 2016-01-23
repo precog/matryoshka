@@ -14,10 +14,7 @@
  * limitations under the License.
  */
 
-package quasar.recursionschemes
-
-import quasar.Predef._
-import quasar.RenderTree
+package matryoshka
 
 import scalaz._
 
@@ -30,16 +27,6 @@ object Fix {
   implicit val fixCorecursive: Corecursive[Fix] = new Corecursive[Fix] {
     def embed[F[_]: Functor](t: F[Fix[F]]) = Fix(t)
   }
-
-  implicit def fixRenderTree[F[_]](implicit RF: RenderTree ~> λ[α => RenderTree[F[α]]]):
-      RenderTree[Fix[F]] =
-    new RenderTree[Fix[F]] {
-      def render(v: Fix[F]) =
-        RF(fixRenderTree[F]).render(v.unFix).retype {
-          case h :: t => ("Fix:" + h) :: t
-          case Nil    => "Fix" :: Nil
-        }
-    }
 
   implicit def fixShow[F[_]](implicit F: Show ~> λ[α => Show[F[α]]]):
       Show[Fix[F]] =

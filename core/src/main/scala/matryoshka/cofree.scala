@@ -14,13 +14,11 @@
  * limitations under the License.
  */
 
-package quasar.recursionschemes
-
-import quasar.Predef._
-import quasar.{NonTerminal, RenderTree},  RenderTree.ops._
+package matryoshka
 
 import scalaz._
 import scalaz.syntax.functor._
+import scalaz.syntax.show._
 
 trait CofreeInstances {
   implicit def cofreeRecursive[A]: Recursive[Cofree[?[_], A]] =
@@ -34,13 +32,9 @@ trait CofreeInstances {
         f(t.tail).map(Cofree(t.head, _))
     }
 
-  implicit def cofreeRenderTree[F[_], A: RenderTree](implicit RF: RenderTree ~> λ[α => RenderTree[F[α]]]):
-      RenderTree[Cofree[F, A]] =
-    new RenderTree[Cofree[F, A]] {
-      def render(t: Cofree[F, A]) = {
-        NonTerminal(List("Cofree"), None, List(t.head.render, RF(cofreeRenderTree[F, A]).render(t.tail)))
-      }
-    }
+  implicit def cofreeShow[F[_], A: Show](implicit F: (Show ~> λ[α => Show[F[α]]])):
+      Show[Cofree[F, A]] =
+        Show.shows(cof => "(" + cof.head.show + ", " + F(cofreeShow).shows(cof.tail) + ")")
 }
 
 object cofree extends CofreeInstances

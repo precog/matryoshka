@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package quasar.recursionschemes
+package matryoshka
 
 import scalaz._, Scalaz._
 

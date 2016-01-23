@@ -14,19 +14,16 @@
  * limitations under the License.
  */
 
-package quasar
+import matryoshka.Recursive.ops._
 
-import quasar.Predef._
-import quasar.fp._
-import quasar.recursionschemes.Recursive.ops._
-
-import scala.Function0
+import scala.{Function, Int, None, Option}
+import scala.collection.immutable.{List, ::}
 
 import scalaz._, Scalaz._
 import simulacrum.typeclass
 
 /** Generalized folds, unfolds, and refolds. */
-package object recursionschemes extends CofreeInstances with FreeInstances {
+package object matryoshka extends CofreeInstances with FreeInstances {
 
   def lambek[T[_[_]]: Corecursive: Recursive, F[_]: Functor](tf: T[F]):
       F[T[F]] =
@@ -100,13 +97,15 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
     ghylo[F, Cofree[F, ?], Free[F, ?], A, B](a)(distHisto, distFutu, g, f)
 
   def elgot[F[_]: Functor, A, B](a: A)(φ: F[B] => B, ψ: A => B \/ F[A]): B = {
-    def h: A => B = (ι ||| ((x: F[A]) => φ(x.map(h)))) ⋘ ψ
+    def h: A => B =
+      (((x: B) => x) ||| ((x: F[A]) => φ(x.map(h)))) ⋘ ψ
     h(a)
   }
 
   def coelgot[F[_]: Functor, A, B](a: A)(φ: (A, F[B]) => B, ψ: A => F[A]):
       B = {
-    def h: A => B = φ.tupled ⋘ (ι &&& (((x: F[A]) => x.map(h)) ⋘ ψ))
+    def h: A => B =
+      φ.tupled ⋘ (((x: A) => x) &&& (((x: F[A]) => x.map(h)) ⋘ ψ))
     h(a)
   }
 
@@ -217,7 +216,7 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
 
   def attribute[F[_]: Functor, A](f: F[A] => A) = attributeM[F, Id, A](f)
 
-  def attrK[F[_]: Functor, A](k: A) = attribute[F, A](κ(k))
+  def attrK[F[_]: Functor, A](k: A) = attribute[F, A](Function.const(k))
 
   def attrSelf[T[_[_]]: Corecursive, F[_]: Functor] =
     attribute[F, T[F]](Corecursive[T].embed)
@@ -309,64 +308,35 @@ package object recursionschemes extends CofreeInstances with FreeInstances {
     Cofree((left.head, right.head), fabs)
   }
 
-  @typeclass trait Binder[F[_]] {
-    type G[A]
-    def G: Traverse[G]
-
-    def initial[A]: G[A]
-
-    // Extracts bindings from a node:
-    def bindings[T[_[_]]: Recursive, A](t: F[T[F]], b: G[A])(f: F[T[F]] => A): G[A]
-
-    // Possibly binds a free term to its definition:
-    def subst[T[_[_]], A](t: F[T[F]], b: G[A]): Option[A]
-  }
-
-  /** Annotate (the original nodes of) a tree, by applying a function to the
-    * "bound" nodes. The function is also applied to the bindings themselves
-    * to determine their annotation.
-    */
-  def boundAttribute[F[_]: Functor, A](t: Fix[F])(f: Fix[F] => A)(implicit B: Binder[F]): Cofree[F, A] = {
-    def loop(t: F[Fix[F]], b: B.G[(Fix[F], Cofree[F, A])]): (Fix[F], Cofree[F, A]) = {
-      val newB = B.bindings(t, b)(loop(_, b))
-      B.subst(t, newB).fold {
-        val m: F[(Fix[F], Cofree[F, A])] = t.map(x => loop(x.unFix, newB))
-        val t1 = Fix(m.map(_._1))
-        (t1, Cofree(f(t1), m.map(_._2)))
-      } { case (x, _) => (x, Fix(t).cata(attrK(f(x)))) }
-    }
-    loop(t.unFix, B.initial)._2
-  }
-
   sealed class IdOps[A](self: A) {
     def hylo[F[_]: Functor, B](f: F[B] => B, g: A => F[A]): B =
-      recursionschemes.hylo(self)(f, g)
+      matryoshka.hylo(self)(f, g)
     def hyloM[M[_]: Monad, F[_]: Traverse, B](f: F[B] => M[B], g: A => M[F[A]]):
         M[B] =
-      recursionschemes.hyloM(self)(f, g)
+      matryoshka.hyloM(self)(f, g)
     def ghylo[F[_]: Functor, W[_]: Comonad, M[_]: Monad, B](
       w: DistributiveLaw[F, W],
       m: DistributiveLaw[M, F],
       f: F[W[B]] => B,
       g: A => F[M[A]]):
         B =
-      recursionschemes.ghylo(self)(w, m, f, g)
+      matryoshka.ghylo(self)(w, m, f, g)
 
     def chrono[F[_]: Functor, B](
       g: F[Cofree[F, B]] => B, f: A => F[Free[F, A]]):
         B =
-      recursionschemes.chrono(self)(g, f)
+      matryoshka.chrono(self)(g, f)
 
     def elgot[F[_]: Functor, B](φ: F[B] => B, ψ: A => B \/ F[A]): B =
-      recursionschemes.elgot(self)(φ, ψ)
+      matryoshka.elgot(self)(φ, ψ)
 
     def coelgot[F[_]: Functor, B](φ: (A, F[B]) => B, ψ: A => F[A]): B =
-      recursionschemes.coelgot(self)(φ, ψ)
+      matryoshka.coelgot(self)(φ, ψ)
     def coelgotM[M[_]] = new CoelgotMPartiallyApplied[M]
     final class CoelgotMPartiallyApplied[M[_]] {
       def apply[F[_]: Traverse, B](φ: (A, F[B]) => M[B], ψ: A => M[F[A]])(implicit M: Monad[M]):
           M[B] =
-        recursionschemes.coelgotM[M].apply[F, A, B](self)(φ, ψ)
+        matryoshka.coelgotM[M].apply[F, A, B](self)(φ, ψ)
     }
 
     // def ana[T[_[_]], F[_]: Functor](f: A => F[A])(implicit T: Corecursive[T]): T[F] =

@@ -14,10 +14,7 @@
  * limitations under the License.
  */
 
-package quasar
-package recursionschemes
-
-import quasar.Predef._
+package matryoshka
 
 import scalaz._, Scalaz._
 import simulacrum.typeclass

@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-package quasar.recursionschemes
+package matryoshka
 
-import quasar.Predef._
-import quasar.fp._
+import scala.{Function, Predef}
 
 import scalaz._, Scalaz._
 import simulacrum.{typeclass, op}
@@ -76,7 +75,7 @@ import simulacrum.{typeclass, op}
 
   def transApo[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[G] \/ T[F]]):
       T[G] =
-    map(t)(f(_).map(_.fold(ι, transApo(_)(f))))
+    map(t)(f(_).map(_.fold(Predef.identity, transApo(_)(f))))
 
   def translate[F[_]: Functor, G[_]: Functor](t: T[F])(f: F ~> G): T[G] =
     map(t)(f(_).map(translate(_)(f)))
