@@ -100,24 +100,6 @@ object Exp {
   implicit val ExpUnzip = new Unzip[Exp] {
     def unzip[A, B](f: Exp[(A, B)]) = (f.map(_._1), f.map(_._2))
   }
-
-  implicit val ExpBinder: Binder[Exp] = new Binder[Exp] {
-    type G[A] = Map[Symbol, A]
-    val G = implicitly[Traverse[G]]
-
-    def initial[A] = Map[Symbol, A]()
-
-    def bindings[T[_[_]]: Recursive, A](t: Exp[T[Exp]], b: G[A])(f: Exp[T[Exp]] => A) =
-      t match {
-        case Let(name, value, _) => b + ((name, f(value.project)))
-        case _                   => b
-      }
-
-    def subst[T[_[_]], A](t: Exp[T[Exp]], b: G[A]) = t match {
-      case Var(symbol) => b.get(symbol)
-      case _           => None
-    }
-  }
 }
 
 class ExpSpec extends Spec {
@@ -614,75 +596,6 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       "tuplify simple constants" ! Prop.forAll(expGen) { exp =>
         unsafeZip2(exp.cata(attrK(0)), exp.cata(attrK(1))) must
           equal(exp.cata(attrK((0, 1))))
-      }
-    }
-
-    "bound combinator" should {
-      val Example2 = let('foo, num(5), mul(vari('foo), num(2)))
-
-      "produce incorrect annotations when not used in let expression" in {
-        Example2.cata(example1ƒ) must beNone
-      }
-
-      "produce correct annotations when used in let expression" in {
-        Example2.boundCata(example1ƒ) must beSome(10)
-      }
-
-      val inlineMulBy1: Exp[(Fix[Exp], Fix[Exp])] => Fix[Exp] = {
-        case Mul((_, Fix(Num(1))), (x, _)) => x  // actually, either `x` is the same here
-        case t                             => Fix(t.map { case (src, bnd) =>
-          src.unFix match {
-            case Var(_) => src
-            case _      => bnd
-          }
-        })
-      }
-
-      "rewrite with bound value" in {
-        val source =
-          let('x, num(1),
-            let('y, mul(num(2), num(3)),
-              mul(vari('x), vari('y))))
-        val exp =
-          let('x, num(1),
-            let('y, mul(num(2), num(3)),
-              vari('y)))
-        source.boundPara(inlineMulBy1) must equal(exp)
-        source.boundParaM[Id, Fix[Exp]](inlineMulBy1) must equal(exp)
-      }
-
-      "rewrite under a binding" in {
-        val source =
-          let('x, num(1),
-            let('y, mul(vari('x), num(2)),
-              mul(vari('y), vari('y))))
-        val exp =
-          let('x, num(1),
-            let('y, num(2),              // Want this simplifed...
-              mul(vari('y), vari('y))))  // ...but not this.
-        source.boundPara(inlineMulBy1) must equal(exp)
-        source.boundParaM[Id, Fix[Exp]](inlineMulBy1) must equal(exp)
-      }
-
-      "annotate source nodes using bound nodes" in {
-        val exp = Cofree(
-            let('foo, num(5), mul(num(5), num(2))),  // Also annotated here with the bound value.
-            Let(
-              'foo,
-              Cofree[Exp, Fix[Exp]](
-                num(5),
-                Num(5)),
-              Cofree(
-                mul(num(5), num(2)),  // Also annotated here with the bound value.
-                Mul(
-                  Cofree[Exp, Fix[Exp]](
-                    num(5),      // This is the point: annotated with the bound value...
-                    Var('foo)),  // ... but preserves the reference.
-                  Cofree[Exp, Fix[Exp]](
-                    num(2),
-                    Num(2))))))
-
-        boundAttribute(Example2)(x => x) must equal(exp)
       }
     }
   }

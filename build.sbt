@@ -45,7 +45,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
     "-unchecked",
     "-Xfatal-warnings",
     "-Xfuture",
-    "-Xlint",
+    // "-Xlint",
     "-Yno-adapted-args",
     "-Yno-imports",
     "-Ywarn-dead-code", // N.B. doesn't work well with the ??? hole
