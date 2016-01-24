@@ -12,7 +12,7 @@ import scoverage._
 
 ScoverageKeys.coverageExcludedPackages := "quasar.repl;.*RenderTree"
 
-ScoverageKeys.coverageMinimum := 79
+ScoverageKeys.coverageMinimum := 57
 
 ScoverageKeys.coverageFailOnMinimum := true
 

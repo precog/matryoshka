@@ -6,3 +6,5 @@ script:
   - sbt checkHeaders
   - sbt coverage doc test
   - sbt coverageReport
+after_success:
+  - pip install --user codecov && codecov
