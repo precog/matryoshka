@@ -1,0 +1,8 @@
+language: scala
+scala:
+- 2.11.7
+sudo: false
+script:
+  - sbt checkHeaders
+  - sbt coverage doc test
+  - sbt coverageReport
