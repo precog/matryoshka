@@ -19,7 +19,7 @@ package matryoshka
 import Recursive.ops._, FunctorT.ops._, Fix._
 
 import java.lang.String
-import scala.{Function, Int, None, Option, Predef, Symbol, Unit},
+import scala.{Boolean, Function, Int, None, Option, Predef, Symbol, Unit},
   Predef.{implicitly, wrapString}
 import scala.collection.immutable.{List, Map, Nil, ::}
 
@@ -96,6 +96,11 @@ object Exp {
         }
     }
   implicit def ExpEqual2[A](implicit A: Equal[A]): Equal[Exp[A]] = ExpEqual(A)
+
+  // NB: Something like this currently needs to be defined for any Functor in
+  //     order to get the generalize operations for the algebra.
+  implicit def ToExpAlgebraOps[A](a: Algebra[Exp, A]): AlgebraOps[Exp, A] =
+    ToAlgebraOps[Exp, A](a)
 
   implicit val ExpShow: Show ~> λ[α => Show[Exp[α]]] =
     new (Show ~> λ[α => Show[Exp[α]]]) {
@@ -257,7 +262,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    val eval: Exp[Int] => Int = {
+    val eval: Algebra[Exp, Int] = {
       case Num(x) => x
       case Mul(x, y) => x*y
       case _ => Predef.???
@@ -295,21 +300,33 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    "generalizeAlgebra" should {
+    "generalize" should {
       "behave like cata" in {
         val v = mul(num(1), mul(num(2), num(3)))
-        v.para(generalizeAlgebra[(Fix[Exp], ?)](eval)) must equal(v.cata(eval))
-        v.convertTo[Mu].para(generalizeAlgebra[(Mu[Exp], ?)](eval)) must equal(v.cata(eval))
+        v.para(eval.generalize[(Fix[Exp], ?)]) must equal(v.cata(eval))
+        v.convertTo[Mu].para(eval.generalize[(Mu[Exp], ?)]) must equal(v.cata(eval))
       }
     }
 
-    def extractFactors(x: Int): Exp[Int] =
+    "generalizeElgot" should {
+      "behave like cata on an algebra" ! prop { (i: Int) =>
+        val x = i.ana(extractFactors).cata(eval)
+        i.coelgot(eval.generalizeElgot[Int], extractFactors) must equal(x)
+      }
+
+      "behave like ana on an coalgebra" ! prop { (i: Int) =>
+        val x = i.ana(extractFactors).cata(eval)
+        i.elgot(eval, extractFactors.generalizeElgot[Int]) must equal(x)
+      }
+    }
+
+    def extractFactors: Coalgebra[Exp, Int] = x =>
       if (x > 2 && x % 2 == 0) Mul(2, x/2)
       else Num(x)
 
     "generalizeCoalgebra" should {
       "behave like ana" ! prop { (i: Int) =>
-        i.apo(generalizeCoalgebra[Fix[Exp] \/ ?](extractFactors)) must
+        i.apo(extractFactors.generalize[Fix[Exp] \/ ?]) must
           equal(i.ana(extractFactors))
       }
     }
@@ -343,6 +360,19 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
       case Num(x) => x
       case _ => Predef.???
+    }
+
+    "attributePara" should {
+      "provide a catamorphism" in {
+        val v = mul(num(4), mul(num(2), num(3)))
+        v.cata(attributePara(peval[Fix])) must
+          equal(
+            Cofree[Exp, Int](24, Mul(
+              Cofree(4, Num(4)),
+              Cofree(6, Mul(
+                Cofree(2, Num(2)),
+                Cofree(3, Num(3)))))))
+      }
     }
 
     "para" should {
@@ -410,7 +440,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
         }
         "apo should be an optimization over apoM and be semantically equivalent" ! prop { i: Int =>
           if (i == 0) ok
-          else i.apoM[Exp, Id](f) must equal(i.apo(f))
+          else i.apoM[Fix, Exp, Id](f) must equal(i.apo(f))
         }
       }
       "construct factorial" in {
@@ -437,20 +467,33 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
           }
         }
         "ana should be an optimization over anaM and be semantically equivalent" ! prop { i: Int =>
-          i.anaM[Exp,Id](extractFactors) must equal(i.ana(extractFactors))
+          i.anaM[Fix, Exp,Id](extractFactors) must equal(i.ana(extractFactors))
         }
       }
     }
 
     "distAna" should {
       "behave like ana" ! prop { (i: Int) =>
-        i.gana[Exp, Id](distAna, extractFactors) must equal(i.ana(extractFactors))
+        i.gana[Fix, Exp, Id](distAna, extractFactors) must equal(i.ana(extractFactors))
       }
     }
 
     "hylo" should {
       "factor and then evaluate" ! prop { (i: Int) =>
         i.hylo(eval, extractFactors) must equal(i)
+      }
+    }
+
+    "ghylo" should {
+      "behave like hylo with distCata/distAna" ! prop { (i: Int) =>
+        i.ghylo[Exp, Id, Id, Int](distCata, distAna, eval, extractFactors) must
+          equal(i.hylo(eval, extractFactors))
+      }
+
+      "behave like chrono with distHisto/distFutu" ! prop { (i: Int) =>
+        i.ghylo[Exp, Cofree[Exp, ?], Free[Exp, ?], Fix[Exp]](
+          distHisto, distFutu, partialEval[Fix], extract2and3) must
+          equal(i.chrono(partialEval[Fix], extract2and3))
       }
     }
 
@@ -476,15 +519,60 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     }
 
+    sealed trait Nat[A]
+    final case class Z[A]()        extends Nat[A]
+    final case class S[A](prev: A) extends Nat[A]
+    object Nat {
+      implicit val NatTraverse: Traverse[Nat] = new Traverse[Nat] {
+        def traverseImpl[G[_], A, B](fa: Nat[A])(f: A => G[B])(implicit G: Applicative[G]):
+            G[Nat[B]] =
+          fa match {
+            case Z()  => G.point(Z())
+            case S(a) => f(a).map(S(_))
+          }
+      }
+    }
+
+    "mutu" should {
+      val toNat: Int => Fix[Nat] = _.ana({
+        case 0 => Z()
+        case n => S(n - 1)
+      })
+
+      case class Even(even: Boolean)
+      case class Odd(odd: Boolean)
+
+      val isOdd: Nat[(Even, Odd)] => Odd = {
+        case Z()             => Odd(false)
+        case S((Even(b), _)) => Odd(b)
+      }
+      val isEven: Nat[(Odd, Even)] => Even = {
+        case Z()            => Even(true)
+        case S((Odd(b), _)) => Even(b)
+      }
+
+      "determine even" in {
+        toNat(8).mutu(isOdd, isEven) must_== Even(true)
+      }
+
+      "determine odd" in {
+        toNat(5).mutu(isEven, isOdd) must_== Odd(true)
+      }
+
+      "determine not even" in {
+        toNat(7).mutu(isOdd, isEven) must_== Even(false)
+      }
+    }
+
     // NB: This is better done with cata, but we fake it here
     def partialEval[T[_[_]]: Corecursive: Recursive](t: Exp[Cofree[Exp, T[Exp]]]):
         T[Exp] =
       t match {
         case Mul(x, y) => (x.head.project, y.head.project) match {
-          case (Num(a), Num(b)) => Corecursive[T].embed(Num[T[Exp]](a * b))
-          case _                => Corecursive[T].embed(t.map(_.head))
+          case (Num(a), Num(b)) => Num[T[Exp]](a * b).embed
+          case _                => t.map(_.head).embed
         }
-        case _ => Corecursive[T].embed(t.map(_.head))
+        case _ => t.map(_.head).embed
       }
 
     "histo" should {
@@ -526,8 +614,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "chrono" should {
       "factor and partially eval" ! prop { (i: Int) =>
-        chrono(i)(partialEval[Fix], extract2and3) must equal(num(i))
-        chrono(i)(partialEval[Mu], extract2and3) must equal(num(i).convertTo[Mu])
+        i.chrono(partialEval[Fix], extract2and3) must equal(num(i))
+        i.chrono(partialEval[Mu], extract2and3) must equal(num(i).convertTo[Mu])
       }
     }
   }
@@ -605,13 +693,6 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       "selves" ! Prop.forAll(expGen) { exp =>
         Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrSelf))(_ :: Nil) must
           equal(exp.universe)
-      }
-    }
-
-    "zip" should {
-      "tuplify simple constants" ! Prop.forAll(expGen) { exp =>
-        unsafeZip2(exp.cata(attrK(0)), exp.cata(attrK(1))) must
-          equal(exp.cata(attrK((0, 1))))
       }
     }
   }

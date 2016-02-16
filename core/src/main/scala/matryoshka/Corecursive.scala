@@ -28,10 +28,10 @@ import simulacrum.typeclass
   def embed[F[_]: Functor](t: F[T[F]]): T[F]
 
   def ana[F[_]: Functor, A](a: A)(f: A => F[A]): T[F] =
-    embed(f(a).map(ana(_)(f)))
+    embed(f(a) ∘ (ana(_)(f)))
 
   def anaM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[A]]): M[T[F]] =
-    f(a).flatMap(_.traverse(anaM(_)(f))).map(embed(_))
+    f(a).flatMap(_.traverse(anaM(_)(f))) ∘ (embed(_))
 
   def gana[F[_]: Functor, M[_], A](
     a: A)(
@@ -39,19 +39,19 @@ import simulacrum.typeclass
     implicit M: Monad[M]):
       T[F] = {
     def loop(x: M[F[M[A]]]): T[F] =
-      embed(k(x).map(x => loop(M.lift(f)(x.join))))
+      embed(k(x) ∘ (x => loop(M.lift(f)(x.join))))
 
     loop(f(a).point[M])
   }
 
   def apo[F[_]: Functor, A](a: A)(f: A => F[T[F] \/ A]): T[F] =
-    embed(f(a).map(_.fold(Predef.identity, apo(_)(f))))
+    embed(f(a) ∘ (_.fold(Predef.identity, apo(_)(f))))
 
   def apoM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[T[F] \/ A]]): M[T[F]] =
-    f(a).flatMap(_.traverse(_.fold(_.point[M], apoM(_)(f)))).map(embed(_))
+    f(a).flatMap(_.traverse(_.fold(_.point[M], apoM(_)(f)))) ∘ (embed(_))
 
   def postpro[F[_]: Functor, A](a: A)(e: F ~> F, g: A => F[A])(implicit T: Recursive[T]): T[F] =
-    embed(g(a).map(x => ana(postpro(x)(e, g))(x => e(x.project))))
+    embed(g(a) ∘ (x => ana(postpro(x)(e, g))(x => e(x.project))))
 
   def gpostpro[F[_]: Functor, M[_], A](
     a: A)(
@@ -59,7 +59,7 @@ import simulacrum.typeclass
     implicit T: Recursive[T], M: Monad[M]):
       T[F] = {
     def loop(ma: M[A]): T[F] =
-      embed(k(M.lift(g)(ma)).map(x => ana(loop(x.join))(x => e(x.project))))
+      embed(k(M.lift(g)(ma)) ∘ (x => ana(loop(x.join))(x => e(x.project))))
 
     loop(a.point[M])
   }
@@ -70,7 +70,11 @@ import simulacrum.typeclass
   def futuM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[Free[F, A]]]):
       M[T[F]] = {
     def loop(free: Free[F, A]): M[T[F]] =
-      free.fold(futuM(_)(f), _.traverse(loop).map(embed[F]))
-    f(a).flatMap(_.traverse(loop)).map(embed[F])
+      free.fold(futuM(_)(f), _.traverse(loop) ∘ (embed[F]))
+    f(a).flatMap(_.traverse(loop)) ∘ (embed(_))
   }
+}
+
+sealed class CorecursiveOps[T[_[_]], F[_]](self: F[T[F]])(implicit T: Corecursive[T]) {
+  def embed(implicit F: Functor[F]): T[F] = T.embed(self)
 }
