@@ -1,13 +1,13 @@
-import sbt._
-import Keys._
 import CustomKeys._
-import de.heikoseeberger.sbtheader.license.Apache2_0
+
 import de.heikoseeberger.sbtheader.HeaderPlugin
+import de.heikoseeberger.sbtheader.license.Apache2_0
 import scoverage._
+import sbt._, Keys._
 
 lazy val checkHeaders = taskKey[Unit]("Fail the build if createHeaders is not up-to-date")
 
-lazy val standardSettings = Defaults.defaultSettings ++ Seq(
+lazy val standardSettings = Seq(
   headers := Map(
     "scala" -> Apache2_0("2014 - 2015", "SlamData Inc."),
     "java"  -> Apache2_0("2014 - 2015", "SlamData Inc.")),
@@ -15,23 +15,19 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
   logBuffered in Compile := false,
   logBuffered in Test := false,
   outputStrategy := Some(StdoutOutput),
-  initialize := {
-    assert(
-      Integer.parseInt(sys.props("java.specification.version").split("\\.")(1))
-        >= 7,
-      "Java 7 or above required")
-  },
+  updateOptions := updateOptions.value.withCachedResolution(true),
   autoCompilerPlugins := true,
   autoAPIMappings := true,
   exportJars := true,
+  organization := "com.slamdata",
   resolvers ++= Seq(
     Resolver.sonatypeRepo("releases"),
     Resolver.sonatypeRepo("snapshots"),
     "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/",
     "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
     "bintray/non" at "http://dl.bintray.com/non/maven"),
-  addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.5.4"),
-  addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0-M5" cross CrossVersion.full),
+  addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.7.1"),
+  addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full),
 
   ScoverageKeys.coverageHighlighting := true,
 
@@ -60,13 +56,13 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
 
   console <<= console in Test, // console alias test:console
 
-  scalazVersion := "7.1.4",
+  scalazVersion := "7.1.7",
   slcVersion    := "0.4",
 
   libraryDependencies ++= Seq(
     "org.scalaz"        %% "scalaz-core"               % scalazVersion.value % "compile, test",
     "org.typelevel"     %% "shapeless-scalaz"          % slcVersion.value    % "compile, test",
-    "com.github.mpilquist" %% "simulacrum"             % "0.4.0"             % "compile, test",
+    "com.github.mpilquist" %% "simulacrum"             % "0.7.0"             % "compile, test",
     "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion.value % "test",
     "org.specs2"        %% "specs2-core"               % "2.4"               % "test",
     "org.scalacheck"    %% "scalacheck"                % "1.11.6"            % "test" force(),
@@ -77,8 +73,7 @@ lazy val standardSettings = Defaults.defaultSettings ++ Seq(
 
   checkHeaders := {
     if ((createHeaders in Compile).value.nonEmpty) error("headers not all present")
-  }
-)
+  })
 
 // Using a Seq of desired warts instead of Warts.allBut due to an incremental compilation issue.
 // https://github.com/puffnfresh/wartremover/issues/202
@@ -110,54 +105,46 @@ val warts = Seq(
   Wart.TryPartial,
   Wart.Var)
 
-import github.GithubPlugin._
-
-lazy val oneJarSettings = {
-  import sbtrelease.ReleasePlugin._
-  import sbtrelease.ReleaseStateTransformations._
-  import sbtrelease._
-
-  import sbt._
-  import sbt.Aggregation.KeyValue
-  import sbt.std.Transform.DummyTaskMap
-  import Utilities._
-
-  def releaseHack[T](key: TaskKey[T]): ReleaseStep = { st: State =>
-    val extracted = st.extract
-    val ref = extracted.get(thisProjectRef)
-    extracted.runTask(key in ref, st)
-    st
-  }
-
-  com.github.retronym.SbtOneJar.oneJarSettings ++ standardSettings ++ githubSettings ++ releaseSettings ++ Seq(
-  GithubKeys.assets := { Seq(oneJar.value) },
-  GithubKeys.repoSlug := "quasar-analytics/quasar",
-
-  GithubKeys.versionRepo := "slamdata/slamdata.github.io",
-  GithubKeys.versionFile := "release.json",
-
-  ReleaseKeys.versionFile := file("version.sbt"),
-  ReleaseKeys.useGlobalVersion := true,
-  ReleaseKeys.commitMessage <<= (version in ThisBuild) map { v =>
-    if (v.matches(""".*SNAPSHOT.*""")) ("Setting version to %s" format v) + " [ci skip]"
-    else "Releasing %s" format v
+lazy val publishSettings = Seq(
+  organizationName := "SlamData Inc.",
+  organizationHomepage := Some(url("http://slamdata.com")),
+  homepage := Some(url("https://github.com/slamdata/matryoshka")),
+  licenses := Seq("Apache 2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0")),
+  publishTo := {
+    val nexus = "https://oss.sonatype.org/"
+    if (isSnapshot.value)
+      Some("snapshots" at nexus + "content/repositories/snapshots")
+    else
+      Some("releases"  at nexus + "service/local/staging/deploy/maven2")
   },
-  ReleaseKeys.releaseProcess := Seq[ReleaseStep](
-    checkSnapshotDependencies,              // : ReleaseStep
-    inquireVersions,                        // : ReleaseStep
-    runTest,                                // : ReleaseStep
-    setReleaseVersion,                      // : ReleaseStep
-    commitReleaseVersion,                   // : ReleaseStep, performs the initial git checks
-    pushChanges,                            // : ReleaseStep
-    // releaseHack(GithubKeys.githubUpdateVer),// : Don't update git version, have the installers task do that
-    // tagRelease,                             // : Don't tag release because Travis will do it
-    // releaseHack(GithubKeys.githubRelease),  // : Don't release because Travis will do it
-    setNextVersion,                         // : ReleaseStep
-    commitNextVersion,                      // : ReleaseStep
-    pushChanges                             // : ReleaseStep, also checks that an upstream branch is properly configured
-  ))
-}
+  publishMavenStyle := true,
+  publishArtifact in Test := false,
+  pomIncludeRepository := { _ => false },
+  releasePublishArtifactsAction := PgpKeys.publishSigned.value,
+  releaseCrossBuild := true,
+  autoAPIMappings := true,
+  scmInfo := Some(
+    ScmInfo(
+      url("https://github.com/slamdata/matryoshka"),
+      "scm:git@github.com:slamdata/matryoshka.git")),
+  developers := List(
+    Developer(
+      id = "slamdata",
+      name = "SlamData Inc.",
+      email = "contact@slamdata.com",
+      url = new URL("http://slamdata.com"))))
 
-lazy val root = Project("root", file(".")) aggregate(core) enablePlugins(AutomateHeaderPlugin)
+lazy val root = Project("root", file("."))
+  .settings(standardSettings ++ publishSettings: _*)
+  .settings(Seq(
+    publish := (),
+    publishLocal := (),
+    publishArtifact := false))
+  .settings(name := "matryoshka")
+  .aggregate(core)
+  .enablePlugins(AutomateHeaderPlugin)
 
-lazy val core = (project in file("core")) settings (oneJarSettings: _*) enablePlugins(AutomateHeaderPlugin, BuildInfoPlugin)
+lazy val core = (project in file("core"))
+  .settings(standardSettings ++ publishSettings: _*)
+  .settings(name := "matryoshka-core")
+  .enablePlugins(AutomateHeaderPlugin)

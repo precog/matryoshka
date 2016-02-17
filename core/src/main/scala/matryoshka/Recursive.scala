@@ -16,7 +16,7 @@
 
 package matryoshka
 
-import scala.{Boolean, PartialFunction}
+import scala.{Boolean, inline, PartialFunction}
 import scala.collection.immutable.{List, Nil}
 
 import scalaz._, Scalaz._
