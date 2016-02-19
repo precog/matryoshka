@@ -3,4 +3,6 @@
 
 # Matryoshka
 
+[![Join the chat at https://gitter.im/slamdata/matryoshka](https://badges.gitter.im/slamdata/matryoshka.svg)](https://gitter.im/slamdata/matryoshka?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 This library provides generalized folds, unfolds, and traversals for fixpoint data structures in Scala.
