@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 - 2015 SlamData Inc.
+ * Copyright 2014–2016 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,45 +16,67 @@
 
 package matryoshka
 
+import matryoshka.distributive._
+
 import scala.{Boolean, inline, PartialFunction}
 import scala.collection.immutable.{List, Nil}
 
 import scalaz._, Scalaz._
 import simulacrum.typeclass
 
-/** Folds for recursive data types. */
+/** Folds for recursive data types.
+  *
+  * All of these take an arbitrary recursive structure and fold, starting with
+  * the innermost nodes. Since these leaf nodes have no children, the `A` in
+  * `F[A]` is irrelevant, because there are zero `A`s. Then, when you move down
+  * to the next node, all of its children have been converted to `A`, and so on,
+  * until you get to the top level.
+  */
 @typeclass trait Recursive[T[_[_]]] {
+  // /** Expose the outermost layer of the fixpoint structure. */
   def project[F[_]: Functor](t: T[F]): F[T[F]]
 
-  def cata[F[_]: Functor, A](t: T[F])(f: F[A] => A): A =
-    f(project(t) ∘ (cata(_)(f)))
+  // /** A generalization of [[scalaz.Foldable.foldRight]] to any fixpoint
+  //   * structure. This is the most basic fold.
+  //   */
+  def cata[F[_]: Functor, A](t: T[F])(φ: F[A] => A): A =
+    φ(project(t) ∘ (cata(_)(φ)))
 
-  def cataM[F[_]: Traverse, M[_]: Monad, A](t: T[F])(f: F[A] => M[A]): M[A] =
-    project(t).traverse(cataM(_)(f)).flatMap(f)
+  /** A Kleisli version of [[matryoshka.Recursive.cata]]. */
+  def cataM[F[_]: Traverse, M[_]: Monad, A](t: T[F])(φ: F[A] => M[A]): M[A] =
+    project(t).traverse(cataM(_)(φ)).flatMap(φ)
 
   def gcata[F[_]: Functor, W[_]: Comonad, A](
     t: T[F])(
-    k: DistributiveLaw[F, W], g: F[W[A]] => A):
+    k: DistributiveLaw[F, W], φ: F[W[A]] => A):
       A = {
-    def loop(t: T[F]): W[F[W[A]]] = k(project(t) ∘ (loop(_).map(g).cojoin))
+    def loop(t: T[F]): W[F[W[A]]] = k(project(t) ∘ (loop(_).map(φ).cojoin))
 
-    g(loop(t).copoint)
+    φ(loop(t).copoint)
   }
 
-  def para[F[_]: Functor, A](t: T[F])(f: F[(T[F], A)] => A): A =
-    f(project(t) ∘ (t => (t, para(t)(f))))
+  /** The paramorphism is a fold that provides access to the unfolded children
+    * as well as their folded values.
+    */
+  def para[F[_]: Functor, A](t: T[F])(φ: F[(T[F], A)] => A): A =
+    φ(project(t) ∘ (t => (t, para(t)(φ))))
 
-  def paraM[F[_]: Traverse, M[_]: Monad, A](t: T[F])(f: F[(T[F], A)] => M[A]):
+  /** A Kleisli version of [[matryoshka.Recursive.para]]. */
+  def paraM[F[_]: Traverse, M[_]: Monad, A](t: T[F])(φ: F[(T[F], A)] => M[A]):
       M[A] =
-    project(t).traverse(v => paraM(v)(f) ∘ ((v, _))).flatMap(f)
+    project(t).traverse(v => paraM(v)(φ) ∘ ((v, _))).flatMap(φ)
 
   def gpara[F[_]: Functor, W[_]: Comonad, A](
     t: T[F])(
-    e: DistributiveLaw[F, W], f: F[EnvT[T[F], W, A]] => A)(
+    e: DistributiveLaw[F, W], φ: F[EnvT[T[F], W, A]] => A)(
     implicit T: Corecursive[T]):
       A =
-    gzygo[F, W, A, T[F]](t)(T.embed(_), e, f)
+    gzygo[F, W, A, T[F]](t)(T.embed(_), e, φ)
 
+  /** The zygomorphism is a fold with a “helper” fold. It provides access to the
+    * result of applying some other algebra to the children as well as their
+    * values under the current algebra.
+    */
   def zygo[F[_]: Functor, A, B](t: T[F])(f: F[B] => B, g: F[(B, A)] => A): A =
     gcata[F, (B, ?), A](t)(distZygo(f), g)
 
@@ -64,22 +86,31 @@ import simulacrum.typeclass
       A =
     gcata[F, EnvT[B, W, ?], A](t)(distZygoT(f, w), g)
 
-  /** Mutually-recursive fold. */
+  /** The mutumorphism is a mutually-recursive fold. It generalizes
+    * [[matryoshka.Recursive.zygo]] to allow each algebra to access the results
+    * of the other.
+    */
   def mutu[F[_]: Functor, A, B](t: T[F])(f: F[(A, B)] => B, g: F[(B, A)] => A):
       A =
     g(project(t) ∘ (x => (mutu(x)(g, f), mutu(x)(f, g))))
 
-  def histo[F[_]: Functor, A](t: T[F])(f: F[Cofree[F, A]] => A): A =
-    gcata[F, Cofree[F, ?], A](t)(distHisto, f)
+  /** The histomorphism provides access to both the unfolded structure as well
+    * as the history of the results of the children to the current algebra.
+    */
+  def histo[F[_]: Functor, A](t: T[F])(φ: F[Cofree[F, A]] => A): A =
+    gcata[F, Cofree[F, ?], A](t)(distHisto, φ)
 
   def ghisto[F[_]: Functor, H[_]: Functor, A](
     t: T[F])(
-    g: DistributiveLaw[F, H], f: F[Cofree[H, A]] => A):
+    g: DistributiveLaw[F, H], φ: F[Cofree[H, A]] => A):
       A =
-    gcata[F, Cofree[H, ?], A](t)(distGHisto(g), f)
+    gcata[F, Cofree[H, ?], A](t)(distGHisto(g), φ)
 
+  /** This variation on [[matryoshka.Recursive.zygo]] makes the “helper”
+    * paramorphic.
+    */
   def paraZygo[F[_]:Functor: Unzip, A, B](
-    t: T[F]) (
+    t: T[F])(
     f: F[(T[F], B)] => B,
     g: F[(B, A)] => A):
       A = {
@@ -145,6 +176,9 @@ import simulacrum.typeclass
     loop(Monoid[Z].zero, t)
   }
 
+  // /** This function converts a structure using one fixpoint operator to a
+  //   * structure using another fixpoint operator.
+  //   */
   def convertTo[F[_]: Functor, R[_[_]]: Corecursive](t: T[F]): R[F] =
     cata(t)(Corecursive[R].embed[F])
 }

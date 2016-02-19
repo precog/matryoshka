@@ -18,21 +18,9 @@ package matryoshka
 
 import scalaz._
 
-final case class Fix[F[_]](unFix: F[Fix[F]])
-object Fix {
-  implicit val recursive: Recursive[Fix] = new Recursive[Fix] {
-    def project[F[_]: Functor](t: Fix[F]) = t.unFix
-  }
-
-  implicit val corecursive: Corecursive[Fix] = new Corecursive[Fix] {
-    def embed[F[_]: Functor](t: F[Fix[F]]) = Fix(t)
-  }
-
-  implicit def show[F[_]](implicit F: Show ~> λ[α => Show[F[α]]]):
-      Show[Fix[F]] =
-    Show.show(f => F(show[F]).show(f.unFix))
-
-  implicit def equal[F[_]](implicit F: Equal ~> λ[α => Equal[F[α]]]):
-      Equal[Fix[F]] =
-    Equal.equal((a, b) => F(equal[F]).equal(a.unFix, b.unFix))
+sealed class TransformationalCoalgebraOps[T[_[_]], M[_], F[_], G[_]](
+  self: GCoalgebra[M, G, T[F]]) {
+  def toTransformation(implicit T: Corecursive[T], F: Functor[F]):
+      F[T[F]] => G[M[T[F]]] =
+    algebra.coalgebraToTransformation[T, M, F, G](self)
 }

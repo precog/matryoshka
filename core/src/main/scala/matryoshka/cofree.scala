@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 - 2015 SlamData Inc.
+ * Copyright 2014–2016 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,13 +28,16 @@ trait CofreeInstances {
 
   implicit def cofreeTraverseT[A]: TraverseT[Cofree[?[_], A]] =
     new TraverseT[Cofree[?[_], A]] {
-      def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: Cofree[F, A])(f: F[Cofree[F, A]] => M[G[Cofree[G, A]]]) =
+      def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](
+        t: Cofree[F, A])(
+        f: F[Cofree[F, A]] => M[G[Cofree[G, A]]]) =
         f(t.tail).map(Cofree(t.head, _))
     }
 
-  implicit def cofreeShow[F[_], A: Show](implicit F: (Show ~> λ[α => Show[F[α]]])):
+  implicit def cofreeShow[F[_], A: Show](
+    implicit F: (Show ~> λ[α => Show[F[α]]])):
       Show[Cofree[F, A]] =
-        Show.shows(cof => "(" + cof.head.show + ", " + F(cofreeShow).shows(cof.tail) + ")")
+    Show.shows(cof => "(" + cof.head.show + ", " + F(cofreeShow).shows(cof.tail) + ")")
 }
 
 object cofree extends CofreeInstances
