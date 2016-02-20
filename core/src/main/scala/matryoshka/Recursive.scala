@@ -27,7 +27,7 @@ import simulacrum.typeclass
   def project[F[_]: Functor](t: T[F]): F[T[F]]
 
   def cata[F[_]: Functor, A](t: T[F])(f: F[A] => A): A =
-    f(project(t).map(cata(_)(f)))
+    f(project(t) ∘ (cata(_)(f)))
 
   def cataM[F[_]: Traverse, M[_]: Monad, A](t: T[F])(f: F[A] => M[A]): M[A] =
     project(t).traverse(cataM(_)(f)).flatMap(f)
@@ -36,17 +36,17 @@ import simulacrum.typeclass
     t: T[F])(
     k: DistributiveLaw[F, W], g: F[W[A]] => A):
       A = {
-    def loop(t: T[F]): W[F[W[A]]] = k(project(t).map(loop(_).map(g).cojoin))
+    def loop(t: T[F]): W[F[W[A]]] = k(project(t) ∘ (loop(_).map(g).cojoin))
 
     g(loop(t).copoint)
   }
 
   def para[F[_]: Functor, A](t: T[F])(f: F[(T[F], A)] => A): A =
-    f(project(t).map(t => (t, para(t)(f))))
+    f(project(t) ∘ (t => (t, para(t)(f))))
 
   def paraM[F[_]: Traverse, M[_]: Monad, A](t: T[F])(f: F[(T[F], A)] => M[A]):
       M[A] =
-    project(t).traverse(v => paraM(v)(f).map((v, _))).flatMap(f)
+    project(t).traverse(v => paraM(v)(f) ∘ ((v, _))).flatMap(f)
 
   def gpara[F[_]: Functor, W[_]: Comonad, A](
     t: T[F])(
@@ -64,6 +64,11 @@ import simulacrum.typeclass
       A =
     gcata[F, EnvT[B, W, ?], A](t)(distZygoT(f, w), g)
 
+  /** Mutually-recursive fold. */
+  def mutu[F[_]: Functor, A, B](t: T[F])(f: F[(A, B)] => B, g: F[(B, A)] => A):
+      A =
+    g(project(t) ∘ (x => (mutu(x)(g, f), mutu(x)(f, g))))
+
   def histo[F[_]: Functor, A](t: T[F])(f: F[Cofree[F, A]] => A): A =
     gcata[F, Cofree[F, ?], A](t)(distHisto, f)
 
@@ -79,7 +84,7 @@ import simulacrum.typeclass
     g: F[(B, A)] => A):
       A = {
     def h(t: T[F]): (B, A) =
-      (project(t).map { x =>
+      (project(t) ∘ { x =>
         val (b, a) = h(x)
         ((x, b), (b, a))
       }).unfzip.bimap(f, g)
