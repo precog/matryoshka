@@ -56,7 +56,7 @@ lazy val standardSettings = Seq(
 
   console <<= console in Test, // console alias test:console
 
-  scalazVersion := "7.1.7",
+  scalazVersion := "7.1.4",
   slcVersion    := "0.4",
 
   libraryDependencies ++= Seq(
