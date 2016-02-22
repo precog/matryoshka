@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 - 2015 SlamData Inc.
+ * Copyright 2014–2016 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,16 +50,11 @@ import simulacrum.typeclass
 }
 
 object TraverseT {
+  import Recursive.ops._
+
   implicit def recCorecTraverseT[T[_[_]]: Recursive: Corecursive]: TraverseT[T] =
     new TraverseT[T] {
       def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => M[G[T[G]]]) =
-        f(Recursive[T].project(t)).map(Corecursive[T].embed[G])
+        f(t.project) ∘ (_.embed)
     }
-
-  /** Import from this object instead of `ops._` to get just ops for the
-    * methods of TraverseT, and not those inherited from FunctorT.
-    * Otherwise, importing both leads to ambiguous implicits.
-    * See https://github.com/mpilquist/simulacrum/issues/46.
-    */
-  object ownOps extends ToTraverseTOps
 }

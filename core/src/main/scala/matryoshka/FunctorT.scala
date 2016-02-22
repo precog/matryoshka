@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 - 2015 SlamData Inc.
+ * Copyright 2014–2016 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,11 +37,11 @@ import simulacrum.{typeclass, op}
   *
   * This is noticable when `T` is `Cofree`. In this function, the result may
   * have any `head` the algebra desires, whereas in `transCata`, it can only
-  * have the `head` of the argument to `f`.
-  * 
+  * have the `head` that was peeled off the argument to `f`.
+  *
   * Docs for operations, since they seem to break scaladoc if put in the right
   * place:
-  * 
+  *
   * * `map` – very roughly like Uniplate’s `descend`
   * * `transCataT` – akin to Uniplate’s `transform`
   * * `transAnaT` – akin to Uniplate’s `topDownTransform`

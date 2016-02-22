@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 - 2015 SlamData Inc.
+ * Copyright 2014–2016 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,14 @@
 package matryoshka
 
 import scalaz._
-import scalaz.syntax.monad._
 
 sealed class CoalgebraOps[F[_], A](self: Coalgebra[F, A]) {
   def generalize[M[_]: Monad](implicit F: Functor[F]): GCoalgebra[M, F, A] =
-    self(_).map(_.map(_.point[M]))
+    algebra.generalizeCoalgebra[M, F, A](self)
 
-  def generalizeElgot[B]: ElgotCoalgebra[F, A, B] = self(_).point[B \/ ?]
+  def generalizeM[M[_]: Monad]: CoalgebraM[M, F, A] =
+    algebra.generalizeCoalgebraM[M, F, A](self)
+
+  def generalizeElgot[M[_]: Monad]: CoalgebraM[M, F, A] =
+    algebra.generalizeElgotCoalgebra[M, F, A](self)
 }

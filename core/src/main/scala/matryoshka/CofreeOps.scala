@@ -18,21 +18,10 @@ package matryoshka
 
 import scalaz._
 
-final case class Fix[F[_]](unFix: F[Fix[F]])
-object Fix {
-  implicit val recursive: Recursive[Fix] = new Recursive[Fix] {
-    def project[F[_]: Functor](t: Fix[F]) = t.unFix
-  }
+sealed class CofreeOps[F[_], A](self: Cofree[F, A]) {
+  def elgotCata[B](φ: ((A, F[B])) => B)(implicit F: Functor[F]): B =
+    matryoshka.elgotCata[F, A, B](self)(φ)
 
-  implicit val corecursive: Corecursive[Fix] = new Corecursive[Fix] {
-    def embed[F[_]: Functor](t: F[Fix[F]]) = Fix(t)
-  }
-
-  implicit def show[F[_]](implicit F: Show ~> λ[α => Show[F[α]]]):
-      Show[Fix[F]] =
-    Show.show(f => F(show[F]).show(f.unFix))
-
-  implicit def equal[F[_]](implicit F: Equal ~> λ[α => Equal[F[α]]]):
-      Equal[Fix[F]] =
-    Equal.equal((a, b) => F(equal[F]).equal(a.unFix, b.unFix))
+  def elgotCataM[M[_]: Monad, B](φ: ((A, F[B])) => M[B])(implicit F: Traverse[F]): M[B] =
+    matryoshka.elgotCataM[F, M, A, B](self)(φ)
 }
