@@ -49,8 +49,8 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   /** A NaturalTransformation that sequences two types */
   type DistributiveLaw[F[_], G[_]] = λ[α => F[G[α]]] ~> λ[α => G[F[α]]]
 
-  /** This is like the fold half of [[matryoshka.refold.coelgot]], since the
-    * [[scalaz.Cofree]] already has the attribute for each node.
+  /** This is like the fold half of `coelgot`, since the `Cofree` already has
+    * the attribute for each node.
     */
   def elgotCata[F[_]: Functor, A, B](t: Cofree[F, A])(φ: ((A, F[B])) => B): B =
     φ((t.head, t.tail ∘ (elgotCata(_)(φ))))
@@ -58,8 +58,8 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   def elgotCataM[F[_]: Traverse, M[_]: Monad, A, B](t: Cofree[F, A])(φ: ((A, F[B])) => M[B]): M[B] =
     t.tail.traverse(elgotCataM(_)(φ)) >>= (fb => φ((t.head, fb)))
 
-  /** This is like the unfold half of [[matryoshka.refold.elgot]], holding the
-    * left branches in the pure component of [[scalaz.Free]].
+  /** This is like the unfold half of `elgot`, holding the left branches in the
+    * pure component of `Free`.
     */
   def elgotAna[F[_]: Functor, A, B](a: A)(ψ: A => B \/ F[A]): Free[F, B] =
     ψ(a).fold(
