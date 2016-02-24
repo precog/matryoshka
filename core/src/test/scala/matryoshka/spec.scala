@@ -354,12 +354,10 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     // Evaluate as usual, but trap 0*0 as a special case
     def peval[T[_[_]]: Recursive](t: Exp[(T[Exp], Int)]): Int = t match {
-      case Mul((a, x), (b, y)) => (a.project, b.project) match {
-        case (Num(0), Num(0)) => -1
-        case (_,      _)      => x * y
-      }
-      case Num(x) => x
-      case _ => Predef.???
+      case Mul((Proj(Num(0)), _), (Proj(Num(0)), _)) => -1
+      case Mul((_           , x), (_,            y)) => x * y
+      case Num(x)                                    => x
+      case _                                         => Predef.???
     }
 
     "attributePara" should {
@@ -399,11 +397,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       "behave like para" in {
         val v = mul(num(0), mul(num(0), num(1)))
         v.gpara[Id, Int](
-          new (λ[α => Exp[Id[α]]] ~> λ[α => Id[Exp[α]]]) {
-            def apply[A](ex: Exp[Id[A]]): Id[Exp[A]] =
-              ex.map(_.copoint).point[Id]
-          },
-          expr => { peval(expr.map(_.runEnvT)) }) must equal(0)
+          distCata,
+          expr => peval(expr.map(_.runEnvT))) must equal(0)
       }
     }
 
