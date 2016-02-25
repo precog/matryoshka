@@ -123,6 +123,57 @@ object Exp {
   }
 }
 
+sealed trait Exp2[A]
+object Exp2 {
+  case class Const[A]() extends Exp2[A]
+  case class Num2[A](value: Int) extends Exp2[A]
+  case class Single[A](a: A) extends Exp2[A]
+
+  implicit val arbExp2: Arbitrary ~> λ[α => Arbitrary[Exp2[α]]] =
+    new (Arbitrary ~> λ[α => Arbitrary[Exp2[α]]]) {
+      def apply[α](arb: Arbitrary[α]): Arbitrary[Exp2[α]] =
+        Arbitrary(Gen.oneOf(
+          Gen.const(Const[α]),
+          Arbitrary.arbitrary[Int].map(Num2[α](_)),
+          arb.arbitrary.map(Single(_))))
+    }
+
+  def const = Fix[Exp2](Const())
+  def num2(v: Int) = Fix[Exp2](Num2(v))
+  def single(a: Fix[Exp2]) = Fix[Exp2](Single(a))
+
+  implicit val Exp2Functor: Functor[Exp2] = new Functor[Exp2] {
+    def map[A, B](fa: Exp2[A])(f: A => B): Exp2[B] = fa match {
+      case Const()   => Const[B]()
+      case Num2(v)   => Num2[B](v)
+      case Single(a) => Single(f(a))
+    }
+  }
+
+  implicit val Exp2Show: Show ~> λ[α => Show[Exp2[α]]] =
+    new (Show ~> λ[α => Show[Exp2[α]]]) {
+      def apply[α](show: Show[α]) =
+        Show.show {
+          case Const()   => "Const()"
+          case Num2(v)   => "Num2(" + v.shows + ")"
+          case Single(a) => "Single(" + show.shows(a) + ")"
+        }
+    }
+
+  implicit val Exp2Equal: Equal ~> λ[α => Equal[Exp2[α]]] =
+    new (Equal ~> λ[α => Equal[Exp2[α]]]) {
+      def apply[α](eq: Equal[α]) =
+        Equal.equal[Exp2[α]] {
+          case (Const(), Const())       => true
+          case (Num2(v1), Num2(v2))     => v1 ≟ v2
+          case (Single(a1), Single(a2)) => eq.equal(a1, a2)
+          case _                        => false
+        }
+    }
+  implicit def Exp2Equal2[A](implicit A: Equal[A]): Equal[Exp2[A]] = Exp2Equal(A)
+}
+
+
 class ExpSpec extends Spec {
   import Exp._
 
@@ -131,6 +182,16 @@ class ExpSpec extends Spec {
   //     tests is lawful.
   checkAll(equal.laws[Exp[Int]])
   checkAll(traverse.laws[Exp])
+}
+
+class Exp2Spec extends Spec {
+  import Exp2._
+
+  implicit val arbExp2Int: Arbitrary[Exp2[Int]] = arbExp2(Arbitrary.arbInt)
+  // NB: These are just a sanity check that the data structure created for the
+  //     tests is lawful.
+  checkAll(equal.laws[Exp2[Int]])
+  checkAll(functor.laws[Exp2])
 }
 
 class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
@@ -163,7 +224,24 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     case _      => None
   }
 
-  def addOneƒ[T[_[_]]]: Exp[T[Exp]] => Exp[T[Exp]] = once(addOneOptƒ)
+  def addOneƒ[T[_[_]]]: Exp[T[Exp]] => Exp[T[Exp]] =
+    orOriginal(addOneOptƒ)
+
+  def addOneOptExpExp2ƒ[T[_[_]]]: Exp[T[Exp2]] => Option[Exp2[T[Exp2]]] = {
+    case Num(n) => Exp2.Num2(n+1).some
+    case _      => None
+  }
+
+  def addOneExpExp2ƒ[T[_[_]]]: Exp[T[Exp2]] => Exp2[T[Exp2]] =
+    orDefault[Exp[T[Exp2]], Exp2[T[Exp2]]](Exp2.Const())(addOneOptExpExp2ƒ)
+
+  def addOneOptExp2Expƒ[T[_[_]]]: Exp2[T[Exp2]] => Option[Exp[T[Exp2]]] = {
+    case Exp2.Num2(n) => Num(n+1).some
+    case _            => None
+  }
+
+  def addOneExp2Expƒ[T[_[_]]]: Exp2[T[Exp2]] => Exp[T[Exp2]] =
+    orDefault[Exp2[T[Exp2]], Exp[T[Exp2]]](Num(0))(addOneOptExp2Expƒ)
 
   def simplifyƒ[T[_[_]]: Recursive]: Exp[T[Exp]] => Option[Exp[T[Exp]]] = {
     case Mul(a, b) => (a.project, b.project) match {
@@ -181,6 +259,22 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     case t @ Mul(_, _) => repeatedly(simplifyƒ[T]).apply(t)
     case t             => t
   }
+
+  def extractLambdaƒ[T[_[_]]: Recursive]: Exp[(T[Exp], T[Exp2])] => Exp2[T[Exp2]] = {
+    case Lambda(_, (exp, exp2)) => exp.project match {
+      case Num(a) => Exp2.Num2(a)
+      case _      => Exp2.Single(exp2)
+    }
+    case _                      => Exp2.Const[T[Exp2]]
+  }
+
+  val MinusThree: Exp ~> Exp =
+    new (Exp ~> Exp) {
+      def apply[A](exp: Exp[A]): Exp[A] = exp match {
+        case Num(x) => Num(x-3)
+        case t      => t
+      }
+    }
 
   "Fix" should {
     "isLeaf" should {
@@ -253,6 +347,44 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       "be top-down" in {
         mul(num(0), num(1)).transAna(addOneOrSimplifyƒ) must equal(num(0))
         mul(num(1), num(2)).transAna(addOneOrSimplifyƒ) must equal(num(2))
+      }
+    }
+
+    "transPrepro" should {
+      "change literal with identity ~>" in {
+        num(1).transPrepro(addOneƒ)(NaturalTransformation.refl[Exp]) must equal(num(2))
+      }
+
+      "apply ~> in original space" in {
+        num(1).transPrepro(addOneƒ)(MinusThree) must equal(num(-1))
+      }
+
+      "apply ~> with change of space" in {
+        num(1).transPrepro(addOneExpExp2ƒ)(MinusThree) must equal(Exp2.num2(-1))
+      }
+    }
+
+    "transPostpro" should {
+      "change literal with identity ~>" in {
+        num(1).transPostpro(addOneƒ)(NaturalTransformation.refl[Exp]) must equal(num(2))
+      }
+
+      "apply ~> in original space" in {
+        num(1).transPostpro(addOneƒ)(MinusThree) must equal(num(-1))
+      }
+
+      "apply ~> with change of space" in {
+        Exp2.num2(1).transPostpro(addOneExp2Expƒ)(MinusThree) must equal(num(-1))
+      }
+    }
+
+    "transPara" should {
+      "project basic exp" in {
+        lam('sym, num(3)).transPara(extractLambdaƒ) must equal(Exp2.num2(3))
+      }
+
+      "project basic exp recursively" in {
+        lam('sym, mul(num(5), num(7))).transPara(extractLambdaƒ) must equal(Exp2.single(Exp2.const))
       }
     }
 
