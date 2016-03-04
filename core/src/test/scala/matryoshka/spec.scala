@@ -402,6 +402,34 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
+    def depth[T[_[_]], F[_]]: (Int, T[F]) => Int = (i, _) => i + 1
+
+    def sequential[T[_[_]], F[_]]: (Int, T[F]) => State[Int, Int] =
+      (_, _) => State.get[Int] <* State.modify[Int](_ + 1)
+
+    "attributeTopDown" should {
+      "increase toward leaves" in {
+        val v = mul(num(0), mul(num(0), num(1)))
+        v.attributeTopDown(0)(depth) must equal(
+          Cofree[Exp, Int](1, Mul(
+            Cofree(2, Num(0)),
+            Cofree(2, Mul(
+              Cofree(3, Num(0)),
+              Cofree(3, Num(1)))))))
+      }
+
+      "increase toward leaves, ltr" in {
+        val v = mul(num(0), mul(num(0), num(1)))
+        v.attributeTopDownM[State[Int, ?], Int](0)(sequential).eval(0) must
+          equal(
+            Cofree[Exp, Int](0, Mul(
+              Cofree(1, Num(0)),
+              Cofree(2, Mul(
+                Cofree(3, Num(0)),
+                Cofree(4, Num(1)))))))
+      }
+    }
+
     "distCata" should {
       "behave like cata" in {
         val v = mul(num(0), mul(num(0), num(1)))

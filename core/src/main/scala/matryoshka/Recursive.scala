@@ -115,6 +115,20 @@ import simulacrum.typeclass
     loop(a, t)
   }
 
+  /** Attribute a tree via an algebra starting from the root. */
+  def attributeTopDown[F[_]: Functor, A](t: T[F], z: A)(f: (A, T[F]) => A):
+      Cofree[F, A] = {
+    val a = f(z, t)
+    Cofree(a, project(t) ∘ (attributeTopDown(_, a)(f)))
+  }
+  /** Kleisli variant of attributeTopDown */
+  def attributeTopDownM[F[_]: Traverse, M[_]: Monad, A](
+    t: T[F], z: A)(
+    f: (A, T[F]) => M[A]):
+      M[Cofree[F, A]] =
+    f(z, t) >>=
+      (a => project(t).traverse(attributeTopDownM(_, a)(f)) ∘ (Cofree(a, _)))
+
   // Foldable
   def all[F[_]: Functor: Foldable](t: T[F])(p: T[F] ⇒ Boolean): Boolean =
     Tag.unwrap(foldMap(t)(p(_).conjunction))
