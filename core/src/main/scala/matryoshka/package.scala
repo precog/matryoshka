@@ -37,20 +37,52 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   type GAlgebra[W[_], F[_], A] = GAlgebraM[W, Id, F, A] // F[W[A]] => A
   type AlgebraM[M[_], F[_], A] = GAlgebraM[Id, M, F, A] // F[A]    => M[A]
   type Algebra[F[_], A]        = GAlgebra[Id, F, A]     // F[A]    => A
+  type ElgotAlgebraM[W[_], M[_], F[_], A] = W[F[A]] => M[A]
+  type ElgotAlgebra[W[_], F[_], A] = ElgotAlgebraM[W, Id, F, A] // W[F[A]] => A
 
   type GCoalgebraM[N[_], M[_], F[_], A] =                      A => M[F[N[A]]]
   type GCoalgebra[N[_], F[_], A] = GCoalgebraM[N, Id, F, A] // A => N[F[A]]
   type CoalgebraM[M[_], F[_], A] = GCoalgebraM[Id, M, F, A] // A => F[M[A]]
   type Coalgebra[F[_], A]        = GCoalgebra[Id, F, A]     // A => F[A]
 
-  type ElgotCoalgebraM[M[_], F[_], A, B] = A => M[B \/ F[A]]
-  type ElgotCoalgebra[F[_], A, B] = ElgotCoalgebraM[Id, F, A, B] // A => B \/ F[A]
-
-  type ElgotAlgebraM[M[_], F[_], A, B] = (A, F[B]) => M[B]
-  type ElgotAlgebra[F[_], A, B] = ElgotAlgebraM[Id, F, A, B] // (A, F[B]) => B
 
   /** A NaturalTransformation that sequences two types */
   type DistributiveLaw[F[_], G[_]] = λ[α => F[G[α]]] ~> λ[α => G[F[α]]]
+
+  /** This folds a Free that you may think of as “already partially-folded”.
+    * It’s also the fold of a decomposed `elgot`.
+    */
+  def interpretCata[F[_]: Functor, A](t: Free[F, A])(φ: F[A] => A): A =
+    t.fold(x => x, f => φ(f ∘ (interpretCata(_)(φ))))
+
+  /** The fold of a decomposed `coelgot`, since the Cofree already has the
+    * attribute for each node.
+    */
+  def elgotCata[F[_]: Functor, A, B](t: Cofree[F, A])(φ: ((A, F[B])) => B): B =
+    φ((t.head, t.tail ∘ (elgotCata(_)(φ))))
+
+  def elgotCataM[F[_]: Traverse, M[_]: Monad, A, B](
+    t: Cofree[F, A])(
+    φ: ((A, F[B])) => M[B]):
+      M[B] =
+    t.tail.traverse(elgotCataM(_)(φ)) >>= (fb => φ((t.head, fb)))
+
+  /** A version of [[matryoshka.Corecursive.ana]] that annotates each node with
+    * the `A` it was expanded from. This is also the unfold from a decomposed
+    * `coelgot`.
+    */
+  def attributeAna[F[_]: Functor, A](a: A)(ψ: A => F[A]): Cofree[F, A] =
+    Cofree(a, ψ(a) ∘ (attributeAna(_)(ψ)))
+
+  /** A Kleisli [[matryoshka.attributeAna]]. */
+  def attributeAnaM[M[_]: Monad, F[_]: Traverse, A](a: A)(ψ: A => M[F[A]]): M[Cofree[F, A]] =
+    ψ(a).flatMap(_.traverse(attributeAnaM(_)(ψ))) ∘ (Cofree(a, _))
+
+  /** The unfold from a decomposed `elgot`. */
+  def elgotAna[F[_]: Functor, A, B](a: A)(ψ: A => B \/ F[A]): Free[F, B] =
+    ψ(a).fold(
+      _.point[Free[F, ?]],
+      fb => Free.liftF(fb ∘ (elgotAna(_)(ψ))).join)
 
   def cofCataM[S[_]: Traverse, M[_]: Monad, A, B](t: Cofree[S, A])(f: (A, S[B]) => M[B]): M[B] =
     t.tail.traverse(cofCataM(_)(f)) >>= (f(t.head, _))
@@ -102,18 +134,18 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     h(a)
   }
 
-  def coelgot[F[_]: Functor, A, B](a: A)(φ: (A, F[B]) => B, ψ: A => F[A]):
+  def coelgot[F[_]: Functor, A, B](a: A)(φ: ((A, F[B])) => B, ψ: A => F[A]):
       B = {
     def h: A => B =
-      φ.tupled ⋘ (((x: A) => x) &&& (((x: F[A]) => x ∘ h) ⋘ ψ))
+      φ ⋘ (((x: A) => x) &&& (((x: F[A]) => x ∘ h) ⋘ ψ))
     h(a)
   }
 
   def coelgotM[M[_]] = new CoelgotMPartiallyApplied[M]
   final class CoelgotMPartiallyApplied[M[_]] {
-    def apply[F[_]: Traverse, A, B](a: A)(φ: (A, F[B]) => M[B], ψ: A => M[F[A]])(implicit M: Monad[M]):
+    def apply[F[_]: Traverse, A, B](a: A)(φ: ((A, F[B])) => M[B], ψ: A => M[F[A]])(implicit M: Monad[M]):
         M[B] = {
-      def h(a: A): M[B] = ψ(a) >>= (_.traverse(h)) >>= (φ(a, _))
+      def h(a: A): M[B] = ψ(a) >>= (_.traverse(h)) >>= (x => φ((a, x)))
       h(a)
     }
   }
@@ -242,13 +274,14 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     }
   implicit def AlgebraZip[F[_]: Functor] = GAlgebraZip[Id, F]
 
-  implicit def ElgotAlgebraMZip[M[_]: Applicative, F[_]: Functor, C]:
-      Zip[ElgotAlgebraM[M, F, C, ?]] =
-    new Zip[ElgotAlgebraM[M, F, C, ?]] {
-      def zip[A, B](a: ⇒ ElgotAlgebraM[M, F, C, A], b: ⇒ ElgotAlgebraM[M, F, C, B]) =
-        (ann, node) => Bitraverse[(?, ?)].bisequence((a(ann, node ∘ (_._1)), b(ann, node ∘ (_._2))))
+  implicit def ElgotAlgebraMZip[W[_]: Functor, M[_]: Applicative, F[_]: Functor]:
+      Zip[ElgotAlgebraM[W, M, F, ?]] =
+    new Zip[ElgotAlgebraM[W, M, F, ?]] {
+      def zip[A, B](a: ⇒ ElgotAlgebraM[W, M, F, A], b: ⇒ ElgotAlgebraM[W, M, F, B]) =
+        w => Bitraverse[(?, ?)].bisequence((a(w ∘ (_ ∘ (_._1))), b(w ∘ (_ ∘ (_._2)))))
     }
-  implicit def ElgotAlgebraZip[F[_]: Functor, C] = ElgotAlgebraMZip[Id, F, C]
+  implicit def ElgotAlgebraZip[W[_]: Functor, F[_]: Functor] =
+    ElgotAlgebraMZip[W, Id, F]
     // (ann, node) => node.unfzip.bimap(f(ann, _), g(ann, _))
 
   /** Repeatedly applies the function to the result as long as it returns Some.
@@ -278,4 +311,10 @@ package object matryoshka extends CofreeInstances with FreeInstances {
 
   implicit def ToCoalgebraOps[F[_], A](a: Coalgebra[F, A]): CoalgebraOps[F, A] =
     new CoalgebraOps[F, A](a)
+
+  implicit def ToCofreeOps[F[_], A](a: Cofree[F, A]): CofreeOps[F, A] =
+    new CofreeOps[F, A](a)
+
+  implicit def ToFreeOps[F[_], A](a: Free[F, A]): FreeOps[F, A] =
+    new FreeOps[F, A](a)
 }

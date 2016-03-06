@@ -19,17 +19,17 @@ package matryoshka
 import scalaz._, Scalaz._
 
 trait FreeInstances {
-  implicit def FreeTraverseT[A]: TraverseT[Free[?[_], A]] =
+  implicit def freeCorecursive[A]: Corecursive[Free[?[_], A]] =
+    new Corecursive[Free[?[_], A]] {
+      def embed[F[_]: Functor](t: F[Free[F, A]]) = Free.liftF(t).join
+    }
+
+  implicit def freeTraverseT[A]: TraverseT[Free[?[_], A]] =
     new TraverseT[Free[?[_], A]] {
       def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: Free[F, A])(f: F[Free[F, A]] => M[G[Free[G, A]]]) =
         t.fold(
           _.point[Free[G, ?]].point[M],
           f(_).map(Free.liftF(_).join))
-    }
-
-  implicit def FreeCorecursive[A]: Corecursive[Free[?[_], A]] =
-    new Corecursive[Free[?[_], A]] {
-      def embed[F[_]: Functor](t: F[Free[F, A]]) = Free.liftF(t).join
     }
 }
 

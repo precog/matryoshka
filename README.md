@@ -43,7 +43,7 @@ All of these types have instances for `Recursive`, `Corecursive`, `FunctorT`, `T
 - `Fix` – This is the simplest fixpoint type, implemented with general recursion.
 - `Mu` – This is for inductive (finite) recursive structures, models the concept of “data”, aka, the “least fixed point”.
 - `Nu` – This is for coinductive (potentially infinite) recursive structures, models the concept of “codata”, aka, the “greatest fixed point’.
-- `Cofree[?[_], A]` – Does not have a `Corecursive` instance. This represents a structure with some metadata attached to each node. In addition to the usual operations, it can also be folded using an Elgot algebra.
+- `Cofree[?[_], A]` – Only has a `Corecursive` instance if there’s a `Monoid` for `A`. This represents a structure with some metadata attached to each node. In addition to the usual operations, it can also be folded using an Elgot algebra.
 - `Free[?[_], A]` – Does not have a `Recursive` instance. In addition to the usual operations, it can also be created by unfolding with an Elgot coalgebra.
 
 So a type like `Mu[Expr]` is now isomorphic to the original recursive type. However, the point is to avoid operating on recursive types directly …
