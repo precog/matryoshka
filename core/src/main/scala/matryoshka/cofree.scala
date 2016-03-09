@@ -26,6 +26,11 @@ trait CofreeInstances {
       def project[F[_]: Functor](t: Cofree[F, A]) = t.tail
     }
 
+  implicit def cofreeCorecursive[A: Monoid]: Corecursive[Cofree[?[_], A]] =
+    new Corecursive[Cofree[?[_], A]] {
+      def embed[F[_]: Functor](t: F[Cofree[F, A]]) = Cofree(Monoid[A].zero, t)
+    }
+
   implicit def cofreeTraverseT[A]: TraverseT[Cofree[?[_], A]] =
     new TraverseT[Cofree[?[_], A]] {
       def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: Cofree[F, A])(f: F[Cofree[F, A]] => M[G[Cofree[G, A]]]) =

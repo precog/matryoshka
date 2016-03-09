@@ -308,15 +308,29 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
+    "coelgot" should {
+      "behave like elgotCata ⋘ attributeAna" ! prop { (i: Int) =>
+        i.coelgot(eval.generalizeElgot[(Int, ?)], extractFactors) must equal(
+          i.attributeAna(extractFactors).elgotCata(eval.generalizeElgot[(Int, ?)]))
+      }
+    }
+
+    "elgot" should {
+      "behave like interpCata ⋘ elgotAna" ! prop { (i: Int) =>
+        i.elgot(eval, extractFactors.generalizeElgot[Int \/ ?]) must equal(
+          i.elgotAna(extractFactors.generalizeElgot[Int \/ ?]).interpretCata(eval))
+      }
+    }
+
     "generalizeElgot" should {
       "behave like cata on an algebra" ! prop { (i: Int) =>
         val x = i.ana(extractFactors).cata(eval)
-        i.coelgot(eval.generalizeElgot[Int], extractFactors) must equal(x)
+        i.coelgot(eval.generalizeElgot[(Int, ?)], extractFactors) must equal(x)
       }
 
       "behave like ana on an coalgebra" ! prop { (i: Int) =>
         val x = i.ana(extractFactors).cata(eval)
-        i.elgot(eval, extractFactors.generalizeElgot[Int]) must equal(x)
+        i.elgot(eval, extractFactors.generalizeElgot[Int \/ ?]) must equal(x)
       }
     }
 
@@ -402,9 +416,9 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    def depth[T[_[_]], F[_]]: (Int, T[F]) => Int = (i, _) => i + 1
+    def depth[T[_[_]], F[_]]: (Int, F[T[F]]) => Int = (i, _) => i + 1
 
-    def sequential[T[_[_]], F[_]]: (Int, T[F]) => State[Int, Int] =
+    def sequential[T[_[_]], F[_]]: (Int, F[T[F]]) => State[Int, Int] =
       (_, _) => State.get[Int] <* State.modify[Int](_ + 1)
 
     "attributeTopDown" should {

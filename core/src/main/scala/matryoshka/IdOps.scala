@@ -37,14 +37,24 @@ sealed class IdOps[A](self: A) {
       B =
     matryoshka.chrono(self)(g, f)
 
+  def attributeAna[F[_]: Functor](ψ: A => F[A]): Cofree[F, A] =
+    matryoshka.attributeAna(self)(ψ)
+
+  def attributeAnaM[M[_]: Monad, F[_]: Traverse](ψ: A => M[F[A]]):
+      M[Cofree[F, A]] =
+    matryoshka.attributeAnaM(self)(ψ)
+
+  def elgotAna[F[_]: Functor, B](ψ: A => B \/ F[A]): Free[F, B] =
+    matryoshka.elgotAna(self)(ψ)
+
   def elgot[F[_]: Functor, B](φ: F[B] => B, ψ: A => B \/ F[A]): B =
     matryoshka.elgot(self)(φ, ψ)
 
-  def coelgot[F[_]: Functor, B](φ: (A, F[B]) => B, ψ: A => F[A]): B =
+  def coelgot[F[_]: Functor, B](φ: ((A, F[B])) => B, ψ: A => F[A]): B =
     matryoshka.coelgot(self)(φ, ψ)
   def coelgotM[M[_]] = new CoelgotMPartiallyApplied[M]
   final class CoelgotMPartiallyApplied[M[_]] {
-    def apply[F[_]: Traverse, B](φ: (A, F[B]) => M[B], ψ: A => M[F[A]])(implicit M: Monad[M]):
+    def apply[F[_]: Traverse, B](φ: ((A, F[B])) => M[B], ψ: A => M[F[A]])(implicit M: Monad[M]):
         M[B] =
       matryoshka.coelgotM[M].apply[F, A, B](self)(φ, ψ)
   }

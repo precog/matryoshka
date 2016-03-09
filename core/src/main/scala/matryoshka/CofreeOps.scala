@@ -17,13 +17,18 @@
 package matryoshka
 
 import scalaz._
-import scalaz.syntax.monad._
 
-sealed class CoalgebraOps[F[_], A](self: Coalgebra[F, A]) {
-  def generalize[M[_]: Monad](implicit F: Functor[F]): GCoalgebra[M, F, A] =
-    self(_).map(_.map(_.point[M]))
+sealed class CofreeOps[F[_], A](self: Cofree[F, A]) {
+  def elgotCata[B](φ: ((A, F[B])) => B)(implicit F: Functor[F]): B =
+    matryoshka.elgotCata(self)(φ)
 
-  def generalizeM[M[_]: Monad]: CoalgebraM[M, F, A] = self(_).point[M]
+  def elgotCataM[M[_]: Monad, B](
+    φ: ((A, F[B])) => M[B])(
+    implicit F: Traverse[F]):
+      M[B] =
+    matryoshka.elgotCataM(self)(φ)
 
-  def generalizeElgot[M[_]: Monad]: CoalgebraM[M, F, A] = self.generalizeM
+  def cofCataM[M[_]: Monad, B](f: (A, F[B]) => M[B])(implicit F: Traverse[F]):
+      M[B] =
+    matryoshka.cofCataM(self)(f)
 }
