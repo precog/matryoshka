@@ -99,8 +99,8 @@ object Exp {
 
   // NB: Something like this currently needs to be defined for any Functor in
   //     order to get the generalize operations for the algebra.
-  implicit def ToExpAlgebraOps[A](a: Algebra[Exp, A]): AlgebraOps[Exp, A] =
-    ToAlgebraOps[Exp, A](a)
+  implicit def toOps[A](a: Algebra[Exp, A]): AlgebraOps[Exp, A] =
+    Algebra.toOps[Exp, A](a)
 
   implicit val ExpShow: Show ~> λ[α => Show[Exp[α]]] =
     new (Show ~> λ[α => Show[Exp[α]]]) {
@@ -423,11 +423,24 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
+    "attribute" should {
+      "work on simple algebra" in {
+        val v = mul(num(1), mul(num(2), num(3)))
+        val rez = Cofree[Exp, Int](6, Mul(
+          Cofree(1, Num(1)),
+          Cofree (6, Mul(
+            Cofree(2, Num(2)),
+            Cofree(3, Num(3))))))
+        v.cata(eval.attribute) must equal(rez)
+        v.convertTo[Mu].cata(eval.attribute) must equal(rez)
+      }
+    }
+
     "zipAlgebras" should {
       "both eval and find all constants" in {
-        mul(num(5), num(2)).cata(AlgebraZip[Exp].zip(eval, findConstants)) must
+        mul(num(5), num(2)).cata(Algebra.zip[Exp].zip(eval, findConstants)) must
           equal((10, List(5, 2)))
-        mul(num(5), num(2)).convertTo[Mu].cata(AlgebraZip[Exp].zip(eval, findConstants)) must
+        mul(num(5), num(2)).convertTo[Mu].cata(Algebra.zip[Exp].zip(eval, findConstants)) must
           equal((10, List(5, 2)))
       }
     }

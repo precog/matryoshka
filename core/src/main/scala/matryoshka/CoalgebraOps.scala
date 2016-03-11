@@ -17,13 +17,33 @@
 package matryoshka
 
 import scalaz._
-import scalaz.syntax.monad._
+
+sealed class GCoalgebraOps[M[_], F[_], A](self: GCoalgebra[M, F, A]) {
+  def generalizeM[N[_]: Applicative]:
+      GCoalgebraM[M, N, F, A] =
+    matryoshka.generalizeM[N, A, F[M[A]]](self)
+}
+
+sealed class ElgotCoalgebraOps[M[_], F[_], A](self: ElgotCoalgebra[M, F, A]) {
+  def generalizeM[N[_]: Applicative]:
+      ElgotCoalgebraM[M, N, F, A] =
+    matryoshka.generalizeM[N, A, M[F[A]]](self)
+}
+
+sealed class CoalgebraMOps[M[_], F[_], A](self: CoalgebraM[M, F, A]) {
+  def generalize[N[_]: Applicative](implicit M: Functor[M], F: Functor[F]):
+      GCoalgebraM[N, M, F, A] =
+    matryoshka.generalizeCoalgebraM[M, N, F, A](self)
+}
 
 sealed class CoalgebraOps[F[_], A](self: Coalgebra[F, A]) {
-  def generalize[M[_]: Monad](implicit F: Functor[F]): GCoalgebra[M, F, A] =
-    self(_).map(_.map(_.point[M]))
+  def generalize[M[_]: Applicative](implicit F: Functor[F]):
+      GCoalgebra[M, F, A] =
+    matryoshka.generalizeCoalgebra[M, F, A](self)
 
-  def generalizeM[M[_]: Monad]: CoalgebraM[M, F, A] = self(_).point[M]
+  def generalizeM[M[_]: Applicative]: CoalgebraM[M, F, A] =
+    matryoshka.generalizeM[M, A, F[A]](self)
 
-  def generalizeElgot[M[_]: Monad]: CoalgebraM[M, F, A] = self.generalizeM
+  def generalizeElgot[M[_]: Monad]: CoalgebraM[M, F, A] =
+    matryoshka.generalizeM[M, A, F[A]](self)
 }
