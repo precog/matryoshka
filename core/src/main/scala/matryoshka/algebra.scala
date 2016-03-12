@@ -93,17 +93,6 @@ sealed trait OneIdInstances extends ZeroIdInstances {
 }
 
 sealed trait TwoIdInstances extends OneIdInstances {
-  // implicit def toElgotAlgebraOps[W[_], F[_], A](a: ElgotAlgebra[W, F, A]):
-  //     ElgotAlgebraOps[W, F, A] =
-  //   new ElgotAlgebraOps[W, F, A](a)
-
-  // // implicit def toGAlgebraOps[W[_], F[_], A](a: GAlgebra[W, F, A]):
-  // //     GAlgebraOps[W, F, A] =
-  // //   new GAlgebraOps[W, F, A](a)
-
-  // implicit def toAlgebraMOps[M[_], F[_], A](a: AlgebraM[M, F, A]):
-  //     AlgebraMOps[M, F, A] =
-  //   new AlgebraMOps[M, F, A](a)
 }
 
 trait ThreeIdInstances extends TwoIdInstances {

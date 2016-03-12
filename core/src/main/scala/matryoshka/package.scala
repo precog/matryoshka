@@ -64,7 +64,6 @@ package object matryoshka
     * result. `N` is the fold’s monad, whereas `M` is the Kleisli.
     */
   type GCoalgebraM[G[_], M[_], F[_], A] = GElgotCoalgebraM[Id, G, M, F, A] // A => M[F[G[A]]]
-  // type GCoalgebra[N[_], F[_], A] = GCoalgebraM[N, Id, F, A] // A => F[N[A]]
   type CoalgebraM[M[_], F[_], A] = GCoalgebraM[Id, M, F, A] // A => M[F[A]]
   type Coalgebra[F[_], A] = GCoalgebra[Id, F, A] // A => F[A]
   type ElgotCoalgebraM[E[_], M[_], F[_], A] = GElgotCoalgebraM[E, Id, M, F, A] // A => M[E[F[A]]]
