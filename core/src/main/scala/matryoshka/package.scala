@@ -40,7 +40,8 @@ import simulacrum.typeclass
   *            constructing an intermediate fixed point structure.
   * @groupname Dist DistributiveLaws
   */
-package object matryoshka extends CofreeInstances with FreeInstances {
+package object matryoshka
+    extends ThreeIdInstances with CofreeInstances with FreeInstances {
 
   def lambek[T[_[_]]: Corecursive: Recursive, F[_]: Functor](tf: T[F]):
       F[T[F]] =
@@ -50,100 +51,27 @@ package object matryoshka extends CofreeInstances with FreeInstances {
       T[F] =
     ft.ana(_ ∘ (_.project))
 
-  type GAlgebraM[W[_], M[_], F[_], A] = F[W[A]] => M[A]
-  object GAlgebraM {
-    implicit def toOps[W[_], M[_], F[_], A](a: GAlgebraM[W, M, F, A]):
-        GAlgebraMOps[W, M, F, A] =
-      new GAlgebraMOps[W, M, F, A](a)
-  }
-
+  type GElgotAlgebra[E[_], G[_], F[_], A] = GElgotAlgebraM[E, G, Id, F, A] // E[F[G[A]]] => A
+  type GAlgebraM[G[_], M[_], F[_], A] = GElgotAlgebraM[Id, G, M, F, A] // F[W[A]] => M[A]
   type GAlgebra[W[_], F[_], A] = GAlgebraM[W, Id, F, A] // F[W[A]] => A
-  object GAlgebra {
-    implicit def zip[W[_]: Functor, F[_]: Functor]: Zip[GAlgebra[W, F, ?]] =
-      new Zip[GAlgebra[W, F, ?]] {
-        def zip[A, B](a: ⇒ GAlgebra[W, F, A], b: ⇒ GAlgebra[W, F, B]) =
-          node => (a(node ∘ (_ ∘ (_._1))), b(node ∘ (_ ∘ (_._2))))
-      }
-
-    implicit def toOps[W[_], F[_], A](a: GAlgebra[W, F, A]): GAlgebraOps[W, F, A] =
-      new GAlgebraOps[W, F, A](a)
-  }
-
-  type AlgebraM[M[_], F[_], A] = GAlgebraM[Id, M, F, A] // F[A] => M[A]
-  object AlgebraM {
-    implicit def toOps[M[_], F[_], A](a: AlgebraM[M, F, A]):
-        AlgebraMOps[M, F, A] =
-      new AlgebraMOps[M, F, A](a)
-  }
-
+  type AlgebraM[M[_], F[_], A] = GElgotAlgebraM[Id, Id, M, F, A] // F[A] => M[A]
   type Algebra[F[_], A] = GAlgebra[Id, F, A] // F[A] => A
-  object Algebra {
-    implicit def zip[F[_]: Functor] = GAlgebra.zip[Id, F]
-
-    implicit def toOps[F[_], A](a: Algebra[F, A]): AlgebraOps[F, A] =
-      new AlgebraOps[F, A](a)
-  }
-
-  type ElgotAlgebraM[W[_], M[_], F[_], A] = W[F[A]] => M[A]
-  object ElgotAlgebraM {
-    implicit def zip[W[_]: Functor, M[_]: Applicative, F[_]: Functor]:
-        Zip[ElgotAlgebraM[W, M, F, ?]] =
-      new Zip[ElgotAlgebraM[W, M, F, ?]] {
-        def zip[A, B](a: ⇒ ElgotAlgebraM[W, M, F, A], b: ⇒ ElgotAlgebraM[W, M, F, B]) =
-          w => Bitraverse[(?, ?)].bisequence((a(w ∘ (_ ∘ (_._1))), b(w ∘ (_ ∘ (_._2)))))
-      }
-
-    implicit def toOps[W[_], M[_], F[_], A](a: ElgotAlgebraM[W, M, F, A]):
-        ElgotAlgebraMOps[W, M, F, A] =
-      new ElgotAlgebraMOps[W, M, F, A](a)
-  }
-
+  type ElgotAlgebraM[E[_], M[_], F[_], A] = GElgotAlgebraM[E, Id, M, F, A] // W[F[A]] => M[A]
   type ElgotAlgebra[W[_], F[_], A] = ElgotAlgebraM[W, Id, F, A] // W[F[A]] => A
-  object ElgotAlgebra {
-    implicit def zip[W[_]: Functor, F[_]: Functor] = ElgotAlgebraM.zip[W, Id, F]
-      // (ann, node) => node.unfzip.bimap(f(ann, _), g(ann, _))
 
-    implicit def toOps[W[_], F[_], A](a: ElgotAlgebra[W, F, A]):
-        ElgotAlgebraOps[W, F, A] =
-      new ElgotAlgebraOps[W, F, A](a)
-  }
-
+  type GElgotCoalgebra[E[_], G[_], F[_], A] = GElgotCoalgebraM[E, G, Id, F, A]
   /** A coalgebra with two monads, one handled by the fold and the other in the
     * result. `N` is the fold’s monad, whereas `M` is the Kleisli.
     */
-  type GCoalgebraM[N[_], M[_], F[_], A] = A => M[F[N[A]]]
-
-  type GCoalgebra[N[_], F[_], A] = GCoalgebraM[N, Id, F, A] // A => F[N[A]]
-  object GCoalgebra {
-    implicit def toOps[M[_], F[_], A](a: GCoalgebra[M, F, A]):
-        GCoalgebraOps[M, F, A] =
-      new GCoalgebraOps[M, F, A](a)
-  }
-
+  type GCoalgebraM[G[_], M[_], F[_], A] = GElgotCoalgebraM[Id, G, M, F, A] // A => M[F[G[A]]]
+  // type GCoalgebra[N[_], F[_], A] = GCoalgebraM[N, Id, F, A] // A => F[N[A]]
   type CoalgebraM[M[_], F[_], A] = GCoalgebraM[Id, M, F, A] // A => M[F[A]]
-  object CoalgebraM {
-    implicit def toOps[M[_], F[_], A](a: CoalgebraM[M, F, A]):
-        CoalgebraMOps[M, F, A] =
-      new CoalgebraMOps[M, F, A](a)
-  }
-
-  type Coalgebra[F[_], A]        = GCoalgebra[Id, F, A] // A => F[A]
-  object Coalgebra {
-    implicit def toOps[F[_], A](a: Coalgebra[F, A]): CoalgebraOps[F, A] =
-      new CoalgebraOps[F, A](a)
-  }
-
-  type ElgotCoalgebraM[N[_], M[_], F[_], A] = A => M[N[F[A]]]
-
+  type Coalgebra[F[_], A] = GCoalgebra[Id, F, A] // A => F[A]
+  type ElgotCoalgebraM[E[_], M[_], F[_], A] = GElgotCoalgebraM[E, Id, M, F, A] // A => M[E[F[A]]]
   /** Identical to [[matryoshka.CoalgebraM]] in structure, this signifies a
     * different intent – the dual of [[matryoshka.ElgotAlgebra]].
     */
   type ElgotCoalgebra[N[_], F[_], A] = ElgotCoalgebraM[N, Id, F, A] // A => N[F[A]]
-  object ElgotCoalgebra {
-    implicit def toOps[M[_], F[_], A](a: ElgotCoalgebra[M, F, A]):
-        ElgotCoalgebraOps[M, F, A] =
-      new ElgotCoalgebraOps[M, F, A](a)
-  }
 
   /** A `NaturalTransformation` that sequences two types.
     *
@@ -229,8 +157,8 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     *
     * @group Refold
     */
-  def hylo[F[_]: Functor, A, B](a: A)(f: F[B] => B, g: A => F[A]): B =
-    f(g(a) ∘ (hylo(_)(f, g)))
+  def hylo[F[_]: Functor, A, B](a: A)(f: Algebra[F, B], g: Coalgebra[F, A]): B =
+    f(g(a).join.copoint ∘ (hylo[F, A, B](_)(f, g)))
 
   /** A Kleisli [[matryoshka.hylo]].
     *
@@ -273,7 +201,7 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     *
     * @group Refold
     */
-  def elgot[F[_]: Functor, A, B](a: A)(φ: F[B] => B, ψ: A => B \/ F[A]): B = {
+  def elgot[F[_]: Functor, A, B](a: A)(φ: Algebra[F, B], ψ: ElgotCoalgebra[B \/ ?, F, A]): B = {
     def h: A => B =
       (((x: B) => x) ||| ((x: F[A]) => φ(x ∘ h))) ⋘ ψ
     h(a)
@@ -404,19 +332,11 @@ package object matryoshka extends CofreeInstances with FreeInstances {
    if (index < 0) None
    else fa.toList.drop(index).headOption
 
-  /** Turns any F-algebra, into an identical one that attributes the tree with
-    * the results for each node. */
-  def attributeAlgebraM[M[_]: Functor, F[_]: Functor, A](f: AlgebraM[M, F, A]):
-      AlgebraM[M, F, Cofree[F, A]] =
-    fa => f(fa ∘ (_.head)) ∘ (Cofree(_, fa))
-
-  def attributeAlgebra[F[_]: Functor, A](f: Algebra[F, A]) =
-    attributeAlgebraM[Id, F, A](f)
-
-  def attrK[F[_]: Functor, A](k: A) = attributeAlgebra[F, A](Function.const(k))
+  def attrK[F[_]: Functor, A](k: A) =
+    attribute(new GElgotAlgebraM[Id, Id, Id, F, A](Function.const(k)))
 
   def attrSelf[T[_[_]]: Corecursive, F[_]: Functor] =
-    attributeAlgebra[F, T[F]](_.embed)
+    attribute(new GElgotAlgebraM[Id, Id, Id, F, T[F]](_.embed))
 
   /** NB: Since Cofree carries the functor, the resulting algebra is a cata, not
     *     a para. */
@@ -424,28 +344,21 @@ package object matryoshka extends CofreeInstances with FreeInstances {
       F[Cofree[F, A]] => Cofree[F, A] =
     fa => Cofree(f(fa ∘ (x => (Recursive[Cofree[?[_], A]].convertTo[F, T](x), x.head))), fa)
 
-  def attributeGAlgebraM[W[_]: Comonad, M[_]: Functor, F[_]: Functor, A](
-    f: GAlgebraM[W, M, F, A]):
-      GAlgebraM[W, M, F, Cofree[F, A]] =
-    node => f(node ∘ (_ ∘ (_.head))) ∘ (Cofree(_, node ∘ (_.copoint)))
-
-  def attributeElgotAlgebraM[W[_]: Comonad, M[_]: Functor, F[_]: Functor, A](
-    f: ElgotAlgebraM[W, M, F, A]):
-      ElgotAlgebraM[W, M, F, Cofree[F, A]] =
-    node => f(node ∘ (_ ∘ (_.head))) ∘ (Cofree(_, node.copoint))
+  /** Turns any F-algebra, into an identical one that attributes the tree with
+    * the results for each node. */
+  def attribute[E[_]: Comonad, G[_]: Comonad, M[_]: Functor, F[_]: Functor, A](
+    f: GElgotAlgebraM[E, G, M, F, A]):
+      GElgotAlgebraM[E, G, M, F, Cofree[F, A]] =
+    node => f(node ∘ (_ ∘ (_ ∘ (_.head)))) ∘ (Cofree(_, node.copoint ∘ (_.copoint)))
 
   def generalizeM[M[_]: Applicative, A, B](f: A => B): A => M[B] = f(_).point[M]
   def generalizeW[W[_]: Comonad, A, B](f: A => B): W[A] => B = w => f(w.copoint)
-  def generalizeAlgebra[W[_]: Comonad, F[_]: Functor, A, B](f: F[A] => B):
-      F[W[A]] => B =
+  def generalizeAlgebra[O[_]: Functor, X[_]: Comonad, I[_], M[_], F[_], A](f: O[I[A]] => M[A]):
+      O[X[I[A]]] => M[A] =
     node => f(node ∘ (_.copoint))
-  def generalizeCoalgebra[M[_]: Applicative, F[_]: Functor, A](f: A => F[A]):
-      A => F[M[A]] =
-    f(_).map(_.point[M])
-  def generalizeCoalgebraM[M[_]: Functor, N[_]: Applicative, F[_]: Functor, A](
-    f: A => M[F[A]]):
-      A => M[F[N[A]]] =
-    f(_).map(_.map(_.point[N]))
+  def generalizeCoalgebra[O[_]: Functor, X[_]: Applicative, I[_], A](f: A => O[I[A]]):
+      A => O[X[I[A]]] =
+    f(_).map(_.point[X])
 
   /** Repeatedly applies the function to the result as long as it returns Some.
     * Finally returns the last non-None value (which may be the initial input).

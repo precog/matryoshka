@@ -19,7 +19,7 @@ package matryoshka
 import scalaz._
 
 sealed class IdOps[A](self: A) {
-  def hylo[F[_]: Functor, B](f: F[B] => B, g: A => F[A]): B =
+  def hylo[F[_]: Functor, B](f: Algebra[F, B], g: Coalgebra[F, A]): B =
     matryoshka.hylo(self)(f, g)
   def hyloM[M[_]: Monad, F[_]: Traverse, B](f: F[B] => M[B], g: A => M[F[A]]):
       M[B] =
@@ -47,7 +47,7 @@ sealed class IdOps[A](self: A) {
   def elgotAna[F[_]: Functor, B](ψ: A => B \/ F[A]): Free[F, B] =
     matryoshka.elgotAna(self)(ψ)
 
-  def elgot[F[_]: Functor, B](φ: F[B] => B, ψ: A => B \/ F[A]): B =
+  def elgot[F[_]: Functor, B](φ: Algebra[F, B], ψ: ElgotCoalgebra[B \/ ?, F, A]): B =
     matryoshka.elgot(self)(φ, ψ)
 
   def coelgot[F[_]: Functor, B](φ: ((A, F[B])) => B, ψ: A => F[A]): B =

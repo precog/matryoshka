@@ -97,11 +97,6 @@ object Exp {
     }
   implicit def ExpEqual2[A](implicit A: Equal[A]): Equal[Exp[A]] = ExpEqual(A)
 
-  // NB: Something like this currently needs to be defined for any Functor in
-  //     order to get the generalize operations for the algebra.
-  implicit def toOps[A](a: Algebra[Exp, A]): AlgebraOps[Exp, A] =
-    Algebra.toOps[Exp, A](a)
-
   implicit val ExpShow: Show ~> λ[α => Show[Exp[α]]] =
     new (Show ~> λ[α => Show[Exp[α]]]) {
       def apply[α](show: Show[α]) =
@@ -438,9 +433,9 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "zipAlgebras" should {
       "both eval and find all constants" in {
-        mul(num(5), num(2)).cata(Algebra.zip[Exp].zip(eval, findConstants)) must
+        mul(num(5), num(2)).cata(GElgotAlgebraM.zip[Id, Id, Id, Exp].zip(eval, findConstants)) must
           equal((10, List(5, 2)))
-        mul(num(5), num(2)).convertTo[Mu].cata(Algebra.zip[Exp].zip(eval, findConstants)) must
+        mul(num(5), num(2)).convertTo[Mu].cata(GElgotAlgebraM.zip[Id, Id, Id, Exp].zip(eval, findConstants)) must
           equal((10, List(5, 2)))
       }
     }
@@ -479,9 +474,11 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    def extractFactors: Coalgebra[Exp, Int] = x =>
+    // TODO: Why do we need to explicitly call the implicit here? Is it because
+    //      `F` is in covariant position?
+    def extractFactors: Coalgebra[Exp, Int] = toCoalgebra(x =>
       if (x > 2 && x % 2 == 0) Mul(2, x/2)
-      else Num(x)
+      else Num(x))
 
     "generalizeCoalgebra" should {
       "behave like ana" ! prop { (i: Int) =>
