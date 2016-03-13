@@ -139,15 +139,15 @@ package object matryoshka
       M[B] =
     t.tail.traverse(cofCataM(_)(f)) >>= (f(t.head, _))
 
-  /** This is the “second” fold from `paraElgotZygo`, with the comonad
+  /** This is the “second” fold from `paraElgotZygoM`, with the comonad
     * structures coming from `Cofree` rather than from another algebra.
     *
     * @group Fold
     */
   def cofParaM[M[_]] = new CofParaMPartiallyApplied[M]
   final class CofParaMPartiallyApplied[M[_]] { self =>
-    def apply[T[_[_]]: Corecursive, S[_]: Traverse, A, B](t: Cofree[S, A])(f: (A, S[(T[S], B)]) => M[B])(implicit M: Monad[M]): M[B] =
-      t.tail.traverseU(cs => self(cs)(f) ∘ ((Recursive[Cofree[?[_], A]].convertTo[S, T](cs), _))) >>= (f(t.head, _))
+    def apply[T[_[_]]: Corecursive, S[_]: Traverse, A, B](t: Cofree[S, A])(f: GElgotAlgebraM[(A, ?), (T[S], ?), M, S, B])(implicit M: Monad[M]): M[B] =
+      t.tail.traverseU(cs => self(cs)(f) ∘ ((Recursive[Cofree[?[_], A]].convertTo[S, T](cs), _))) >>= (x => f((t.head, x)))
   }
 
   /** A hylomorphism is a composition of [[matryoshka.Corecursive.ana]] and
@@ -163,9 +163,9 @@ package object matryoshka
     *
     * @group Refold
     */
-  def hyloM[M[_]: Monad, F[_]: Traverse, A, B](a: A)(f: F[B] => M[B], g: A => M[F[A]]):
+  def hyloM[M[_]: Monad, F[_]: Traverse, A, B](a: A)(f: AlgebraM[M, F, B], g: CoalgebraM[M, F, A]):
       M[B] =
-    g(a) >>= (_.traverse(hyloM(_)(f, g)) >>= (f))
+    g(a) >>= (_.join.copoint.traverse(hyloM[M, F, A, B](_)(f, g)) >>= f)
 
   /** A generalized version of [[matryoshka.hylo]] that composes any coalgebra
     * and algebra.
@@ -176,8 +176,8 @@ package object matryoshka
     a: A)(
     w: DistributiveLaw[F, W],
     m: DistributiveLaw[M, F],
-    f: F[W[B]] => B,
-    g: A => F[M[A]])(
+    f: GAlgebra[W, F, B],
+    g: GCoalgebra[M, F, A])(
     implicit M: Monad[M]):
       B = {
     def h(x: M[A]): W[B] = w(m(M.lift(g)(x)) ∘ (y => h(y.join).cojoin)) ∘ f
@@ -191,7 +191,7 @@ package object matryoshka
     */
   def chrono[F[_]: Functor, A, B](
     a: A)(
-    g: F[Cofree[F, B]] => B, f: A => F[Free[F, A]]):
+    g: GAlgebra[Cofree[F, ?], F, B], f: GCoalgebra[Free[F, ?], F, A]):
       B =
     ghylo[F, Cofree[F, ?], Free[F, ?], A, B](a)(distHisto, distFutu, g, f)
 

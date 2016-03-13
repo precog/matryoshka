@@ -93,6 +93,53 @@ sealed trait OneIdInstances extends ZeroIdInstances {
 }
 
 sealed trait TwoIdInstances extends OneIdInstances {
+  // FIXME: somehow this causes an ambiguous implicit with a lower priority
+  //        implicit.
+  // implicit def toElgotAlgebra[E[_], F[_], A](f: E[F[A]] => A):
+  //     ElgotAlgebra[E, F, A] =
+  //   new GElgotAlgebraM[E, Id, Id, F, A](f)
+  // Poor man’s unapply trick
+  implicit def toElgotAlgebraU[E[_[_], _], F[_], A, X[_]](f: E[X, F[A]] => A):
+      ElgotAlgebra[E[X, ?], F, A] =
+    new GElgotAlgebraM[E[X, ?], Id, Id, F, A](f)
+
+  implicit def toElgotCoalgebra[E[_], F[_], A](f: A => E[F[A]]):
+      ElgotCoalgebra[E, F, A] =
+    new GElgotCoalgebraM[E, Id, Id, F, A](f)
+  // Poor man’s unapply trick
+  implicit def toElgotCoalgebraU[E[_[_], _], F[_], A, X[_]](f: A => E[X, F[A]]):
+      ElgotCoalgebra[E[X, ?], F, A] =
+    new GElgotCoalgebraM[E[X, ?], Id, Id, F, A](f)
+
+  implicit def toGAlgebra[G[_], F[_], A](f: F[G[A]] => A): GAlgebra[G, F, A] =
+    new GElgotAlgebraM[Id, G, Id, F, A](f)
+  // Poor man’s unapply trick
+  implicit def toGAlgebraU[G[_[_], _], F[_], A, X[_]](f: F[G[X, A]] => A):
+      GAlgebra[G[X, ?], F, A] =
+    new GElgotAlgebraM[Id, G[X, ?], Id, F, A](f)
+
+  implicit def toGCoalgebra[G[_], F[_], A](f: A => F[G[A]]):
+      GCoalgebra[G, F, A] =
+    new GCoalgebra[G, F, A](f)
+  // Poor man’s unapply trick
+  implicit def toGCoalgebraU[G[_[_], _], F[_], A, X[_]](f: A => F[G[X, A]]):
+      GCoalgebra[G[X, ?], F, A] =
+    new GCoalgebra[G[X, ?], F, A](f)
+
+  implicit def toAlgebraM[M[_], F[_], A](f: F[A] => M[A]): AlgebraM[M, F, A] =
+    new GElgotAlgebraM[Id, Id, M, F, A](f)
+  // Poor man’s unapply trick
+  implicit def toAlgebraMU[M[_[_], _], F[_], A, X[_]](f: F[A] => M[X, A]):
+      AlgebraM[M[X, ?], F, A] =
+    new GElgotAlgebraM[Id, Id, M[X, ?], F, A](f)
+
+  implicit def toCoalgebraM[M[_], F[_], A](f: A => M[F[A]]):
+      CoalgebraM[M, F, A] =
+    new GElgotCoalgebraM[Id, Id, M, F, A](f)
+  // Poor man’s unapply trick
+  implicit def toCoalgebraMU[M[_[_], _], F[_], A, X[_]](f: A => M[X, F[A]]):
+      CoalgebraM[M[X, ?], F, A] =
+    new GElgotCoalgebraM[Id, Id, M[X, ?], F, A](f)
 }
 
 trait ThreeIdInstances extends TwoIdInstances {

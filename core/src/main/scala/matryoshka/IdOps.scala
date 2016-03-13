@@ -21,19 +21,19 @@ import scalaz._
 sealed class IdOps[A](self: A) {
   def hylo[F[_]: Functor, B](f: Algebra[F, B], g: Coalgebra[F, A]): B =
     matryoshka.hylo(self)(f, g)
-  def hyloM[M[_]: Monad, F[_]: Traverse, B](f: F[B] => M[B], g: A => M[F[A]]):
+  def hyloM[M[_]: Monad, F[_]: Traverse, B](f: AlgebraM[M, F, B], g: CoalgebraM[M, F, A]):
       M[B] =
     matryoshka.hyloM(self)(f, g)
   def ghylo[F[_]: Functor, W[_]: Comonad, M[_]: Monad, B](
     w: DistributiveLaw[F, W],
     m: DistributiveLaw[M, F],
-    f: F[W[B]] => B,
-    g: A => F[M[A]]):
+    f: GAlgebra[W, F, B],
+    g: GCoalgebra[M, F, A]):
       B =
     matryoshka.ghylo(self)(w, m, f, g)
 
   def chrono[F[_]: Functor, B](
-    g: F[Cofree[F, B]] => B, f: A => F[Free[F, A]]):
+    g: GAlgebra[Cofree[F, ?], F, B], f: GCoalgebra[Free[F, ?], F, A]):
       B =
     matryoshka.chrono(self)(g, f)
 

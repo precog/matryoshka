@@ -744,8 +744,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
 
     // NB: This is better done with cata, but we fake it here
-    def partialEval[T[_[_]]: Corecursive: Recursive](t: Exp[Cofree[Exp, T[Exp]]]):
-        T[Exp] =
+    def partialEval[T[_[_]]: Corecursive: Recursive]:
+        Exp[Cofree[Exp, T[Exp]]] => T[Exp] = t =>
       t match {
         case Mul(x, y) => (x.head.project, y.head.project) match {
           case (Num(a), Num(b)) => Num[T[Exp]](a * b).embed
@@ -768,7 +768,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    def extract2and3(x: Int): Exp[Free[Exp, Int]] =
+    // FIXME: defining this as an algebra brings up the “cyclic aliasisng” issue
+    def extract2and3: Int => Exp[Free[Exp, Int]] = x =>
       // factors all the way down
       if (x > 2 && x % 2 == 0) Mul(Free.point(2), Free.point(x/2))
       // factors once and then stops
