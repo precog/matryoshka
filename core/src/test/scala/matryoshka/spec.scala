@@ -441,16 +441,16 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
 
     "coelgot" should {
-      "behave like elgotCata ⋘ attributeAna" ! prop { (i: Int) =>
+      "behave like cofCata ⋘ attributeAna" ! prop { (i: Int) =>
         i.coelgot(eval.generalizeElgot[(Int, ?)], extractFactors) must equal(
-          i.attributeAna(extractFactors).elgotCata(eval.generalizeElgot[(Int, ?)]))
+          i.attributeAna(extractFactors).cofCata(eval.generalizeElgot[(Int, ?)]))
       }
     }
 
     "elgot" should {
-      "behave like interpCata ⋘ elgotAna" ! prop { (i: Int) =>
+      "behave like interpCata ⋘ freeAna" ! prop { (i: Int) =>
         i.elgot(eval, extractFactors.generalizeElgot[Int \/ ?]) must equal(
-          i.elgotAna(extractFactors.generalizeElgot[Int \/ ?]).interpretCata(eval))
+          i.freeAna(extractFactors.generalizeElgot[Int \/ ?]).interpretCata(eval))
       }
     }
 

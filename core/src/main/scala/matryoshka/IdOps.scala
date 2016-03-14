@@ -44,8 +44,8 @@ sealed class IdOps[A](self: A) {
       M[Cofree[F, A]] =
     matryoshka.attributeAnaM(self)(ψ)
 
-  def elgotAna[F[_]: Functor, B](ψ: A => B \/ F[A]): Free[F, B] =
-    matryoshka.elgotAna(self)(ψ)
+  def freeAna[F[_]: Functor, B](ψ: A => B \/ F[A]): Free[F, B] =
+    matryoshka.freeAna(self)(ψ)
 
   def elgot[F[_]: Functor, B](φ: F[B] => B, ψ: A => B \/ F[A]): B =
     matryoshka.elgot(self)(φ, ψ)

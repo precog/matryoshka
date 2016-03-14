@@ -19,16 +19,12 @@ package matryoshka
 import scalaz._
 
 sealed class CofreeOps[F[_], A](self: Cofree[F, A]) {
-  def elgotCata[B](φ: ((A, F[B])) => B)(implicit F: Functor[F]): B =
-    matryoshka.elgotCata(self)(φ)
+  def cofCata[B](φ: ((A, F[B])) => B)(implicit F: Functor[F]): B =
+    matryoshka.cofCata(self)(φ)
 
-  def elgotCataM[M[_]: Monad, B](
+  def cofCataM[M[_]: Monad, B](
     φ: ((A, F[B])) => M[B])(
     implicit F: Traverse[F]):
       M[B] =
-    matryoshka.elgotCataM(self)(φ)
-
-  def cofCataM[M[_]: Monad, B](f: (A, F[B]) => M[B])(implicit F: Traverse[F]):
-      M[B] =
-    matryoshka.cofCataM(self)(f)
+    matryoshka.cofCataM(self)(φ)
 }

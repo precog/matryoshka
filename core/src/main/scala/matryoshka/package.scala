@@ -58,14 +58,17 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   /** The fold of a decomposed `coelgot`, since the Cofree already has the
     * attribute for each node.
     */
-  def elgotCata[F[_]: Functor, A, B](t: Cofree[F, A])(φ: ((A, F[B])) => B): B =
-    φ((t.head, t.tail ∘ (elgotCata(_)(φ))))
-
-  def elgotCataM[F[_]: Traverse, M[_]: Monad, A, B](
+  def cofCata[F[_]: Functor, A, B](
     t: Cofree[F, A])(
-    φ: ((A, F[B])) => M[B]):
+    φ: ElgotAlgebra[(A, ?), F, B]):
+      B =
+    φ((t.head, t.tail ∘ (cofCata(_)(φ))))
+
+  def cofCataM[F[_]: Traverse, M[_]: Monad, A, B](
+    t: Cofree[F, A])(
+    φ: ElgotAlgebraM[(A, ?), M, F, B]):
       M[B] =
-    t.tail.traverse(elgotCataM(_)(φ)) >>= (fb => φ((t.head, fb)))
+    t.tail.traverse(cofCataM(_)(φ)) >>= (fb => φ((t.head, fb)))
 
   /** A version of [[matryoshka.Corecursive.ana]] that annotates each node with
     * the `A` it was expanded from. This is also the unfold from a decomposed
@@ -79,13 +82,10 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     ψ(a).flatMap(_.traverse(attributeAnaM(_)(ψ))) ∘ (Cofree(a, _))
 
   /** The unfold from a decomposed `elgot`. */
-  def elgotAna[F[_]: Functor, A, B](a: A)(ψ: A => B \/ F[A]): Free[F, B] =
+  def freeAna[F[_]: Functor, A, B](a: A)(ψ: A => B \/ F[A]): Free[F, B] =
     ψ(a).fold(
       _.point[Free[F, ?]],
-      fb => Free.liftF(fb ∘ (elgotAna(_)(ψ))).join)
-
-  def cofCataM[S[_]: Traverse, M[_]: Monad, A, B](t: Cofree[S, A])(f: (A, S[B]) => M[B]): M[B] =
-    t.tail.traverse(cofCataM(_)(f)) >>= (f(t.head, _))
+      fb => Free.liftF(fb ∘ (freeAna(_)(ψ))).join)
 
   def cofParaM[M[_]] = new CofParaMPartiallyApplied[M]
   final class CofParaMPartiallyApplied[M[_]] { self =>
@@ -97,7 +97,8 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     * intermediate recursive data structure.
     */
   def hylo[F[_]: Functor, A, B](a: A)(f: F[B] => B, g: A => F[A]): B =
-    f(g(a) ∘ (hylo(_)(f, g)))
+    // f(g(a) ∘ (hylo(_)(f, g)))
+    ghylo[Id, Id, F, A, B](a)(distCata, distAna, f, g)
 
   /** A Kleisli hylomorphism. */
   def hyloM[M[_]: Monad, F[_]: Traverse, A, B](a: A)(f: F[B] => M[B], g: A => M[F[A]]):
@@ -107,7 +108,7 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   /** A generalized version of a hylomorphism that composes any coalgebra and
     * algebra.
     */
-  def ghylo[F[_]: Functor, W[_]: Comonad, M[_], A, B](
+  def ghylo[W[_]: Comonad, M[_], F[_]: Functor, A, B](
     a: A)(
     w: DistributiveLaw[F, W],
     m: DistributiveLaw[M, F],
@@ -126,7 +127,7 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     a: A)(
     g: F[Cofree[F, B]] => B, f: A => F[Free[F, A]]):
       B =
-    ghylo[F, Cofree[F, ?], Free[F, ?], A, B](a)(distHisto, distFutu, g, f)
+    ghylo[Cofree[F, ?], Free[F, ?], F, A, B](a)(distHisto, distFutu, g, f)
 
   def elgot[F[_]: Functor, A, B](a: A)(φ: F[B] => B, ψ: A => B \/ F[A]): B = {
     def h: A => B =
