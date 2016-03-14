@@ -1,11 +1,13 @@
-import CustomKeys._
-
 import de.heikoseeberger.sbtheader.HeaderPlugin
 import de.heikoseeberger.sbtheader.license.Apache2_0
 import scoverage._
 import sbt._, Keys._
 
 lazy val checkHeaders = taskKey[Unit]("Fail the build if createHeaders is not up-to-date")
+
+val scalacheckVersion = "1.11.6"
+val scalazVersion     = "7.1.7"
+val slcVersion        = "0.4"
 
 lazy val standardSettings = Seq(
   headers := Map(
@@ -56,18 +58,15 @@ lazy val standardSettings = Seq(
 
   console <<= console in Test, // console alias test:console
 
-  scalazVersion := "7.1.7",
-  slcVersion    := "0.4",
-
   libraryDependencies ++= Seq(
-    "org.scalaz"        %% "scalaz-core"               % scalazVersion.value % "compile, test",
-    "org.typelevel"     %% "shapeless-scalaz"          % slcVersion.value    % "compile, test",
-    "com.github.mpilquist" %% "simulacrum"             % "0.7.0"             % "compile, test",
-    "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion.value % "test",
-    "org.specs2"        %% "specs2-core"               % "2.4"               % "test",
-    "org.scalacheck"    %% "scalacheck"                % "1.11.6"            % "test" force(),
-    "org.typelevel"     %% "scalaz-specs2"             % "0.3.0"             % "test",
-    "org.typelevel"     %% "shapeless-scalacheck"      % slcVersion.value    % "test"),
+    "org.scalaz"        %% "scalaz-core"               % scalazVersion     % "compile, test",
+    "org.typelevel"     %% "shapeless-scalaz"          % slcVersion        % "compile, test",
+    "com.github.mpilquist" %% "simulacrum"             % "0.7.0"           % "compile, test",
+    "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion     % "test",
+    "org.specs2"        %% "specs2-core"               % "2.4"             % "test",
+    "org.scalacheck"    %% "scalacheck"                % scalacheckVersion % "test" force(),
+    "org.typelevel"     %% "scalaz-specs2"             % "0.3.0"           % "test",
+    "org.typelevel"     %% "shapeless-scalacheck"      % slcVersion        % "test"),
 
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
 
@@ -134,17 +133,36 @@ lazy val publishSettings = Seq(
       email = "contact@slamdata.com",
       url = new URL("http://slamdata.com"))))
 
+lazy val noPublishSettings = Seq(
+  publish := (),
+  publishLocal := (),
+  publishArtifact := false)
+
 lazy val root = Project("root", file("."))
   .settings(standardSettings ++ publishSettings: _*)
-  .settings(Seq(
-    publish := (),
-    publishLocal := (),
-    publishArtifact := false))
+  .settings(noPublishSettings)
   .settings(name := "matryoshka")
-  .aggregate(core)
+  .aggregate(core, scalacheck, tests)
   .enablePlugins(AutomateHeaderPlugin)
 
-lazy val core = (project in file("core"))
+lazy val core = project
   .settings(standardSettings ++ publishSettings: _*)
   .settings(name := "matryoshka-core")
   .enablePlugins(AutomateHeaderPlugin)
+
+lazy val scalacheck = project
+  .dependsOn(core)
+  .settings(standardSettings ++ publishSettings: _*)
+  .settings(
+    name := "matryoshka-scalacheck",
+    libraryDependencies ++= Seq(
+      "org.scalacheck" %% "scalacheck"                % scalacheckVersion,
+      "org.scalaz"     %% "scalaz-scalacheck-binding" % scalazVersion))
+  .enablePlugins(AutomateHeaderPlugin)
+
+lazy val tests = project
+  .dependsOn(core, scalacheck)
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(standardSettings ++ publishSettings)
+  .settings(noPublishSettings)
+  .settings(name := "matryoshka-tests")
