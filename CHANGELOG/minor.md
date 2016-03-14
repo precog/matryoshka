@@ -1,0 +1,2 @@
+- expose `matryoshka-scalacheck` as a separate jar with Arbitrary instances
+- move tests into a separate subproject (so they can depend on matryoshka-scalacheck) and start breaking them into more reasonable pieces

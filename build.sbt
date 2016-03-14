@@ -12,6 +12,7 @@ val scalazVersion = "7.2.1"
 // Latest version built against scalacheck 1.12.5
 // doesn't support scala.js yet, until then tests are JVM-only
 val specs2Version = "3.7"
+val scalacheckVersion = "1.12.5"
 
 val testDependencies = libraryDependencies ++= Seq(
   "org.typelevel"  %% "discipline"                % "0.4"          % "test",
@@ -22,7 +23,7 @@ val testDependencies = libraryDependencies ++= Seq(
   "org.specs2"     %% "specs2-scalacheck"         % specs2Version  % "test" force(),
   // `scalaz-scalack-binding` is built with `scalacheck` 1.12.5 so we are stuck
   // with that version
-  "org.scalacheck" %% "scalacheck"                % "1.12.5"       % "test" force()
+  "org.scalacheck" %% "scalacheck"                % scalacheckVersion % "test" force()
 )
 
 lazy val standardSettings = Seq(
@@ -144,21 +145,39 @@ lazy val publishSettings = Seq(
       email = "contact@slamdata.com",
       url = new URL("http://slamdata.com"))))
 
+def noPublishSettings = Seq(
+  publish := (),
+  publishLocal := (),
+  publishArtifact := false)
+
 lazy val root = Project("root", file("."))
-  .settings(standardSettings ++ publishSettings: _*)
-  .settings(Seq(
-    publish := (),
-    publishLocal := (),
-    publishArtifact := false))
+  .settings(standardSettings ++ noPublishSettings)
   .settings(name := "matryoshka")
   .aggregate(coreJVM, coreJS)
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val core = crossProject.in(file("core"))
-  .settings(standardSettings ++ publishSettings: _*)
+  .settings(standardSettings ++ publishSettings)
   .settings(name := "matryoshka-core")
   .jvmSettings(testDependencies)
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val coreJVM = core.jvm
 lazy val coreJS = core.js
+
+lazy val scalacheck = project
+  .dependsOn(coreJVM)
+  .settings(standardSettings ++ publishSettings)
+  .settings(
+    name := "matryoshka-scalacheck",
+    libraryDependencies ++= Seq(
+      "org.scalacheck" %% "scalacheck"                % scalacheckVersion,
+      "org.scalaz"     %% "scalaz-scalacheck-binding" % scalazVersion))
+  .enablePlugins(AutomateHeaderPlugin)
+
+lazy val tests = project
+  .dependsOn(core, scalacheck)
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(standardSettings ++ noPublishSettings)
+  .settings(noPublishSettings)
+  .settings(name := "matryoshka-tests")
