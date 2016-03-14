@@ -1,5 +1,3 @@
-import CustomKeys._
-
 import de.heikoseeberger.sbtheader.HeaderPlugin
 import de.heikoseeberger.sbtheader.license.Apache2_0
 import scoverage._
@@ -7,10 +5,13 @@ import sbt._, Keys._
 
 lazy val checkHeaders = taskKey[Unit]("Fail the build if createHeaders is not up-to-date")
 
+val scalazVersion = "7.1.7"
+val slcVersion    = "0.4"
+
 lazy val standardSettings = Seq(
   headers := Map(
-    "scala" -> Apache2_0("2014 - 2015", "SlamData Inc."),
-    "java"  -> Apache2_0("2014 - 2015", "SlamData Inc.")),
+    "scala" -> Apache2_0("2014–2016", "SlamData Inc."),
+    "java"  -> Apache2_0("2014–2016", "SlamData Inc.")),
   scalaVersion := "2.11.7",
   logBuffered in Compile := false,
   logBuffered in Test := false,
@@ -56,18 +57,15 @@ lazy val standardSettings = Seq(
 
   console <<= console in Test, // console alias test:console
 
-  scalazVersion := "7.1.7",
-  slcVersion    := "0.4",
-
   libraryDependencies ++= Seq(
-    "org.scalaz"        %% "scalaz-core"               % scalazVersion.value % "compile, test",
-    "org.typelevel"     %% "shapeless-scalaz"          % slcVersion.value    % "compile, test",
-    "com.github.mpilquist" %% "simulacrum"             % "0.7.0"             % "compile, test",
-    "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion.value % "test",
-    "org.specs2"        %% "specs2-core"               % "2.4"               % "test",
-    "org.scalacheck"    %% "scalacheck"                % "1.11.6"            % "test" force(),
-    "org.typelevel"     %% "scalaz-specs2"             % "0.3.0"             % "test",
-    "org.typelevel"     %% "shapeless-scalacheck"      % slcVersion.value    % "test"),
+    "org.scalaz"        %% "scalaz-core"               % scalazVersion % "compile, test",
+    "org.typelevel"     %% "shapeless-scalaz"          % slcVersion    % "compile, test",
+    "com.github.mpilquist" %% "simulacrum"             % "0.7.0"       % "compile, test",
+    "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion % "test",
+    "org.specs2"        %% "specs2-core"               % "2.4"         % "test",
+    "org.scalacheck"    %% "scalacheck"                % "1.11.6"      % "test" force(),
+    "org.typelevel"     %% "scalaz-specs2"             % "0.3.0"       % "test",
+    "org.typelevel"     %% "shapeless-scalacheck"      % slcVersion    % "test"),
 
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
 
