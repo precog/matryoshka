@@ -1,0 +1,4 @@
+- add `elgot*` versions of various {un}folds
+- be more consistent about type parameter order
+- rename the old `elgotCata` to `cofCata` (and delete `elgotCataM`, which was a duplicate of `cofCataM`)
+- rename the old `elgotAna` to `freeAna`

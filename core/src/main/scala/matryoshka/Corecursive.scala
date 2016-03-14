@@ -33,41 +33,64 @@ import simulacrum.typeclass
   def anaM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[A]]): M[T[F]] =
     f(a).flatMap(_.traverse(anaM(_)(f))) ∘ (embed(_))
 
-  def gana[F[_]: Functor, M[_], A](
+  def gana[M[_], F[_]: Functor, A](
     a: A)(
     k: DistributiveLaw[M, F], f: A => F[M[A]])(
     implicit M: Monad[M]):
       T[F] = {
-    def loop(x: M[F[M[A]]]): T[F] =
-      embed(k(x) ∘ (x => loop(M.lift(f)(x.join))))
+    def loop(x: M[F[M[A]]]): T[F] = embed(k(x) ∘ (x => loop(M.lift(f)(x.join))))
 
     loop(f(a).point[M])
   }
 
+  def elgotAna[M[_], F[_]: Functor, A](
+    a: A)(
+    k: DistributiveLaw[M, F], ψ: A => M[F[A]])(
+    implicit M: Monad[M]):
+      T[F] = {
+    def loop(x: M[F[A]]): T[F] = embed(k(x) ∘ (x => loop(M.lift(ψ)(x).join)))
+
+    loop(ψ(a))
+  }
+
   def apo[F[_]: Functor, A](a: A)(f: A => F[T[F] \/ A]): T[F] =
+    // NB: This is not implemented with [[matryoshka.distApo]] because that
+    //     would add a [[matryoshka.Recursive]] constraint.
     embed(f(a) ∘ (_.fold(Predef.identity, apo(_)(f))))
+
+  def elgotApo[F[_]: Functor, A](a: A)(f: A => T[F] \/ F[A]): T[F] =
+    // NB: This is not implemented with [[matryoshka.distApo]] because that
+    //     would add a [[matryoshka.Recursive]] constraint.
+    f(a).fold(Predef.identity, fa => embed(fa ∘ (elgotApo(_)(f))))
 
   def apoM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[T[F] \/ A]]): M[T[F]] =
     f(a).flatMap(_.traverse(_.fold(_.point[M], apoM(_)(f)))) ∘ (embed(_))
 
-  def postpro[F[_]: Functor, A](a: A)(e: F ~> F, g: A => F[A])(implicit T: Recursive[T]): T[F] =
-    embed(g(a) ∘ (x => ana(postpro(x)(e, g))(x => e(x.project))))
-
-  def gpostpro[F[_]: Functor, M[_], A](
+  def postpro[F[_]: Functor, A](
     a: A)(
-    k: DistributiveLaw[M, F], e: F ~> F, g: A => F[M[A]])(
+    e: F ~> F, g: A => F[A])(
+    implicit T: Recursive[T]):
+      T[F] =
+    gpostpro[Id, F, A](a)(distAna, e, g)
+
+  def gpostpro[M[_], F[_]: Functor, A](
+    a: A)(
+    k: DistributiveLaw[M, F], e: F ~> F, ψ: A => F[M[A]])(
     implicit T: Recursive[T], M: Monad[M]):
       T[F] = {
     def loop(ma: M[A]): T[F] =
-      embed(k(M.lift(g)(ma)) ∘ (x => ana(loop(x.join))(x => e(x.project))))
+      embed(k(M.lift(ψ)(ma)) ∘ (x => ana(loop(x.join))(x => e(x.project))))
 
     loop(a.point[M])
   }
 
   def futu[F[_]: Functor, A](a: A)(f: A => F[Free[F, A]]): T[F] =
-    gana[F, Free[F, ?], A](a)(distFutu, f)
+    gana[Free[F, ?], F, A](a)(distFutu, f)
 
-  def futuM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[Free[F, A]]]):
+  def elgotFutu[F[_]: Functor, A](a: A)(f: A => Free[F, F[A]]): T[F] =
+    elgotAna[Free[F, ?], F, A](a)(distFutu, f)
+
+  def futuM[M[_]: Monad, F[_]: Traverse, A](a: A)(f: A => M[F[Free[F, A]]]):
       M[T[F]] = {
     def loop(free: Free[F, A]): M[T[F]] =
       free.fold(futuM(_)(f), _.traverse(loop) ∘ (embed[F]))
