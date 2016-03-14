@@ -18,13 +18,6 @@ package matryoshka
 
 import scalaz._, Scalaz._
 
-final class GElgotAlgebraMOps[E[_], G[_], M[_], F[_], A](
-  self: GElgotAlgebraM[E, G, M, F, A]) {
-
-  def attribute(implicit E: Comonad[E], G: Comonad[G], M: Functor[M], F: Functor[F]) =
-    matryoshka.attribute[E, G, M, F, A](self)
-}
- 
 final class GAlgebraMOps[G[_], M[_], F[_], A](self: GAlgebraM[G, M, F, A]) {
   def generalizeElgot[E[_]: Comonad]: GElgotAlgebraM[E, G, M, F, A] =
     matryoshka.generalizeW[E, F[G[A]], M[A]](self)

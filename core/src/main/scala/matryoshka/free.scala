@@ -31,9 +31,6 @@ trait FreeInstances {
           _.point[Free[G, ?]].point[M],
           f(_).map(Free.liftF(_).join))
     }
-
-  implicit def toFreeOps[F[_], A](a: Free[F, A]): FreeOps[F, A] =
-    new FreeOps[F, A](a)
 }
 
 object free extends FreeInstances

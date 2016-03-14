@@ -26,15 +26,25 @@ import scalaz._, Scalaz._
 final class GElgotAlgebraM[E[_], G[_], M[_], F[_], A](f: E[F[G[A]]] => M[A])
     extends Function1[E[F[G[A]]], M[A]] {
   def apply(v1: E[F[G[A]]]) = f(v1)
+
+  def attribute(implicit E: Comonad[E], G: Comonad[G], M: Functor[M], F: Functor[F]) =
+    matryoshka.attribute[E, G, M, F, A](this)
+
+  def zip[B](
+    b: ⇒ GElgotAlgebraM[E, G, M, F, B])(
+    implicit E: Functor[E], G: Functor[G], M: Applicative[M], F: Functor[F]):
+      GElgotAlgebraM[E, G, M, F, (A, B)]=
+    node => (this.f(node ∘ (_ ∘ (_ ∘ (_._1)))) ⊛ b(node ∘ (_ ∘ (_ ∘ (_._2)))))((_, _))
+
 }
 object GElgotAlgebraM {
-  implicit def zip[E[_]: Functor, G[_]: Functor, M[_]: Applicative, F[_]: Functor]:
+  implicit def gElgotAlgebraMZip[E[_]: Functor, G[_]: Functor, M[_]: Applicative, F[_]: Functor]:
       Zip[GElgotAlgebraM[E, G, M, F, ?]] =
     new Zip[GElgotAlgebraM[E, G, M, F, ?]] {
       def zip[A, B](
         a: ⇒ GElgotAlgebraM[E, G, M, F, A],
         b: ⇒ GElgotAlgebraM[E, G, M, F, B]) =
-        node => (a(node ∘ (_ ∘ (_ ∘ (_._1)))) ⊛ b(node ∘ (_ ∘ (_ ∘ (_._2)))))((_, _))
+        a.zip(b)
     }
 }
 
@@ -50,11 +60,6 @@ final class GCoalgebra[G[_], F[_], A](f: A => F[G[A]])
 sealed trait ZeroIdInstances {
   implicit def toGElgotAlgebraM[E[_], G[_], M[_], F[_], A](f: E[F[G[A]]] => M[A]): GElgotAlgebraM[E, G, M, F, A] =
     new GElgotAlgebraM[E, G, M, F, A](f)
-
-  implicit def toGElgotAlgebraMOps[E[_], G[_], M[_], F[_], A](
-    a: GElgotAlgebraM[E, G, M, F, A]):
-      GElgotAlgebraMOps[E, G, M, F, A] =
-    new GElgotAlgebraMOps[E, G, M, F, A](a)
 
   implicit def toGElgotCoalgebraM[E[_], G[_], M[_], F[_], A](f: A => M[E[F[G[A]]]]): GElgotCoalgebraM[E, G, M, F, A] =
     new GElgotCoalgebraM[E, G, M, F, A](f)

@@ -390,4 +390,24 @@ package object matryoshka
   implicit def ToCorecursiveOps[T[_[_]]: Corecursive, F[_]](f: F[T[F]]):
       CorecursiveOps[T, F] =
     new CorecursiveOps[T, F](f)
+
+  implicit sealed class CofreeOps[F[_], A](self: Cofree[F, A]) {
+    def elgotCata[B](φ: ((A, F[B])) => B)(implicit F: Functor[F]): B =
+      matryoshka.elgotCata(self)(φ)
+
+    def elgotCataM[M[_]: Monad, B](
+      φ: ((A, F[B])) => M[B])(
+      implicit F: Traverse[F]):
+        M[B] =
+      matryoshka.elgotCataM(self)(φ)
+
+    def cofCataM[M[_]: Monad, B](f: (A, F[B]) => M[B])(implicit F: Traverse[F]):
+        M[B] =
+      matryoshka.cofCataM(self)(f)
+  }
+
+  implicit sealed class FreeOps[F[_], A](self: Free[F, A]) {
+    def interpretCata(φ: F[A] => A)(implicit F: Functor[F]): A =
+      matryoshka.interpretCata(self)(φ)
+  }
 }

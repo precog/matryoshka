@@ -433,9 +433,9 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "zipAlgebras" should {
       "both eval and find all constants" in {
-        mul(num(5), num(2)).cata(GElgotAlgebraM.zip[Id, Id, Id, Exp].zip(eval, findConstants)) must
+        mul(num(5), num(2)).cata(eval.zip(findConstants)) must
           equal((10, List(5, 2)))
-        mul(num(5), num(2)).convertTo[Mu].cata(GElgotAlgebraM.zip[Id, Id, Id, Exp].zip(eval, findConstants)) must
+        mul(num(5), num(2)).convertTo[Mu].cata(eval.zip(findConstants)) must
           equal((10, List(5, 2)))
       }
     }
