@@ -18,7 +18,7 @@ package matryoshka
 
 import scala.Function1
 
-import scalaz._, Scalaz._
+import scalaz._, Leibniz._, Scalaz._
 
 /** The most general algebra, using both generalized and Elgot comonads as
   * well as a monad.
@@ -30,12 +30,25 @@ final class GElgotAlgebraM[E[_], G[_], M[_], F[_], A](f: E[F[G[A]]] => M[A])
   def attribute(implicit E: Comonad[E], G: Comonad[G], M: Functor[M], F: Functor[F]) =
     matryoshka.attribute[E, G, M, F, A](this)
 
+  def generalizeElgot[EE[_]: Comonad](
+    implicit ev: GElgotAlgebraM[E, G, M, F, A] === GAlgebraM[G, M, F, A]):
+      GElgotAlgebraM[EE, G, M, F, A] =
+    matryoshka.generalizeW[EE, F[G[A]], M[A]](ev(this).apply)
+
+  def generalize[GG[_]: Comonad](implicit EF: Functor[λ[α => E[F[α]]]], ev: GElgotAlgebraM[E, G, M, F, A] === ElgotAlgebraM[E, M, F, A]):
+      GElgotAlgebraM[E, GG, M, F, A] =
+    matryoshka.generalizeAlgebra[λ[α => E[F[α]]], GG, Id, M, F, A](ev(this).apply)
+
+  def generalizeM[MM[_]: Applicative](
+    implicit ev: GElgotAlgebraM[E, G, M, F, A] === GElgotAlgebra[E, G, F, A]):
+      GElgotAlgebraM[E, G, MM, F, A] =
+    matryoshka.generalizeM[MM, E[F[G[A]]], A](ev(this).apply)
+
   def zip[B](
     b: ⇒ GElgotAlgebraM[E, G, M, F, B])(
     implicit E: Functor[E], G: Functor[G], M: Applicative[M], F: Functor[F]):
       GElgotAlgebraM[E, G, M, F, (A, B)]=
     node => (this.f(node ∘ (_ ∘ (_ ∘ (_._1)))) ⊛ b(node ∘ (_ ∘ (_ ∘ (_._2)))))((_, _))
-
 }
 object GElgotAlgebraM {
   implicit def gElgotAlgebraMZip[E[_]: Functor, G[_]: Functor, M[_]: Applicative, F[_]: Functor]:
@@ -51,6 +64,20 @@ object GElgotAlgebraM {
 sealed class GElgotCoalgebraM[E[_], G[_], M[_], F[_], A](f: A => M[E[F[G[A]]]])
     extends Function1[A, M[E[F[G[A]]]]] {
   def apply(v1: A) = f(v1)
+
+  def generalizeM[MM[_]: Applicative](implicit ev: GElgotCoalgebraM[E, G, M, F, A] === GElgotCoalgebra[E, G, F, A]):
+      GElgotCoalgebraM[E, G, MM, F, A] =
+    matryoshka.generalizeM[MM, A, E[F[G[A]]]](ev(this).apply)
+
+  def generalizeElgot[EE[_]: Applicative](
+    implicit M: Functor[M],
+             ev: GElgotCoalgebraM[E, G, M, F, A] === GCoalgebraM[G, M, F, A]):
+      GElgotCoalgebraM[EE, G, M, F, A] =
+    matryoshka.generalizeCoalgebra[M, EE, λ[α => F[G[α]]], A](ev(this).apply)
+
+  def generalize[GG[_]: Applicative](implicit MEF: Functor[λ[α => M[E[F[α]]]]], ev: GElgotCoalgebraM[E, G, M, F, A] === ElgotCoalgebraM[E, M, F, A]):
+      GElgotCoalgebraM[E, GG, M, F, A] =
+    matryoshka.generalizeCoalgebra[λ[α => M[E[F[α]]]], GG, Id, A](ev(this).apply)
 }
 
 // NB: This class is needed to avoid the `Id[Id[_]]` “cyclic alias” issue.
@@ -63,38 +90,9 @@ sealed trait ZeroIdInstances {
 
   implicit def toGElgotCoalgebraM[E[_], G[_], M[_], F[_], A](f: A => M[E[F[G[A]]]]): GElgotCoalgebraM[E, G, M, F, A] =
     new GElgotCoalgebraM[E, G, M, F, A](f)
-
 }
 
 sealed trait OneIdInstances extends ZeroIdInstances {
-  implicit def toGElgotAlgebraOps[E[_], G[_], F[_], A](
-    a: GElgotAlgebra[E, G, F, A]):
-      GElgotAlgebraOps[E, G, F, A] =
-    new GElgotAlgebraOps[E, G, F, A](a)
-
-  implicit def toElgotAlgebraMOps[E[_], M[_], F[_], A](
-    a: ElgotAlgebraM[E, M, F, A]):
-      ElgotAlgebraMOps[E, M, F, A] =
-    new ElgotAlgebraMOps[E, M, F, A](a)
-
-  implicit def toGAlgebraMOps[G[_], M[_], F[_], A](a: GAlgebraM[G, M, F, A]):
-      GAlgebraMOps[G, M, F, A] =
-    new GAlgebraMOps[G, M, F, A](a)
-
-
-  implicit def toGElgotCoalgebraOps[E[_], G[_], F[_], A](
-    a: GElgotCoalgebra[E, G, F, A]):
-      GElgotCoalgebraOps[E, G, F, A] =
-    new GElgotCoalgebraOps[E, G, F, A](a)
-
-  implicit def toElgotCoalgebraMOps[E[_], M[_], F[_], A](
-    a: ElgotCoalgebraM[E, M, F, A]):
-      ElgotCoalgebraMOps[E, M, F, A] =
-    new ElgotCoalgebraMOps[E, M, F, A](a)
-
-  implicit def toGCoalgebraMOps[G[_], M[_], F[_], A](a: GCoalgebraM[G, M, F, A]):
-      GCoalgebraMOps[G, M, F, A] =
-    new GCoalgebraMOps[G, M, F, A](a)
 }
 
 sealed trait TwoIdInstances extends OneIdInstances {
