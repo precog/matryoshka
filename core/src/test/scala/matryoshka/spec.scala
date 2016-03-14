@@ -97,11 +97,6 @@ object Exp {
     }
   implicit def ExpEqual2[A](implicit A: Equal[A]): Equal[Exp[A]] = ExpEqual(A)
 
-  // NB: Something like this currently needs to be defined for any Functor in
-  //     order to get the generalize operations for the algebra.
-  implicit def ToExpAlgebraOps[A](a: Algebra[Exp, A]): AlgebraOps[Exp, A] =
-    ToAlgebraOps[Exp, A](a)
-
   implicit val ExpShow: Show ~> λ[α => Show[Exp[α]]] =
     new (Show ~> λ[α => Show[Exp[α]]]) {
       def apply[α](show: Show[α]) =
@@ -423,11 +418,24 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
+    "attribute" should {
+      "work on simple algebra" in {
+        val v = mul(num(1), mul(num(2), num(3)))
+        val rez = Cofree[Exp, Int](6, Mul(
+          Cofree(1, Num(1)),
+          Cofree (6, Mul(
+            Cofree(2, Num(2)),
+            Cofree(3, Num(3))))))
+        v.cata(eval.attribute) must equal(rez)
+        v.convertTo[Mu].cata(eval.attribute) must equal(rez)
+      }
+    }
+
     "zipAlgebras" should {
       "both eval and find all constants" in {
-        mul(num(5), num(2)).cata(AlgebraZip[Exp].zip(eval, findConstants)) must
+        mul(num(5), num(2)).cata(eval.zip(findConstants)) must
           equal((10, List(5, 2)))
-        mul(num(5), num(2)).convertTo[Mu].cata(AlgebraZip[Exp].zip(eval, findConstants)) must
+        mul(num(5), num(2)).convertTo[Mu].cata(eval.zip(findConstants)) must
           equal((10, List(5, 2)))
       }
     }
@@ -466,9 +474,11 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    def extractFactors: Coalgebra[Exp, Int] = x =>
+    // TODO: Why do we need to explicitly call the implicit here? Is it because
+    //      `F` is in covariant position?
+    def extractFactors: Coalgebra[Exp, Int] = toCoalgebra(x =>
       if (x > 2 && x % 2 == 0) Mul(2, x/2)
-      else Num(x)
+      else Num(x))
 
     "generalizeCoalgebra" should {
       "behave like ana" ! prop { (i: Int) =>
@@ -734,8 +744,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
 
     // NB: This is better done with cata, but we fake it here
-    def partialEval[T[_[_]]: Corecursive: Recursive](t: Exp[Cofree[Exp, T[Exp]]]):
-        T[Exp] =
+    def partialEval[T[_[_]]: Corecursive: Recursive]:
+        Exp[Cofree[Exp, T[Exp]]] => T[Exp] = t =>
       t match {
         case Mul(x, y) => (x.head.project, y.head.project) match {
           case (Num(a), Num(b)) => Num[T[Exp]](a * b).embed
@@ -758,7 +768,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
-    def extract2and3(x: Int): Exp[Free[Exp, Int]] =
+    // FIXME: defining this as an algebra brings up the “cyclic aliasisng” issue
+    def extract2and3: Int => Exp[Free[Exp, Int]] = x =>
       // factors all the way down
       if (x > 2 && x % 2 == 0) Mul(Free.point(2), Free.point(x/2))
       // factors once and then stops

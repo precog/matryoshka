@@ -40,6 +40,10 @@ import simulacrum.typeclass
   def transAnaM[M[_]: Monad, F[_]: Functor, G[_]: Traverse](t: T[F])(f: F[T[F]] => M[G[T[F]]]): M[T[G]] =
     traverse(t)(f(_).flatMap(_.traverse(transAnaM(_)(f))))
 
+  def transApoM[M[_]: Monad, F[_]: Functor, G[_]: Traverse](t: T[F])(f: F[T[F]] => M[G[T[G] \/ T[F]]]):
+      M[T[G]] =
+    traverse(t)(f(_).flatMap(_.traverse(_.fold(_.point[M], transApoM(_)(f)))))
+
   def topDownCataM[F[_]: Traverse, M[_]: Monad, A](
     t: T[F], a: A)(
     f: (A, T[F]) => M[(A, T[F])]):

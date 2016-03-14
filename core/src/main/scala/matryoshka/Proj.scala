@@ -24,7 +24,7 @@ import scalaz._
 /** An extractor to make it easier to pattern-match on arbitrary Recursive
   * structures.
   *
-  * NB: This extractor is irrufutable and doesn’t break exhaustiveness checking.
+  * NB: This extractor is irrefutable and doesn’t break exhaustiveness checking.
   */
 object Proj {
   def unapply[T[_[_]]: Recursive, F[_]: Functor](obj: T[F]): Some[F[T[F]]] =
