@@ -276,6 +276,17 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
+  // NB: This is better done with cata, but we fake it here
+  def partialEval[T[_[_]]: Corecursive: Recursive](t: Exp[Cofree[Exp, T[Exp]]]):
+      T[Exp] =
+    t match {
+      case Mul(x, y) => (x.head.project, y.head.project) match {
+        case (Num(a), Num(b)) => Num[T[Exp]](a * b).embed
+        case _                => t.map(_.head).embed
+      }
+      case _ => t.map(_.head).embed
+    }
+
   "Fix" should {
     "isLeaf" should {
       "be true for simple literal" in {
@@ -360,6 +371,20 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       "apply ~> repeatedly" in {
         mul(num(1), mul(num(12), num(8))).prepro(MinusThree, example1ƒ) must
           equal(-24.some)
+      }
+    }
+
+    "gprepro" should {
+      "multiply original with identity ~>" in {
+        lam('meh, mul(vari('meh), mul(num(10), num(8))))
+          .gprepro[Cofree[Exp, ?], Fix[Exp]](distHisto, NaturalTransformation.refl[Exp], partialEval[Fix]) must
+          equal(lam('meh, mul(vari('meh), num(80))))
+      }
+
+      "apply ~> repeatedly" in {
+        lam('meh, mul(vari('meh), mul(num(13), num(8))))
+          .gprepro[Cofree[Exp, ?], Fix[Exp]](distHisto, MinusThree, partialEval[Fix]) must
+          equal(lam('meh, mul(vari('meh), num(-4))))
       }
     }
 
@@ -748,17 +773,6 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
         toNat(7).mutu(isOdd, isEven) must_== Even(false)
       }
     }
-
-    // NB: This is better done with cata, but we fake it here
-    def partialEval[T[_[_]]: Corecursive: Recursive](t: Exp[Cofree[Exp, T[Exp]]]):
-        T[Exp] =
-      t match {
-        case Mul(x, y) => (x.head.project, y.head.project) match {
-          case (Num(a), Num(b)) => Num[T[Exp]](a * b).embed
-          case _                => t.map(_.head).embed
-        }
-        case _ => t.map(_.head).embed
-      }
 
     "histo" should {
       "eval simple literal multiplication" in {
