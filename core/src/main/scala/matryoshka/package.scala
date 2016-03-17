@@ -391,7 +391,8 @@ package object matryoshka
       CorecursiveOps[T, F] =
     new CorecursiveOps[T, F](f)
 
-  implicit sealed class CofreeOps[F[_], A](self: Cofree[F, A]) {
+  implicit final class CofreeOps[F[_], A](val self: Cofree[F, A])
+      extends scala.AnyVal {
     def elgotCata[B](φ: ((A, F[B])) => B)(implicit F: Functor[F]): B =
       matryoshka.elgotCata(self)(φ)
 
@@ -406,7 +407,8 @@ package object matryoshka
       matryoshka.cofCataM(self)(f)
   }
 
-  implicit sealed class FreeOps[F[_], A](self: Free[F, A]) {
+  implicit final class FreeOps[F[_], A](val self: Free[F, A])
+      extends scala.AnyVal {
     def interpretCata(φ: F[A] => A)(implicit F: Functor[F]): A =
       matryoshka.interpretCata(self)(φ)
   }
