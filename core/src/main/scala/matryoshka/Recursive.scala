@@ -69,6 +69,20 @@ import simulacrum.typeclass
       A =
     g(project(t) ∘ (x => (mutu(x)(g, f), mutu(x)(f, g))))
 
+  def prepro[F[_]: Functor, A](t: T[F])(e: F ~> F, f: F[A] => A)(implicit T: Corecursive[T]): A =
+    f(project(t) ∘ (x => prepro(cata[F, T[F]](x)(c => T.embed(e(c))))(e, f)))
+
+  def gprepro[F[_]: Functor, W[_]: Comonad, A](
+    t: T[F])(
+    k: DistributiveLaw[F, W], e: F ~> F, f: F[W[A]] => A)(
+    implicit T: Corecursive[T]):
+      A = {
+    def loop(t: T[F]): W[A] =
+      k(project(t) ∘ (x => loop(cata[F, T[F]](x)(c => T.embed(e(c)))).cojoin)) ∘ f
+
+    loop(t).copoint
+  }
+
   def histo[F[_]: Functor, A](t: T[F])(f: F[Cofree[F, A]] => A): A =
     gcata[F, Cofree[F, ?], A](t)(distHisto, f)
 
