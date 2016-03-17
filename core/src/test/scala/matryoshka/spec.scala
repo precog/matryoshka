@@ -766,6 +766,30 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
         Mul(Free.liftF(Num(3)), Free.liftF(Num(x/3)))
       else Num(x)
 
+    "postpro" should {
+      "extract original with identity ~>" in {
+        72.postpro(NaturalTransformation.refl[Exp], extractFactors) must
+          equal(mul(num(2), mul(num(2), mul(num(2), num(9)))))
+      }
+
+      "apply ~> repeatedly" in {
+        72.postpro(MinusThree, extractFactors) must
+          equal(mul(num(-1), mul(num(-4), mul(num(-7), num(0)))))
+      }
+    }
+
+    "gpostpro" should {
+      "extract original with identity ~>" in {
+        72.gpostpro[Fix, Exp, Free[Exp, ?]](distFutu, NaturalTransformation.refl[Exp], extract2and3) must
+          equal(mul(num(2), mul(num(2), mul(num(2), mul(num(3), num(3))))))
+      }
+
+      "apply ~> repeatedly" in {
+        72.gpostpro[Fix, Exp, Free[Exp, ?]](distFutu, MinusThree, extract2and3) must
+          equal(mul(num(-1), mul(num(-4), mul(num(-7), mul(num(-9), num(-9))))))
+      }
+    }
+
     "futu" should {
       "factor multiples of two" in {
         8.futu(extract2and3) must equal(mul(num(2), mul(num(2), num(2))))
