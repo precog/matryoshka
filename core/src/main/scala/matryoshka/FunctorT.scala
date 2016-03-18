@@ -63,11 +63,11 @@ import simulacrum.{typeclass, op}
   def transAna[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[F]]): T[G] =
     map(t)(f(_).map(transAna(_)(f)))
 
-  def transPrepro[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[G]] => G[T[G]])(g: F ~> F): T[G] =
-    map(t)(ft => f(g(ft.map(transPrepro(_)(f)(g)))))
+  def transPrepro[F[_]: Functor, G[_]: Functor](t: T[F])(e: F ~> F, f: F[T[G]] => G[T[G]]): T[G] =
+    map(t)(ft => f(ft ∘ (x => transPrepro(transCata[F, F](x)(e(_)))(e, f))))
 
-  def transPostpro[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[F]])(g: G ~> G): T[G] =
-    map(t)(ft => g(f(ft).map(transPostpro(_)(f)(g))))
+  def transPostpro[F[_]: Functor, G[_]: Functor](t: T[F])(e: G ~> G, f: F[T[F]] => G[T[F]]): T[G] =
+    map(t)(f(_) ∘ (x => transAna(transPostpro(x)(e, f))(e)))
 
   def transPara[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[(T[F], T[G])] => G[T[G]]):
       T[G] =

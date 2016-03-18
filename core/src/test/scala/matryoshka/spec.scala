@@ -276,6 +276,17 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
+  // NB: This is better done with cata, but we fake it here
+  def partialEval[T[_[_]]: Corecursive: Recursive](t: Exp[Cofree[Exp, T[Exp]]]):
+      T[Exp] =
+    t match {
+      case Mul(x, y) => (x.head.project, y.head.project) match {
+        case (Num(a), Num(b)) => Num[T[Exp]](a * b).embed
+        case _                => t.map(_.head).embed
+      }
+      case _ => t.map(_.head).embed
+    }
+
   "Fix" should {
     "isLeaf" should {
       "be true for simple literal" in {
@@ -350,31 +361,61 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
+    "prepro" should {
+      "multiply original with identity ~>" in {
+        mul(num(1), mul(num(12), num(8)))
+          .prepro(NaturalTransformation.refl[Exp], example1ƒ) must
+          equal(96.some)
+      }
+
+      "apply ~> repeatedly" in {
+        mul(num(1), mul(num(12), num(8))).prepro(MinusThree, example1ƒ) must
+          equal(-24.some)
+      }
+    }
+
+    "gprepro" should {
+      "multiply original with identity ~>" in {
+        lam('meh, mul(vari('meh), mul(num(10), num(8))))
+          .gprepro[Cofree[Exp, ?], Fix[Exp]](distHisto, NaturalTransformation.refl[Exp], partialEval[Fix]) must
+          equal(lam('meh, mul(vari('meh), num(80))))
+      }
+
+      "apply ~> repeatedly" in {
+        lam('meh, mul(vari('meh), mul(num(13), num(8))))
+          .gprepro[Cofree[Exp, ?], Fix[Exp]](distHisto, MinusThree, partialEval[Fix]) must
+          equal(lam('meh, mul(vari('meh), num(-4))))
+      }
+    }
+
     "transPrepro" should {
       "change literal with identity ~>" in {
-        num(1).transPrepro(addOneƒ)(NaturalTransformation.refl[Exp]) must equal(num(2))
+        num(1).transPrepro(NaturalTransformation.refl[Exp], addOneƒ) must equal(num(2))
       }
 
       "apply ~> in original space" in {
-        num(1).transPrepro(addOneƒ)(MinusThree) must equal(num(-1))
+        mul(num(1), mul(num(12), num(8))).transPrepro(MinusThree, addOneƒ) must
+          equal(mul(num(-1), mul(num(7), num(3))))
       }
 
       "apply ~> with change of space" in {
-        num(1).transPrepro(addOneExpExp2ƒ)(MinusThree) must equal(Exp2.num2(-1))
+        num(1).transPrepro(MinusThree, addOneExpExp2ƒ) must equal(Exp2.num2(2))
       }
     }
 
     "transPostpro" should {
       "change literal with identity ~>" in {
-        num(1).transPostpro(addOneƒ)(NaturalTransformation.refl[Exp]) must equal(num(2))
+        num(1).transPostpro(NaturalTransformation.refl[Exp], addOneƒ) must
+          equal(num(2))
       }
 
       "apply ~> in original space" in {
-        num(1).transPostpro(addOneƒ)(MinusThree) must equal(num(-1))
+        mul(num(1), mul(num(12), num(8))).transPostpro(MinusThree, addOneƒ) must
+          equal(mul(num(-1), mul(num(7), num(3))))
       }
 
       "apply ~> with change of space" in {
-        Exp2.num2(1).transPostpro(addOneExp2Expƒ)(MinusThree) must equal(num(-1))
+        Exp2.num2(1).transPostpro(MinusThree, addOneExp2Expƒ) must equal(num(2))
       }
     }
 
@@ -732,17 +773,6 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
         toNat(7).mutu(isOdd, isEven) must_== Even(false)
       }
     }
-
-    // NB: This is better done with cata, but we fake it here
-    def partialEval[T[_[_]]: Corecursive: Recursive](t: Exp[Cofree[Exp, T[Exp]]]):
-        T[Exp] =
-      t match {
-        case Mul(x, y) => (x.head.project, y.head.project) match {
-          case (Num(a), Num(b)) => Num[T[Exp]](a * b).embed
-          case _                => t.map(_.head).embed
-        }
-        case _ => t.map(_.head).embed
-      }
 
     "histo" should {
       "eval simple literal multiplication" in {
