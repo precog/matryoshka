@@ -268,11 +268,16 @@ package object matryoshka extends CofreeInstances with FreeInstances {
       F[Cofree[F, A]] => Cofree[F, A] =
     fa => Cofree(f(fa ∘ (x => (Recursive[Cofree[?[_], A]].convertTo[F, T](x), x.head))), fa)
 
-  def attributeCoelgotM[M[_]] = new AttributeCoelgotMPartiallyApplied[M]
-  final class AttributeCoelgotMPartiallyApplied[M[_]] {
-    def apply[F[_]: Functor, A, B](f: (A, F[B]) => M[B])(implicit M: Functor[M]):
-        (A, F[Cofree[F, B]]) => M[Cofree[F, B]] =
-      (a, node) => f(a, node ∘ (_.head)) ∘ (Cofree(_, node))
+  /** A function to be called like `attributeElgotM[M](myElgotAlgebraM)`.
+    */
+  object attributeElgotM {
+    def apply[W[_], M[_]] = new Aux[W, M]
+
+    final class Aux[W[_], M[_]] {
+      def apply[F[_]: Functor, A](f: ElgotAlgebraM[W, M, F, A])(implicit W: Comonad[W], M: Functor[M]):
+          W[F[Cofree[F, A]]] => M[Cofree[F, A]] =
+        node => f(node ∘ (_ ∘ (_.head))) ∘ (Cofree(_, node.copoint))
+    }
   }
 
   implicit def GAlgebraZip[W[_]: Functor, F[_]: Functor]:

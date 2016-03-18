@@ -16,9 +16,10 @@
 
 package matryoshka
 
+import matryoshka.Recursive.ops._
+
 import scala.Some
 
-import matryoshka.Recursive.ops._
 import scalaz._
 
 /** An extractor to make it easier to pattern-match on arbitrary Recursive
@@ -26,7 +27,7 @@ import scalaz._
   *
   * NB: This extractor is irrufutable and doesn’t break exhaustiveness checking.
   */
-object Proj {
+object Embed {
   def unapply[T[_[_]]: Recursive, F[_]: Functor](obj: T[F]): Some[F[T[F]]] =
     Some(obj.project)
 }
