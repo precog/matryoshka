@@ -541,10 +541,10 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     // Evaluate as usual, but trap 0*0 as a special case
     def peval[T[_[_]]: Recursive](t: Exp[(T[Exp], Int)]): Int = t match {
-      case Mul((Proj(Num(0)), _), (Proj(Num(0)), _)) => -1
-      case Mul((_           , x), (_,            y)) => x * y
-      case Num(x)                                    => x
-      case _                                         => Predef.???
+      case Mul((Embed(Num(0)), _), (Embed(Num(0)), _)) => -1
+      case Mul((_,             x), (_,             y)) => x * y
+      case Num(x)                                      => x
+      case _                                           => Predef.???
     }
 
     "attributePara" should {
@@ -557,6 +557,29 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
               Cofree(6, Mul(
                 Cofree(2, Num(2)),
                 Cofree(3, Num(3)))))))
+      }
+    }
+
+    val weightedEval: ElgotAlgebraM[(Int, ?), Option, Exp, Int] = {
+      case (weight, Num(x))    => (weight * x).some
+      case (weight, Mul(x, y)) => (weight * x * y).some
+      case (_,      _)         => None
+    }
+
+    "attributeElgotM" should {
+      "fold to Cofree" in {
+        Cofree[Exp, Int](1, Mul(
+          Cofree(2, Num(1)),
+          Cofree(2, Mul(
+            Cofree(3, Num(2)),
+            Cofree(3, Num(3))))))
+          .cofCataM(attributeElgotM[(Int, ?), Option](weightedEval)) must
+          equal(
+            Cofree[Exp, Int](216, Mul(
+              Cofree(2, Num(1)),
+              Cofree(108, Mul(
+                Cofree(6, Num(2)),
+                Cofree(9, Num(3)))))).some)
       }
     }
 
