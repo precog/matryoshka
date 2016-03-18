@@ -97,8 +97,7 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     * intermediate recursive data structure.
     */
   def hylo[F[_]: Functor, A, B](a: A)(f: F[B] => B, g: A => F[A]): B =
-    // f(g(a) ∘ (hylo(_)(f, g)))
-    ghylo[Id, Id, F, A, B](a)(distCata, distAna, f, g)
+    f(g(a) ∘ (hylo(_)(f, g)))
 
   /** A Kleisli hylomorphism. */
   def hyloM[M[_]: Monad, F[_]: Traverse, A, B](a: A)(f: F[B] => M[B], g: A => M[F[A]]):

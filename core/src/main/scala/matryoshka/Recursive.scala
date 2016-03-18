@@ -27,8 +27,7 @@ import simulacrum.typeclass
   def project[F[_]: Functor](t: T[F]): F[T[F]]
 
   def cata[F[_]: Functor, A](t: T[F])(f: F[A] => A): A =
-    // f(project(t) ∘ (cata(_)(f)))
-    elgotCata[Id, F, A](t)(distCata, f)
+    f(project(t) ∘ (cata(_)(f)))
 
   /** A Kleisli catamorphism. */
   def cataM[F[_]: Traverse, M[_]: Monad, A](t: T[F])(f: F[A] => M[A]): M[A] =

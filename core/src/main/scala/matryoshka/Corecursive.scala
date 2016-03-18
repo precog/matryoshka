@@ -28,8 +28,7 @@ import simulacrum.typeclass
   def embed[F[_]: Functor](t: F[T[F]]): T[F]
 
   def ana[F[_]: Functor, A](a: A)(f: A => F[A]): T[F] =
-    // embed(f(a) ∘ (ana(_)(f)))
-    elgotAna[Id, F, A](a)(distAna, f)
+    embed(f(a) ∘ (ana(_)(f)))
 
   def anaM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[A]]): M[T[F]] =
     f(a).flatMap(_.traverse(anaM(_)(f))) ∘ (embed(_))
