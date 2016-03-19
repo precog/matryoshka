@@ -592,32 +592,54 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
     }
 
+    def extract2s[T[_[_]]: Corecursive]: Int => Exp[T[Exp] \/ Int] = x =>
+      if (x == 0) Num(x)
+      else if (x % 2 == 0) Mul(-\/(Num[T[Exp]](2).embed), \/-(x.toInt / 2))
+      else Num(x)
+
+    def extract2sAnd5[T[_[_]]: Corecursive]:
+        Int => T[Exp] \/ Exp[Int] = x =>
+      if (x <= 2) Num(x).right
+      else if (x % 2 == 0) \/-(Mul(2, x / 2))
+      else if (x % 5 == 0)
+        Mul(Num[T[Exp]](5).embed, Num[T[Exp]](x / 5).embed).embed.left
+      else Num(x).right
+
+    def extract2sNot5[T[_[_]]: Corecursive](x: Int):
+        Option[Exp[T[Exp] \/ Int]] =
+      if (x == 5) None else extract2s[T].apply(x).some
+
+    def fact[T[_[_]]: Corecursive](x: Int): Exp[T[Exp] \/ Int] =
+      if (x > 1) Mul(-\/(Num[T[Exp]](x).embed), \/-(x - 1))
+      else Num(x)
+
+
     "apomorphism" should {
       "pull out factors of two" in {
-        def fM(x: Int): Option[Exp[Fix[Exp] \/ Int]] =
-          if (x == 5) None else f(x).some
-        def f(x: Int): Exp[Fix[Exp] \/ Int] =
-          if (x % 2 == 0) Mul(-\/(num(2)), \/-(x.toInt / 2))
-          else Num(x)
         "apoM" in {
           "should be some" in {
-            12.apoM(fM) must beSome(mul(num(2), mul(num(2), num(3))))
+            12.apoM(extract2sNot5[Fix]) must
+              beSome(mul(num(2), mul(num(2), num(3))))
           }
           "should be none" in {
-            10.apoM(fM) must beNone
+            10.apoM(extract2sNot5[Fix]) must beNone
           }
         }
         "apo should be an optimization over apoM and be semantically equivalent" ! prop { i: Int =>
           if (i == 0) ok
-          else i.apoM[Fix, Exp, Id](f) must equal(i.apo(f))
+          else i.apoM[Fix, Id, Exp](extract2s) must equal(i.apo(extract2s))
         }
       }
       "construct factorial" in {
-        def fact(x: Int): Exp[Fix[Exp] \/ Int] =
-          if (x > 1) Mul(-\/(num(x)), \/-(x-1))
-          else Num(x)
+        4.apo(fact[Fix]) must
+          equal(mul(num(4), mul(num(3), mul(num(2), num(1)))))
+      }
+    }
 
-        4.apo(fact) must equal(mul(num(4), mul(num(3), mul(num(2), num(1)))))
+    "elgotApo" should {
+      "pull out factors of two and stop on 5" in {
+        420.elgotApo(extract2sAnd5[Fix]) must
+          equal(mul(num(2), mul(num(2), mul(num(5), num(21)))))
       }
     }
 
@@ -636,14 +658,32 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
           }
         }
         "ana should be an optimization over anaM and be semantically equivalent" ! prop { i: Int =>
-          i.anaM[Fix, Exp,Id](extractFactors) must equal(i.ana(extractFactors))
+          i.anaM[Fix, Id, Exp](extractFactors) must equal(i.ana(extractFactors))
         }
       }
     }
 
     "distAna" should {
-      "behave like ana" ! prop { (i: Int) =>
-        i.gana[Fix, Exp, Id](distAna, extractFactors) must equal(i.ana(extractFactors))
+      "behave like ana in gana" ! prop { (i: Int) =>
+        i.gana[Fix, Id, Exp](distAna, extractFactors) must
+          equal(i.ana(extractFactors))
+      }
+
+      "behave like ana in elgotAna" ! prop { (i: Int) =>
+        i.elgotAna[Fix, Id, Exp](distAna, extractFactors) must
+          equal(i.ana(extractFactors))
+      }
+    }
+
+    "distApo" should {
+      "behave like apo in gana" ! prop { (i: Int) =>
+        i.gana[Mu, Mu[Exp] \/ ?, Exp](distApo, extract2s) must
+          equal(i.apo(extract2s[Mu]))
+      }
+
+      "behave like elgotApo in elgotAna" ! prop { (i: Int) =>
+        i.elgotAna[Fix, Fix[Exp] \/ ?, Exp](distApo, extract2sAnd5) must
+          equal(i.elgotApo(extract2sAnd5[Fix]))
       }
     }
 
@@ -780,12 +820,12 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "gpostpro" should {
       "extract original with identity ~>" in {
-        72.gpostpro[Fix, Exp, Free[Exp, ?]](distFutu, NaturalTransformation.refl[Exp], extract2and3) must
+        72.gpostpro[Fix, Free[Exp, ?], Exp](distFutu, NaturalTransformation.refl[Exp], extract2and3) must
           equal(mul(num(2), mul(num(2), mul(num(2), mul(num(3), num(3))))))
       }
 
       "apply ~> repeatedly" in {
-        72.gpostpro[Fix, Exp, Free[Exp, ?]](distFutu, MinusThree, extract2and3) must
+        72.gpostpro[Fix, Free[Exp, ?], Exp](distFutu, MinusThree, extract2and3) must
           equal(mul(num(-1), mul(num(-4), mul(num(-7), mul(num(-9), num(-9))))))
       }
     }

@@ -150,7 +150,7 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     }
   }
 
-  def distPara[T[_[_]], F[_]: Functor](implicit T: Corecursive[T]):
+  def distPara[T[_[_]]: Corecursive, F[_]: Functor]:
       DistributiveLaw[F, (T[F], ?)] =
     distZygo(_.embed)
 
@@ -194,6 +194,15 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     }
 
   def distAna[F[_]]: DistributiveLaw[Id, F] = NaturalTransformation.refl
+
+  def distApo[T[_[_]]: Recursive, F[_]: Functor]:
+      DistributiveLaw[T[F] \/ ?, F] =
+    distGApo(_.project)
+
+  def distGApo[F[_]: Functor, B](g: B => F[B]) =
+    new DistributiveLaw[B \/ ?, F] {
+      def apply[α](m: B \/ F[α]) = m.fold(g(_) ∘ (_.left), _ ∘ (_.right))
+    }
 
   def distFutu[F[_]: Functor] =
     new DistributiveLaw[Free[F, ?], F] {

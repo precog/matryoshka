@@ -54,9 +54,13 @@ import simulacrum.typeclass
   }
 
   def apo[F[_]: Functor, A](a: A)(f: A => F[T[F] \/ A]): T[F] =
+    // NB: This is not implemented with [[matryoshka.distApo]] because that
+    //     would add a [[matryoshka.Recursive]] constraint.
     embed(f(a) ∘ (_.fold(Predef.identity, apo(_)(f))))
 
   def elgotApo[F[_]: Functor, A](a: A)(f: A => T[F] \/ F[A]): T[F] =
+    // NB: This is not implemented with [[matryoshka.distApo]] because that
+    //     would add a [[matryoshka.Recursive]] constraint.
     f(a).fold(Predef.identity, fa => embed(fa ∘ (elgotApo(_)(f))))
 
   def apoM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[T[F] \/ A]]): M[T[F]] =
