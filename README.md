@@ -1,10 +1,11 @@
+# Matryoshka
+
+Generalized folds, unfolds, and traversals for fixed point data structures in Scala.
+
+[![Typelevel incubator](https://img.shields.io/badge/typelevel-incubator-F51C2B.svg)](http://typelevel.org)
 [![Build Status](https://travis-ci.org/slamdata/matryoshka.svg?branch=master)](https://travis-ci.org/slamdata/matryoshka)
 [![codecov.io](https://codecov.io/github/slamdata/matryoshka/coverage.svg?branch=master)](https://codecov.io/github/slamdata/matryoshka?branch=master)
 [![Join the chat at https://gitter.im/slamdata/matryoshka](https://badges.gitter.im/slamdata/matryoshka.svg)](https://gitter.im/slamdata/matryoshka?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-
-# Matryoshka
-
-This library provides generalized folds, unfolds, and traversals for fixed point data structures in Scala.
 
 ## External Resources
 
@@ -42,7 +43,7 @@ All of these types have instances for `Recursive`, `Corecursive`, `FunctorT`, `T
 
 - `Fix` – This is the simplest fixpoint type, implemented with general recursion.
 - `Mu` – This is for inductive (finite) recursive structures, models the concept of “data”, aka, the “least fixed point”.
-- `Nu` – This is for coinductive (potentially infinite) recursive structures, models the concept of “codata”, aka, the “greatest fixed point’.
+- `Nu` – This is for coinductive (potentially infinite) recursive structures, models the concept of “codata”, aka, the “greatest fixed point”.
 - `Cofree[?[_], A]` – Only has a `Corecursive` instance if there’s a `Monoid` for `A`. This represents a structure with some metadata attached to each node. In addition to the usual operations, it can also be folded using an Elgot algebra.
 - `Free[?[_], A]` – Does not have a `Recursive` instance. In addition to the usual operations, it can also be created by unfolding with an Elgot coalgebra.
 

@@ -18,21 +18,24 @@ package matryoshka
 
 import scalaz._
 
+/** This is the simplest fixpoint type, implemented with general recursion.
+  */
 final case class Fix[F[_]](unFix: F[Fix[F]])
 object Fix {
-  implicit val fixRecursive: Recursive[Fix] = new Recursive[Fix] {
+  implicit val recursive: Recursive[Fix] = new Recursive[Fix] {
     def project[F[_]: Functor](t: Fix[F]) = t.unFix
   }
 
-  implicit val fixCorecursive: Corecursive[Fix] = new Corecursive[Fix] {
+  implicit val corecursive: Corecursive[Fix] = new Corecursive[Fix] {
     def embed[F[_]: Functor](t: F[Fix[F]]) = Fix(t)
   }
 
-  implicit def fixShow[F[_]](implicit F: Show ~> λ[α => Show[F[α]]]):
-      Show[Fix[F]] =
-    Show.show(f => F(fixShow[F]).show(f.unFix))
-
-  implicit def fixEqual[F[_]](implicit F: Equal ~> λ[α => Equal[F[α]]]):
+  implicit def equal[F[_]](implicit F: Equal ~> λ[α => Equal[F[α]]]):
       Equal[Fix[F]] =
-    Equal.equal((a, b) => F(fixEqual[F]).equal(a.unFix, b.unFix))
+    Equal.equal((a, b) => F(equal[F]).equal(a.unFix, b.unFix))
+
+  implicit def show[F[_]](implicit F: Show ~> λ[α => Show[F[α]]]):
+      Show[Fix[F]] =
+    // NB: Doesn’t use Recursive.show in order to avoid the Functor constraint.
+    Show.show(f => F(show[F]).show(f.unFix))
 }
