@@ -1,0 +1,2 @@
+- rename the `Proj` unapply to `Embed`
+- fix `attributeCoelgotM` to match the correct (generalized) type, and rename it to `attributeElgotM`
