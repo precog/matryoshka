@@ -16,7 +16,8 @@
 
 package matryoshka
 
-import Recursive.ops._, FunctorT.ops._, Fix._
+import Recursive.ops._, FunctorT.ops._
+import matryoshka.runners._
 
 import java.lang.String
 import scala.{Boolean, Function, Int, None, Option, Predef, Symbol, Unit},
@@ -194,7 +195,7 @@ class Exp2Spec extends Spec {
   checkAll(functor.laws[Exp2])
 }
 
-class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
+class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers {
   import Exp._
 
   implicit def arbFix[F[_]]:
@@ -287,16 +288,18 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       case _ => t.map(_.head).embed
     }
 
-  "Fix" should {
+  "Recursive" should {
     "isLeaf" should {
       "be true for simple literal" in {
         num(1).isLeaf must beTrue
         num(1).convertTo[Mu].isLeaf must beTrue
+        num(1).convertTo[Nu].isLeaf must beTrue
       }
 
       "be false for expression" in {
         mul(num(1), num(2)).isLeaf must beFalse
         mul(num(1), num(2)).convertTo[Mu].isLeaf must beFalse
+        mul(num(1), num(2)).convertTo[Nu].isLeaf must beFalse
       }
     }
 
@@ -304,12 +307,15 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       "be empty for simple literal" in {
         num(1).children must equal(Nil)
         num(1).convertTo[Mu].children must equal(Nil)
+        num(1).convertTo[Nu].children must equal(Nil)
       }
 
       "contain sub-expressions" in {
         mul(num(1), num(2)).children must equal(List(num(1), num(2)))
         mul(num(1), num(2)).convertTo[Mu].children must
           equal(List(num(1), num(2)).map(_.convertTo[Mu]))
+        mul(num(1), num(2)).convertTo[Nu].children must
+          equal(List(num(1), num(2)).map(_.convertTo[Nu]))
       }
     }
 
@@ -318,6 +324,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
         num(1).universe must equal(List(num(1)))
         num(1).convertTo[Mu].universe must
           equal(List(num(1)).map(_.convertTo[Mu]))
+        num(1).convertTo[Nu].universe must
+          equal(List(num(1)).map(_.convertTo[Nu]))
       }
 
       "contain root and sub-expressions" in {
@@ -325,34 +333,53 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
           equal(List(mul(num(1), num(2)), num(1), num(2)))
         mul(num(1), num(2)).convertTo[Mu].universe must
           equal(List(mul(num(1), num(2)), num(1), num(2)).map(_.convertTo[Mu]))
+        mul(num(1), num(2)).convertTo[Nu].universe must
+          equal(List(mul(num(1), num(2)), num(1), num(2)).map(_.convertTo[Nu]))
       }
     }
 
     "transCata" should {
       "change simple literal" in {
-        num(1).transCata(addOneƒ) must equal(num(2))
-        num(1).convertTo[Mu].transCata(addOneƒ) must equal(num(2).convertTo[Mu])
+        testFunc(
+          num(1),
+          new FuncRunner[Exp, Exp] {
+            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.transCata(addOneƒ) must equal(num(2).convertTo[T])
+          })
       }
 
       "change sub-expressions" in {
-        mul(num(1), num(2)).transCata(addOneƒ) must equal(mul(num(2), num(3)))
-        mul(num(1), num(2)).convertTo[Mu].transCata(addOneƒ) must
-          equal(mul(num(2), num(3)).convertTo[Mu])
+        testFunc(
+          mul(num(1), num(2)),
+          new FuncRunner[Exp, Exp] {
+            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.transCata(addOneƒ) must equal(mul(num(2), num(3)).convertTo[T])
+          })
       }
 
       "be bottom-up" in {
-        mul(num(0), num(1)).transCata(addOneOrSimplifyƒ) must equal(num(2))
-        mul(num(1), num(2)).transCata(addOneOrSimplifyƒ) must equal(mul(num(2), num(3)))
+        (mul(num(0), num(1)).transCata(addOneOrSimplifyƒ) must equal(num(2))) and
+        (mul(num(1), num(2)).transCata(addOneOrSimplifyƒ) must equal(mul(num(2), num(3))))
       }
     }
 
     "transAna" should {
       "change simple literal" in {
-        num(1).transAna(addOneƒ) must equal(num(2))
+        testFunc(
+          num(1),
+          new FuncRunner[Exp, Exp] {
+            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.transAna(addOneƒ) must equal(num(2).convertTo[T])
+          })
       }
 
       "change sub-expressions" in {
-        mul(num(1), num(2)).transAna(addOneƒ) must equal(mul(num(2), num(3)))
+        testFunc(
+          mul(num(1), num(2)),
+          new FuncRunner[Exp, Exp] {
+            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.transAna(addOneƒ) must equal(mul(num(2), num(3)).convertTo[T])
+          })
       }
 
       "be top-down" in {
@@ -377,45 +404,80 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     "gprepro" should {
       "multiply original with identity ~>" in {
         lam('meh, mul(vari('meh), mul(num(10), num(8))))
-          .gprepro[Cofree[Exp, ?], Fix[Exp]](distHisto, NaturalTransformation.refl[Exp], partialEval[Fix]) must
+          .gprepro[Cofree[Exp, ?], Fix[Exp]](
+            distHisto, NaturalTransformation.refl[Exp], partialEval[Fix]) must
           equal(lam('meh, mul(vari('meh), num(80))))
       }
 
       "apply ~> repeatedly" in {
         lam('meh, mul(vari('meh), mul(num(13), num(8))))
-          .gprepro[Cofree[Exp, ?], Fix[Exp]](distHisto, MinusThree, partialEval[Fix]) must
+          .gprepro[Cofree[Exp, ?], Fix[Exp]](
+            distHisto, MinusThree, partialEval[Fix]) must
           equal(lam('meh, mul(vari('meh), num(-4))))
       }
     }
 
     "transPrepro" should {
       "change literal with identity ~>" in {
-        num(1).transPrepro(NaturalTransformation.refl[Exp], addOneƒ) must equal(num(2))
+        testFunc(
+          num(1),
+          new FuncRunner[Exp, Exp] {
+            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.transPrepro(NaturalTransformation.refl[Exp], addOneƒ) must
+                equal(num(2).convertTo[T])
+          })
       }
 
       "apply ~> in original space" in {
-        mul(num(1), mul(num(12), num(8))).transPrepro(MinusThree, addOneƒ) must
-          equal(mul(num(-1), mul(num(7), num(3))))
+        testFunc(
+          mul(num(1), mul(num(12), num(8))),
+          new FuncRunner[Exp, Exp] {
+            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.transPrepro(MinusThree, addOneƒ) must
+                equal(mul(num(-1), mul(num(7), num(3))).convertTo[T])
+          })
       }
 
       "apply ~> with change of space" in {
-        num(1).transPrepro(MinusThree, addOneExpExp2ƒ) must equal(Exp2.num2(2))
+        testFunc(
+          num(1),
+          new FuncRunner[Exp, Exp2] {
+            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp2]], S: Show[T[Exp2]]) =
+              _.transPrepro(MinusThree, addOneExpExp2ƒ) must
+                equal(Exp2.num2(2).convertTo[T])
+          })
       }
     }
 
     "transPostpro" should {
       "change literal with identity ~>" in {
-        num(1).transPostpro(NaturalTransformation.refl[Exp], addOneƒ) must
-          equal(num(2))
+        testFunc(
+          num(1),
+          new FuncRunner[Exp, Exp] {
+            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.transPostpro(NaturalTransformation.refl[Exp], addOneƒ) must
+                equal(num(2).convertTo[T])
+          })
       }
 
       "apply ~> in original space" in {
-        mul(num(1), mul(num(12), num(8))).transPostpro(MinusThree, addOneƒ) must
-          equal(mul(num(-1), mul(num(7), num(3))))
+        testFunc(
+          mul(num(1), mul(num(12), num(8))),
+          new FuncRunner[Exp, Exp] {
+            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.transPostpro(MinusThree, addOneƒ) must
+                equal(mul(num(-1), mul(num(7), num(3))).convertTo[T])
+          })
       }
 
       "apply ~> with change of space" in {
-        Exp2.num2(1).transPostpro(MinusThree, addOneExp2Expƒ) must equal(num(2))
+        testFunc(
+          Exp2.num2(1),
+          new FuncRunner[Exp2, Exp] {
+            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.transPostpro(MinusThree, addOneExp2Expƒ) must
+                equal(num(2).convertTo[T])
+          })
       }
     }
 
@@ -425,7 +487,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
 
       "project basic exp recursively" in {
-        lam('sym, mul(num(5), num(7))).transPara(extractLambdaƒ) must equal(Exp2.single(Exp2.const))
+        lam('sym, mul(num(5), num(7))).transPara(extractLambdaƒ) must
+          equal(Exp2.single(Exp2.const))
       }
     }
 
@@ -448,36 +511,51 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "cata" should {
       "evaluate simple expr" in {
-        val v = mul(num(1), mul(num(2), num(3)))
-        v.cata(eval) must equal(6)
-        v.convertTo[Mu].cata(eval) must equal(6)
+        testRec(
+          mul(num(1), mul(num(2), num(3))),
+          new RecRunner[Exp, Int] {
+            def run[T[_[_]]: Recursive] = _.cata(eval) must equal(6)
+          })
       }
 
       "find all constants" in {
-        mul(num(0), num(1)).cata(findConstants) must equal(List(0, 1))
-        mul(num(0), num(1)).convertTo[Mu].cata(findConstants) must equal(List(0, 1))
+        testRec(
+          mul(num(0), num(1)),
+          new RecRunner[Exp, List[Int]] {
+            def run[T[_[_]]: Recursive] =
+              _.cata(findConstants) must equal(List(0, 1))
+          })
       }
 
       "produce correct annotations for 5 * 2" in {
-        mul(num(5), num(2)).cata(example1ƒ) must beSome(10)
-        mul(num(5), num(2)).convertTo[Mu].cata(example1ƒ) must beSome(10)
+        testRec(
+          mul(num(5), num(2)),
+          new RecRunner[Exp, Option[Int]] {
+            def run[T[_[_]]: Recursive] = _.cata(example1ƒ) must beSome(10)
+          })
       }
     }
 
     "zipAlgebras" should {
       "both eval and find all constants" in {
-        mul(num(5), num(2)).cata(AlgebraZip[Exp].zip(eval, findConstants)) must
-          equal((10, List(5, 2)))
-        mul(num(5), num(2)).convertTo[Mu].cata(AlgebraZip[Exp].zip(eval, findConstants)) must
-          equal((10, List(5, 2)))
+        testRec(
+          mul(num(5), num(2)),
+          new RecRunner[Exp, (Int, List[Int])] {
+            def run[T[_[_]]: Recursive] =
+              _.cata(AlgebraZip[Exp].zip(eval, findConstants)) must
+                equal((10, List(5, 2)))
+          })
       }
     }
 
     "generalize" should {
       "behave like cata" in {
-        val v = mul(num(1), mul(num(2), num(3)))
-        v.para(eval.generalize[(Fix[Exp], ?)]) must equal(v.cata(eval))
-        v.convertTo[Mu].para(eval.generalize[(Mu[Exp], ?)]) must equal(v.cata(eval))
+        testRec(
+          mul(num(1), mul(num(2), num(3))),
+          new RecRunner[Exp, Int] {
+            def run[T[_[_]]: Recursive] = t =>
+              t.para(eval.generalize[(T[Exp], ?)]) must equal(t.cata(eval))
+          })
       }
     }
 
@@ -497,12 +575,12 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "generalizeElgot" should {
       "behave like cata on an algebra" ! prop { (i: Int) =>
-        val x = i.ana(extractFactors).cata(eval)
+        val x = i.ana[Fix, Exp](extractFactors).cata(eval)
         i.coelgot(eval.generalizeElgot[(Int, ?)], extractFactors) must equal(x)
       }
 
       "behave like ana on an coalgebra" ! prop { (i: Int) =>
-        val x = i.ana(extractFactors).cata(eval)
+        val x = i.ana[Fix, Exp](extractFactors).cata(eval)
         i.elgot(eval, extractFactors.generalizeElgot[Int \/ ?]) must equal(x)
       }
     }
@@ -514,7 +592,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     "generalizeCoalgebra" should {
       "behave like ana" ! prop { (i: Int) =>
         i.apo(extractFactors.generalize[Fix[Exp] \/ ?]) must
-          equal(i.ana(extractFactors))
+          equal(i.ana[Fix, Exp](extractFactors))
       }
     }
 
@@ -532,11 +610,9 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
           equal(mul(num(0), num(1)))
         v.convertTo[Mu].topDownCata(Map.empty[Symbol, Mu[Exp]])(subst) must
           equal(mul(num(0), num(1)).convertTo[Mu])
+        v.convertTo[Nu].topDownCata(Map.empty[Symbol, Nu[Exp]])(subst) must
+          equal(mul(num(0), num(1)).convertTo[Nu])
       }
-    }
-
-    "trans" should {
-      // TODO
     }
 
     // Evaluate as usual, but trap 0*0 as a special case
@@ -585,30 +661,35 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "para" should {
       "evaluate simple expr" in {
-        val v = mul(num(1), mul(num(2), num(3)))
-        v.para(peval[Fix]) must equal(6)
-        v.convertTo[Mu].para(peval[Mu]) must equal(6)
+        testRec(
+          mul(num(1), mul(num(2), num(3))),
+          new RecRunner[Exp, Int] {
+            def run[T[_[_]]: Recursive] = _.para(peval[T]) must equal(6)
+          })
       }
 
       "evaluate special-case" in {
-        val v = mul(num(0), num(0))
-        v.para(peval[Fix]) must equal(-1)
-        v.convertTo[Mu].para(peval[Mu]) must equal(-1)
+        testRec(
+          mul(num(0), num(0)),
+          new RecRunner[Exp, Int] {
+            def run[T[_[_]]: Recursive] = _.para(peval[T]) must equal(-1)
+          })
       }
 
       "evaluate equiv" in {
-        val v = mul(num(0), mul(num(0), num(1)))
-        v.para(peval[Fix]) must equal(0)
-        v.convertTo[Mu].para(peval[Mu]) must equal(0)
+        testRec(
+          mul(num(0), mul(num(0), num(1))),
+          new RecRunner[Exp, Int] {
+            def run[T[_[_]]: Recursive] = _.para(peval[T]) must equal(0)
+          })
       }
     }
 
     "gpara" should {
       "behave like para" in {
-        val v = mul(num(0), mul(num(0), num(1)))
-        v.gpara[Id, Int](
-          distCata,
-          expr => peval(expr.map(_.runEnvT))) must equal(0)
+        mul(num(0), mul(num(0), num(1)))
+          .gpara[Id, Int](distCata, exp => peval(exp.map(_.runEnvT))) must
+            equal(0)
       }
     }
 
@@ -645,6 +726,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
         val v = mul(num(0), mul(num(0), num(1)))
         v.gcata[Id, Int](distCata, eval) must equal(v.cata(eval))
         v.convertTo[Mu].gcata[Id, Int](distCata, eval) must equal(v.cata(eval))
+        v.convertTo[Nu].gcata[Id, Int](distCata, eval) must equal(v.cata(eval))
       }
     }
 
@@ -653,6 +735,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
         val v = mul(num(0), mul(num(0), num(1)))
         v.gcata[(Fix[Exp], ?), Int](distPara, peval[Fix]) must equal(v.para(peval[Fix]))
         v.convertTo[Mu].gcata[(Mu[Exp], ?), Int](distPara, peval[Mu]) must equal(v.convertTo[Mu].para(peval[Mu]))
+        v.convertTo[Nu].gcata[(Nu[Exp], ?), Int](distPara, peval[Nu]) must equal(v.convertTo[Nu].para(peval[Nu]))
       }
     }
 
@@ -691,7 +774,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
         }
         "apo should be an optimization over apoM and be semantically equivalent" ! prop { i: Int =>
           if (i == 0) ok
-          else i.apoM[Fix, Id, Exp](extract2s) must equal(i.apo(extract2s))
+          else i.apoM[Fix, Id, Exp](extract2s) must equal(i.apo[Fix, Exp](extract2s))
         }
       }
       "construct factorial" in {
@@ -713,41 +796,74 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
           def extractFactorsM(x: Int): Option[Exp[Int]] =
             if (x == 5) None else extractFactors(x).some
           "pull out factors of two" in {
-            12.anaM(extractFactorsM) must beSome(
-              mul(num(2), mul(num(2), num(3)))
-            )
+            testCorec(
+              12,
+              new CorecRunner[Option, Exp, Int] {
+                def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+                  _.anaM[T, Option, Exp](extractFactorsM) must
+                    equal(mul(num(2), mul(num(2), num(3))).convertTo[T].some)
+              })
           }
           "fail if 5 is present" in {
-            10.anaM(extractFactorsM) must beNone
+            testCorec(
+              10,
+              new CorecRunner[Option, Exp, Int] {
+                def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+                  _.anaM[T, Option, Exp](extractFactorsM) must beNone
+              })
           }
         }
         "ana should be an optimization over anaM and be semantically equivalent" ! prop { i: Int =>
-          i.anaM[Fix, Id, Exp](extractFactors) must equal(i.ana(extractFactors))
+          testCorec(
+            i,
+            new CorecRunner[Id, Exp, Int] {
+              def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+                _.anaM[T, Id, Exp](extractFactors) must
+                  equal(i.ana[T, Exp](extractFactors))
+            })
         }
       }
     }
 
     "distAna" should {
       "behave like ana in gana" ! prop { (i: Int) =>
-        i.gana[Fix, Id, Exp](distAna, extractFactors) must
-          equal(i.ana(extractFactors))
+        testCorec(
+          i,
+          new CorecRunner[Id, Exp, Int] {
+            def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.gana[T, Id, Exp](distAna, extractFactors) must
+                equal(i.ana[T, Exp](extractFactors))
+          })
       }
 
       "behave like ana in elgotAna" ! prop { (i: Int) =>
-        i.elgotAna[Fix, Id, Exp](distAna, extractFactors) must
-          equal(i.ana(extractFactors))
+        testCorec(
+          i,
+          new CorecRunner[Id, Exp, Int] {
+            def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.elgotAna[T, Id, Exp](distAna, extractFactors) must
+                equal(i.ana[T, Exp](extractFactors))
+          })
       }
     }
 
     "distApo" should {
       "behave like apo in gana" ! prop { (i: Int) =>
-        i.gana[Mu, Mu[Exp] \/ ?, Exp](distApo, extract2s) must
-          equal(i.apo(extract2s[Mu]))
+        (i.gana[Fix, Fix[Exp] \/ ?, Exp](distApo, extract2s) must
+          equal(i.apo[Fix, Exp](extract2s))).toResult and
+        (i.gana[Mu, Mu[Exp] \/ ?, Exp](distApo, extract2s) must
+          equal(i.apo[Mu, Exp](extract2s))).toResult and
+        (i.gana[Nu, Nu[Exp] \/ ?, Exp](distApo, extract2s) must
+          equal(i.apo[Nu, Exp](extract2s))).toResult
       }
 
       "behave like elgotApo in elgotAna" ! prop { (i: Int) =>
-        i.elgotAna[Fix, Fix[Exp] \/ ?, Exp](distApo, extract2sAnd5) must
-          equal(i.elgotApo(extract2sAnd5[Fix]))
+        (i.elgotAna[Fix, Fix[Exp] \/ ?, Exp](distApo, extract2sAnd5[Fix]) must
+          equal(i.elgotApo[Fix, Exp](extract2sAnd5[Fix]))).toResult and
+        (i.elgotAna[Mu, Mu[Exp] \/ ?, Exp](distApo, extract2sAnd5[Mu]) must
+          equal(i.elgotApo[Mu, Exp](extract2sAnd5[Mu]))).toResult and
+        (i.elgotAna[Nu, Nu[Exp] \/ ?, Exp](distApo, extract2sAnd5[Nu]) must
+          equal(i.elgotApo[Nu, Exp](extract2sAnd5[Nu]))).toResult
       }
     }
 
@@ -779,17 +895,26 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "zygo" should {
       "eval and strings" in {
-        mul(mul(num(0), num(0)), mul(num(2), num(5))).zygo(eval, strings) must
-          equal("0 (0), 0 (0) (0), 2 (2), 5 (5) (10)")
+        testRec(
+          mul(mul(num(0), num(0)), mul(num(2), num(5))),
+          new RecRunner[Exp, String] {
+            def run[T[_[_]]: Recursive] =
+              _.zygo(eval, strings) must
+                equal("0 (0), 0 (0) (0), 2 (2), 5 (5) (10)")
+          })
       }
     }
 
     "paraZygo" should {
       "peval and strings" in {
-        mul(mul(num(0), num(0)), mul(num(2), num(5))).paraZygo(peval[Fix], strings) must
-          equal("0 (0), 0 (0) (-1), 2 (2), 5 (5) (10)")
+        testRec(
+          mul(mul(num(0), num(0)), mul(num(2), num(5))),
+          new RecRunner[Exp, String] {
+            def run[T[_[_]]: Recursive] =
+              _.paraZygo(peval[T], strings) must
+                equal("0 (0), 0 (0) (-1), 2 (2), 5 (5) (10)")
+          })
       }
-
     }
 
     sealed trait Nat[A]
@@ -807,7 +932,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
     }
 
     "mutu" should {
-      val toNat: Int => Fix[Nat] = _.ana({
+      val toNat: Int => Fix[Nat] = _.ana[Fix, Nat]({
         case 0 => Z()
         case n => S(n - 1)
       })
@@ -841,6 +966,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       "eval simple literal multiplication" in {
         mul(num(5), num(10)).histo(partialEval[Fix]) must equal(num(50))
         mul(num(5), num(10)).histo(partialEval[Mu]) must equal(num(50).convertTo[Mu])
+        mul(num(5), num(10)).histo(partialEval[Nu]) must equal(num(50).convertTo[Nu])
       }
 
       "partially evaluate mul in lambda" in {
@@ -848,6 +974,8 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
           equal(lam('foo, mul(num(28), vari('foo))))
         lam('foo, mul(mul(num(4), num(7)), vari('foo))).histo(partialEval[Mu]) must
           equal(lam('foo, mul(num(28), vari('foo))).convertTo[Mu])
+        lam('foo, mul(mul(num(4), num(7)), vari('foo))).histo(partialEval[Nu]) must
+          equal(lam('foo, mul(num(28), vari('foo))).convertTo[Nu])
       }
     }
 
@@ -861,13 +989,21 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "postpro" should {
       "extract original with identity ~>" in {
-        72.postpro(NaturalTransformation.refl[Exp], extractFactors) must
-          equal(mul(num(2), mul(num(2), mul(num(2), num(9)))))
+        (72.postpro[Fix, Exp](NaturalTransformation.refl[Exp], extractFactors) must
+          equal(mul(num(2), mul(num(2), mul(num(2), num(9)))))).toResult and
+        (72.postpro[Mu, Exp](NaturalTransformation.refl[Exp], extractFactors) must
+          equal(mul(num(2), mul(num(2), mul(num(2), num(9)))).convertTo[Mu])).toResult and
+        (72.postpro[Nu, Exp](NaturalTransformation.refl[Exp], extractFactors) must
+          equal(mul(num(2), mul(num(2), mul(num(2), num(9)))).convertTo[Nu])).toResult
       }
 
       "apply ~> repeatedly" in {
-        72.postpro(MinusThree, extractFactors) must
-          equal(mul(num(-1), mul(num(-4), mul(num(-7), num(0)))))
+        (72.postpro[Fix, Exp](MinusThree, extractFactors) must
+          equal(mul(num(-1), mul(num(-4), mul(num(-7), num(0)))))).toResult and
+        (72.postpro[Mu, Exp](MinusThree, extractFactors) must
+          equal(mul(num(-1), mul(num(-4), mul(num(-7), num(0)))).convertTo[Mu])).toResult and
+        (72.postpro[Nu, Exp](MinusThree, extractFactors) must
+          equal(mul(num(-1), mul(num(-4), mul(num(-7), num(0)))).convertTo[Nu])).toResult
       }
     }
 
@@ -885,16 +1021,32 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
 
     "futu" should {
       "factor multiples of two" in {
-        8.futu(extract2and3) must equal(mul(num(2), mul(num(2), num(2))))
+        testCorec(
+          8,
+          new CorecRunner[Id, Exp, Int] {
+            def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.futu[T, Exp](extract2and3) must equal(mul(num(2), mul(num(2), num(2))).convertTo[T])
+          })
       }
 
       "factor multiples of three" in {
-        81.futu(extract2and3) must equal(mul(num(3), num(27)))
+        testCorec(
+          81,
+          new CorecRunner[Id, Exp, Int] {
+            def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.futu[T, Exp](extract2and3) must
+                equal(mul(num(3), num(27)).convertTo[T])
+          })
       }
 
       "factor 3 within 2" in {
-        324.futu(extract2and3) must
-          equal(mul(num(2), mul(num(2), mul(num(3), num(27)))))
+        testCorec(
+          324,
+          new CorecRunner[Id, Exp, Int] {
+            def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.futu[T, Exp](extract2and3) must
+                equal(mul(num(2), mul(num(2), mul(num(3), num(27)))).convertTo[T])
+          })
       }
     }
 
@@ -902,6 +1054,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       "factor and partially eval" ! prop { (i: Int) =>
         i.chrono(partialEval[Fix], extract2and3) must equal(num(i))
         i.chrono(partialEval[Mu], extract2and3) must equal(num(i).convertTo[Mu])
+        i.chrono(partialEval[Nu], extract2and3) must equal(num(i).convertTo[Nu])
       }
     }
   }
@@ -958,14 +1111,21 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
   "Attr" should {
     "attrSelf" should {
       "annotate all" ! Prop.forAll(expGen) { exp =>
-        Recursive[Cofree[?[_], Fix[Exp]]].universe(exp.cata(attrSelf)) must
-          equal(exp.universe.map(_.cata(attrSelf)))
+        // NB: This would look like
+        //     >   exp.cata(attrSelf).universe must
+        //     >     equal(exp.universe.map(_.cata(attrSelf)))
+        //     if scalac could find the implicit
+        Recursive[Cofree[?[_], Fix[Exp]]].universe(exp.cata[Cofree[Exp, Fix[Exp]]](attrSelf)) must
+          equal(exp.universe.map(_.cata[Cofree[Exp, Fix[Exp]]](attrSelf)))
       }
     }
 
     "convert" should {
       "forget unit" ! Prop.forAll(expGen) { exp =>
-        Recursive[Cofree[?[_], Unit]].convertTo(exp.cata(attrK(()))) must
+        // NB: This would look like
+        //     >   exp.cata(attrK(())).convertTo[Fix] must equal(exp)
+        //     if scalac could find the implicit
+        Recursive[Cofree[?[_], Unit]].convertTo[Exp, Fix](exp.cata(attrK(()))) must
           equal(exp)
       }
     }
@@ -977,7 +1137,7 @@ class FixplateSpecs extends Specification with ScalaCheck with ScalazMatchers {
       }
 
       "selves" ! Prop.forAll(expGen) { exp =>
-        Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrSelf))(_ :: Nil) must
+        Foldable[Cofree[Exp, ?]].foldMap(exp.cata[Cofree[Exp, Fix[Exp]]](attrSelf))(_ :: Nil) must
           equal(exp.universe)
       }
     }

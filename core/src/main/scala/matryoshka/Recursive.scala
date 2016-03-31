@@ -205,3 +205,10 @@ import simulacrum.typeclass
   def convertTo[F[_]: Functor, R[_[_]]: Corecursive](t: T[F]): R[F] =
     cata(t)(Corecursive[R].embed[F])
 }
+
+object Recursive {
+  implicit def show[T[_[_]]: Recursive, F[_]: Functor](
+    implicit F: Show ~> λ[α => Show[F[α]]]):
+      Show[T[F]] =
+    Show.show(Recursive[T].cata(_)(F(Cord.CordShow).show))
+}
