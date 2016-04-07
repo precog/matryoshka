@@ -18,16 +18,15 @@ package matryoshka
 
 import Recursive.ops._, FunctorT.ops._
 import matryoshka.runners._
+import matryoshka.specs2.scalacheck.CheckAll
 
 import java.lang.String
-import scala.{Boolean, Function, Int, None, Option, Predef, Symbol, Unit},
-  Predef.{implicitly, wrapString}
+import scala.{Boolean, Function, Int, None, Option, Predef, Symbol, Unit}
 import scala.collection.immutable.{List, Map, Nil, ::}
 
 import org.scalacheck._
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
-import org.specs2.scalaz._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalaCheckBinding._
 import scalaz.scalacheck.ScalazProperties._
@@ -175,27 +174,31 @@ object Exp2 {
 }
 
 
-class ExpSpec extends Spec {
+class ExpSpec extends Specification with ScalaCheck with CheckAll {
   import Exp._
 
   implicit val arbExpInt: Arbitrary[Exp[Int]] = arbExp(Arbitrary.arbInt)
   // NB: These are just a sanity check that the data structure created for the
   //     tests is lawful.
-  checkAll(equal.laws[Exp[Int]])
-  checkAll(traverse.laws[Exp])
+  "Exp should satisfy relevant laws" >> {
+    checkAll(equal.laws[Exp[Int]])
+    checkAll(traverse.laws[Exp])
+  }
 }
 
-class Exp2Spec extends Spec {
+class Exp2Spec extends Specification with ScalaCheck with CheckAll {
   import Exp2._
 
   implicit val arbExp2Int: Arbitrary[Exp2[Int]] = arbExp2(Arbitrary.arbInt)
   // NB: These are just a sanity check that the data structure created for the
   //     tests is lawful.
-  checkAll(equal.laws[Exp2[Int]])
-  checkAll(functor.laws[Exp2])
+  "Exp2 should satisfy relevant laws" >> {
+    checkAll(equal.laws[Exp2[Int]])
+    checkAll(functor.laws[Exp2])
+  }
 }
 
-class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers {
+class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.Matchers {
   import Exp._
 
   implicit def arbFix[F[_]]:
@@ -288,8 +291,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       case _ => t.map(_.head).embed
     }
 
-  "Recursive" should {
-    "isLeaf" should {
+  "Recursive" >> {
+    "isLeaf" >> {
       "be true for simple literal" in {
         num(1).isLeaf must beTrue
         num(1).convertTo[Mu].isLeaf must beTrue
@@ -303,11 +306,11 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "children" should {
+    "children" >> {
       "be empty for simple literal" in {
-        num(1).children must equal(Nil)
-        num(1).convertTo[Mu].children must equal(Nil)
-        num(1).convertTo[Nu].children must equal(Nil)
+        num(1).children must be empty;
+        num(1).convertTo[Mu].children must be empty;
+        num(1).convertTo[Nu].children must be empty
       }
 
       "contain sub-expressions" in {
@@ -319,7 +322,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "universe" should {
+    "universe" >> {
       "be one for simple literal" in {
         num(1).universe must equal(List(num(1)))
         num(1).convertTo[Mu].universe must
@@ -338,7 +341,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "transCata" should {
+    "transCata" >> {
       "change simple literal" in {
         testFunc(
           num(1),
@@ -363,7 +366,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "transAna" should {
+    "transAna" >> {
       "change simple literal" in {
         testFunc(
           num(1),
@@ -388,7 +391,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "prepro" should {
+    "prepro" >> {
       "multiply original with identity ~>" in {
         mul(num(1), mul(num(12), num(8)))
           .prepro(NaturalTransformation.refl[Exp], example1ƒ) must
@@ -401,7 +404,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "gprepro" should {
+    "gprepro" >> {
       "multiply original with identity ~>" in {
         lam('meh, mul(vari('meh), mul(num(10), num(8))))
           .gprepro[Cofree[Exp, ?], Fix[Exp]](
@@ -417,7 +420,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "transPrepro" should {
+    "transPrepro" >> {
       "change literal with identity ~>" in {
         testFunc(
           num(1),
@@ -449,7 +452,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "transPostpro" should {
+    "transPostpro" >> {
       "change literal with identity ~>" in {
         testFunc(
           num(1),
@@ -481,7 +484,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "transPara" should {
+    "transPara" >> {
       "project basic exp" in {
         lam('sym, num(3)).transPara(extractLambdaƒ) must equal(Exp2.num2(3))
       }
@@ -492,7 +495,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "foldMap" should {
+    "foldMap" >> {
       "fold stuff" in {
         mul(num(0), num(1)).foldMap(_ :: Nil) must equal(mul(num(0), num(1)) :: num(0) :: num(1) :: Nil)
       }
@@ -509,7 +512,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       case t      => t.fold
     }
 
-    "cata" should {
+    "cata" >> {
       "evaluate simple expr" in {
         testRec(
           mul(num(1), mul(num(2), num(3))),
@@ -536,7 +539,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "zipAlgebras" should {
+    "zipAlgebras" >> {
       "both eval and find all constants" in {
         testRec(
           mul(num(5), num(2)),
@@ -548,7 +551,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "generalize" should {
+    "generalize" >> {
       "behave like cata" in {
         testRec(
           mul(num(1), mul(num(2), num(3))),
@@ -559,21 +562,21 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "coelgot" should {
+    "coelgot" >> {
       "behave like cofCata ⋘ attributeAna" ! prop { (i: Int) =>
         i.coelgot(eval.generalizeElgot[(Int, ?)], extractFactors) must equal(
           i.attributeAna(extractFactors).cofCata(eval.generalizeElgot[(Int, ?)]))
       }
     }
 
-    "elgot" should {
+    "elgot" >> {
       "behave like interpCata ⋘ freeAna" ! prop { (i: Int) =>
         i.elgot(eval, extractFactors.generalizeElgot[Int \/ ?]) must equal(
           i.freeAna(extractFactors.generalizeElgot[Int \/ ?]).interpretCata(eval))
       }
     }
 
-    "generalizeElgot" should {
+    "generalizeElgot" >> {
       "behave like cata on an algebra" ! prop { (i: Int) =>
         val x = i.ana[Fix, Exp](extractFactors).cata(eval)
         i.coelgot(eval.generalizeElgot[(Int, ?)], extractFactors) must equal(x)
@@ -589,14 +592,14 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       if (x > 2 && x % 2 == 0) Mul(2, x/2)
       else Num(x)
 
-    "generalizeCoalgebra" should {
+    "generalizeCoalgebra" >> {
       "behave like ana" ! prop { (i: Int) =>
         i.apo(extractFactors.generalize[Fix[Exp] \/ ?]) must
           equal(i.ana[Fix, Exp](extractFactors))
       }
     }
 
-    "topDownCata" should {
+    "topDownCata" >> {
       def subst[T[_[_]]: Recursive](vars: Map[Symbol, T[Exp]], t: T[Exp]):
           (Map[Symbol, T[Exp]], T[Exp]) = t.project match {
         case Let(sym, value, body) => (vars + ((sym, value)), body)
@@ -623,7 +626,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       case _                                           => Predef.???
     }
 
-    "attributePara" should {
+    "attributePara" >> {
       "provide a catamorphism" in {
         val v = mul(num(4), mul(num(2), num(3)))
         v.cata(attributePara(peval[Fix])) must
@@ -642,7 +645,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       case (_,      _)         => None
     }
 
-    "attributeElgotM" should {
+    "attributeElgotM" >> {
       "fold to Cofree" in {
         Cofree[Exp, Int](1, Mul(
           Cofree(2, Num(1)),
@@ -659,7 +662,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "para" should {
+    "para" >> {
       "evaluate simple expr" in {
         testRec(
           mul(num(1), mul(num(2), num(3))),
@@ -685,7 +688,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "gpara" should {
+    "gpara" >> {
       "behave like para" in {
         mul(num(0), mul(num(0), num(1)))
           .gpara[Id, Int](distCata, exp => peval(exp.map(_.runEnvT))) must
@@ -698,7 +701,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     def sequential[T[_[_]], F[_]]: (Int, F[T[F]]) => State[Int, Int] =
       (_, _) => State.get[Int] <* State.modify[Int](_ + 1)
 
-    "attributeTopDown" should {
+    "attributeTopDown" >> {
       "increase toward leaves" in {
         val v = mul(num(0), mul(num(0), num(1)))
         v.attributeTopDown(0)(depth) must equal(
@@ -721,7 +724,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "distCata" should {
+    "distCata" >> {
       "behave like cata" in {
         val v = mul(num(0), mul(num(0), num(1)))
         v.gcata[Id, Int](distCata, eval) must equal(v.cata(eval))
@@ -730,7 +733,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "distPara" should {
+    "distPara" >> {
       "behave like para" in {
         val v = mul(num(0), mul(num(0), num(1)))
         v.gcata[(Fix[Exp], ?), Int](distPara, peval[Fix]) must equal(v.para(peval[Fix]))
@@ -761,7 +764,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       else Num(x)
 
 
-    "apomorphism" should {
+    "apomorphism" >> {
       "pull out factors of two" in {
         "apoM" in {
           "should be some" in {
@@ -783,16 +786,16 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "elgotApo" should {
+    "elgotApo" >> {
       "pull out factors of two and stop on 5" in {
         420.elgotApo(extract2sAnd5[Fix]) must
           equal(mul(num(2), mul(num(2), mul(num(5), num(21)))))
       }
     }
 
-    "anamorphism" should {
+    "anamorphism" >> {
       "pull out factors of two" in {
-        "anaM" should {
+        "anaM" >> {
           def extractFactorsM(x: Int): Option[Exp[Int]] =
             if (x == 5) None else extractFactors(x).some
           "pull out factors of two" in {
@@ -825,7 +828,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "distAna" should {
+    "distAna" >> {
       "behave like ana in gana" ! prop { (i: Int) =>
         testCorec(
           i,
@@ -847,7 +850,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "distApo" should {
+    "distApo" >> {
       "behave like apo in gana" ! prop { (i: Int) =>
         (i.gana[Fix, Fix[Exp] \/ ?, Exp](distApo, extract2s) must
           equal(i.apo[Fix, Exp](extract2s))).toResult and
@@ -867,19 +870,19 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "hylo" should {
+    "hylo" >> {
       "factor and then evaluate" ! prop { (i: Int) =>
         i.hylo(eval, extractFactors) must equal(i)
       }
     }
 
-    "ghylo" should {
+    "ghylo" >> {
       "behave like hylo with distCata/distAna" ! prop { (i: Int) =>
         i.ghylo[Exp, Id, Id, Int](distCata, distAna, eval, extractFactors) must
           equal(i.hylo(eval, extractFactors))
       }
 
-      "behave like chrono with distHisto/distFutu" ! prop { (i: Int) =>
+      "behave like chrono with distHisto/distFutu" ! prop { i: Int =>
         i.ghylo[Exp, Cofree[Exp, ?], Free[Exp, ?], Fix[Exp]](
           distHisto, distFutu, partialEval[Fix], extract2and3) must
           equal(i.chrono(partialEval[Fix], extract2and3))
@@ -893,7 +896,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       case _ => Predef.???
     }
 
-    "zygo" should {
+    "zygo" >> {
       "eval and strings" in {
         testRec(
           mul(mul(num(0), num(0)), mul(num(2), num(5))),
@@ -905,7 +908,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "paraZygo" should {
+    "paraZygo" >> {
       "peval and strings" in {
         testRec(
           mul(mul(num(0), num(0)), mul(num(2), num(5))),
@@ -931,7 +934,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "mutu" should {
+    "mutu" >> {
       val toNat: Int => Fix[Nat] = _.ana[Fix, Nat]({
         case 0 => Z()
         case n => S(n - 1)
@@ -962,7 +965,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "histo" should {
+    "histo" >> {
       "eval simple literal multiplication" in {
         mul(num(5), num(10)).histo(partialEval[Fix]) must equal(num(50))
         mul(num(5), num(10)).histo(partialEval[Mu]) must equal(num(50).convertTo[Mu])
@@ -987,7 +990,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         Mul(Free.liftF(Num(3)), Free.liftF(Num(x/3)))
       else Num(x)
 
-    "postpro" should {
+    "postpro" >> {
       "extract original with identity ~>" in {
         (72.postpro[Fix, Exp](NaturalTransformation.refl[Exp], extractFactors) must
           equal(mul(num(2), mul(num(2), mul(num(2), num(9)))))).toResult and
@@ -1007,7 +1010,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "gpostpro" should {
+    "gpostpro" >> {
       "extract original with identity ~>" in {
         72.gpostpro[Fix, Free[Exp, ?], Exp](distFutu, NaturalTransformation.refl[Exp], extract2and3) must
           equal(mul(num(2), mul(num(2), mul(num(2), mul(num(3), num(3))))))
@@ -1019,7 +1022,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "futu" should {
+    "futu" >> {
       "factor multiples of two" in {
         testCorec(
           8,
@@ -1050,7 +1053,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "chrono" should {
+    "chrono" >> {
       "factor and partially eval" ! prop { (i: Int) =>
         i.chrono(partialEval[Fix], extract2and3) must equal(num(i))
         i.chrono(partialEval[Mu], extract2and3) must equal(num(i).convertTo[Mu])
@@ -1059,40 +1062,40 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
   }
 
-  "Holes" should {
-    "holes" should {
+  "Holes" >> {
+    "holes" >> {
       "find none" in {
-        holes[Exp, Unit](Num(0)) must_== Num(0)
+        holes[Exp, Unit](Num(0)) must_=== Num(0)
       }
 
       "find and replace two children" in {
         (holes(mul(num(0), num(1)).unFix) match {
           case Mul((Fix(Num(0)), f1), (Fix(Num(1)), f2)) =>
-            f1(num(2)) must_== Mul(num(2), num(1))
-            f2(num(2)) must_== Mul(num(0), num(2))
+            f1(num(2)) must_=== Mul(num(2), num(1))
+            f2(num(2)) must_=== Mul(num(0), num(2))
           case r => failure
         }): org.specs2.execute.Result
       }
     }
 
-    "holesList" should {
+    "holesList" >> {
       "find none" in {
-        holesList[Exp, Unit](Num(0)) must_== Nil
+        holesList[Exp, Unit](Num(0)) must be empty
       }
 
       "find and replace two children" in {
         (holesList(mul(num(0), num(1)).unFix) match {
           case (t1, f1) :: (t2, f2) :: Nil =>
             t1         must equal(num(0))
-            f1(num(2)) must_== Mul(num(2), num(1))
+            f1(num(2)) must_=== Mul(num(2), num(1))
             t2         must equal(num(1))
-            f2(num(2)) must_== Mul(num(0), num(2))
+            f2(num(2)) must_=== Mul(num(0), num(2))
           case _ => failure
         }): org.specs2.execute.Result
       }
     }
 
-    "project" should {
+    "project" >> {
       "not find child of leaf" in {
         project(0, num(0).unFix) must beNone
       }
@@ -1108,8 +1111,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
   }
 
-  "Attr" should {
-    "attrSelf" should {
+  "Attr" >> {
+    "attrSelf" >> {
       "annotate all" ! Prop.forAll(expGen) { exp =>
         // NB: This would look like
         //     >   exp.cata(attrSelf).universe must
@@ -1120,7 +1123,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "convert" should {
+    "convert" >> {
       "forget unit" ! Prop.forAll(expGen) { exp =>
         // NB: This would look like
         //     >   exp.cata(attrK(())).convertTo[Fix] must equal(exp)
@@ -1130,7 +1133,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    "foldMap" should {
+    "foldMap" >> {
       "zeros" ! Prop.forAll(expGen) { exp =>
         Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrK(0)))(_ :: Nil) must
           equal(exp.universe.map(Function.const(0)))

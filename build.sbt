@@ -5,14 +5,11 @@ import sbt._, Keys._
 
 lazy val checkHeaders = taskKey[Unit]("Fail the build if createHeaders is not up-to-date")
 
-val scalazVersion = "7.1.7"
-val slcVersion    = "0.4"
-
 lazy val standardSettings = Seq(
   headers := Map(
     "scala" -> Apache2_0("2014–2016", "SlamData Inc."),
     "java"  -> Apache2_0("2014–2016", "SlamData Inc.")),
-  scalaVersion := "2.11.7",
+  scalaVersion := "2.11.8",
   logBuffered in Compile := false,
   logBuffered in Test := false,
   outputStrategy := Some(StdoutOutput),
@@ -57,15 +54,19 @@ lazy val standardSettings = Seq(
 
   console <<= console in Test, // console alias test:console
 
-  libraryDependencies ++= Seq(
-    "org.scalaz"        %% "scalaz-core"               % scalazVersion % "compile, test",
-    "org.typelevel"     %% "shapeless-scalaz"          % slcVersion    % "compile, test",
-    "com.github.mpilquist" %% "simulacrum"             % "0.7.0"       % "compile, test",
-    "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion % "test",
-    "org.specs2"        %% "specs2-core"               % "2.4"         % "test",
-    "org.scalacheck"    %% "scalacheck"                % "1.11.6"      % "test" force(),
-    "org.typelevel"     %% "scalaz-specs2"             % "0.3.0"       % "test",
-    "org.typelevel"     %% "shapeless-scalacheck"      % slcVersion    % "test"),
+  libraryDependencies ++= {
+    val scalazVersion = "7.2.1"
+    // Latest version built against scalacheck 1.12.5
+    val specs2Version = "3.7"
+    Seq(
+      "com.github.mpilquist" %% "simulacrum"             % "0.7.0"       % "compile, test",
+      "org.scalaz"        %% "scalaz-core"               % scalazVersion % "compile, test",
+      "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion % "test",
+      "org.specs2"        %% "specs2-core"               % specs2Version % "test" force(),
+      "org.specs2"        %% "specs2-scalacheck"         % specs2Version % "test" force(),
+      // `scalaz-scalacheck-binding` is built with `scalacheck` 1.12.5 so we are stuck with that version
+      "org.scalacheck"    %% "scalacheck"                % "1.12.5"      % "test" force())
+  },
 
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
 

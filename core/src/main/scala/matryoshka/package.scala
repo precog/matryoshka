@@ -20,7 +20,6 @@ import scala.{Function, Int, None, Option}
 import scala.collection.immutable.{List, ::}
 
 import scalaz._, Scalaz._
-import simulacrum.typeclass
 
 /** Generalized folds, unfolds, and refolds. */
 package object matryoshka extends CofreeInstances with FreeInstances {

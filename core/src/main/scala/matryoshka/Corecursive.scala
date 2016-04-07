@@ -18,7 +18,7 @@ package matryoshka
 
 import Recursive.ops._
 
-import scala.{Function, inline, Predef}
+import scala.{inline, Predef}
 
 import scalaz._, Scalaz._
 import simulacrum.typeclass

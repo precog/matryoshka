@@ -21,12 +21,23 @@ import Recursive.ops._
 import scala.Unit
 import scala.Predef.implicitly
 
-import org.specs2.execute._
-import org.specs2.matcher._
-import org.specs2.scalaz._
 import scalaz._, Scalaz._
 
-package object runners extends Spec {
+import org.specs2.execute._
+import org.specs2.matcher._
+import org.specs2.mutable.SpecificationLike
+
+package object runners extends SpecificationLike {
+
+  // Extracted from scalaz 7.1.x. Was removed in scalaz 7.2.0 because `~>` is not a typeclass but it's replacement
+  // `Eq1` is only defined in tests. We only use it for tests as well, so sticking it here for now.
+  // TODO: Consider using the version in `shapeless-scalaz` although that would require pulling in all of shapeless just
+  // for this.
+  implicit def cofreeEqual[A, F[_]](implicit A: Equal[A], F: Equal ~> λ[α => Equal[F[α]]]): Equal[Cofree[F, A]] =
+    Equal.equal{ (a, b) =>
+      A.equal(a.head, b.head) && F(cofreeEqual[A, F]).equal(a.tail, b.tail)
+    }
+
   abstract class RecRunner[F[_], A] {
     // NB: This is defined as a function to make the many definition sites
     //     slightly shorter.
