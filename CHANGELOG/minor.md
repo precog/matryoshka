@@ -1,0 +1,1 @@
+Upgrade to `scalaz` `7.2.1`
