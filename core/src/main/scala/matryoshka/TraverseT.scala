@@ -50,11 +50,12 @@ import simulacrum.typeclass
 }
 
 object TraverseT {
-  implicit def recCorecTraverseT[T[_[_]]: Recursive: Corecursive]: TraverseT[T] =
-    new TraverseT[T] {
-      def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => M[G[T[G]]]) =
-        f(Recursive[T].project(t)).map(Corecursive[T].embed[G])
-    }
+  // TODO: Not sure if this is generically implementable any more. (see FunctorT)
+  // implicit def recCorecTraverseT[T[_[_]]: Recursive: Corecursive]: TraverseT[T] =
+  //   new TraverseT[T] {
+  //     def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => M[G[T[G]]]) =
+  //       f(Recursive[T].project(t)).map(Corecursive[T].embed[G])
+  //   }
 
   /** Import from this object instead of `ops._` to get just ops for the
     * methods of TraverseT, and not those inherited from FunctorT.

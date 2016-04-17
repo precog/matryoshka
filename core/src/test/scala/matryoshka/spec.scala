@@ -578,12 +578,12 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
 
     "generalizeElgot" >> {
       "behave like cata on an algebra" ! prop { (i: Int) =>
-        val x = i.ana[Fix, Exp](extractFactors).cata(eval)
+        val x = i.ana[Fix](extractFactors).cata(eval)
         i.coelgot(eval.generalizeElgot[(Int, ?)], extractFactors) must equal(x)
       }
 
       "behave like ana on an coalgebra" ! prop { (i: Int) =>
-        val x = i.ana[Fix, Exp](extractFactors).cata(eval)
+        val x = i.ana[Fix](extractFactors).cata(eval)
         i.elgot(eval, extractFactors.generalizeElgot[Int \/ ?]) must equal(x)
       }
     }
@@ -594,8 +594,12 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
 
     "generalizeCoalgebra" >> {
       "behave like ana" ! prop { (i: Int) =>
-        i.apo(extractFactors.generalize[Fix[Exp] \/ ?]) must
-          equal(i.ana[Fix, Exp](extractFactors))
+        i.apo[Fix](extractFactors.generalize[Fix[Exp] \/ ?]) must
+          equal(i.ana[Fix](extractFactors))
+        i.apo[Mu](extractFactors.generalize[Mu[Exp] \/ ?]) must
+          equal(i.ana[Mu](extractFactors))
+        i.apo[Nu](extractFactors.generalize[Nu[Exp] \/ ?]) must
+          equal(i.ana[Nu](extractFactors))
       }
     }
 
@@ -768,27 +772,29 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
       "pull out factors of two" in {
         "apoM" in {
           "should be some" in {
-            12.apoM(extract2sNot5[Fix]) must
+            12.apoM[Fix](extract2sNot5[Fix]) must
               beSome(mul(num(2), mul(num(2), num(3))))
           }
           "should be none" in {
-            10.apoM(extract2sNot5[Fix]) must beNone
+            10.apoM[Fix](extract2sNot5[Fix]) must beNone
           }
         }
         "apo should be an optimization over apoM and be semantically equivalent" ! prop { i: Int =>
           if (i == 0) ok
-          else i.apoM[Fix, Id, Exp](extract2s) must equal(i.apo[Fix, Exp](extract2s))
+          else
+            i.apoM[Fix].apply[Id, Exp](extract2s) must
+              equal(i.apo[Fix](extract2s[Fix]))
         }
       }
       "construct factorial" in {
-        4.apo(fact[Fix]) must
+        4.apo[Fix](fact[Fix]) must
           equal(mul(num(4), mul(num(3), mul(num(2), num(1)))))
       }
     }
 
     "elgotApo" >> {
       "pull out factors of two and stop on 5" in {
-        420.elgotApo(extract2sAnd5[Fix]) must
+        420.elgotApo[Fix](extract2sAnd5[Fix]) must
           equal(mul(num(2), mul(num(2), mul(num(5), num(21)))))
       }
     }
@@ -803,7 +809,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
               12,
               new CorecRunner[Option, Exp, Int] {
                 def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
-                  _.anaM[T, Option, Exp](extractFactorsM) must
+                  _.anaM[T](extractFactorsM) must
                     equal(mul(num(2), mul(num(2), num(3))).convertTo[T].some)
               })
           }
@@ -812,7 +818,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
               10,
               new CorecRunner[Option, Exp, Int] {
                 def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
-                  _.anaM[T, Option, Exp](extractFactorsM) must beNone
+                  _.anaM[T](extractFactorsM) must beNone
               })
           }
         }
@@ -821,8 +827,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
             i,
             new CorecRunner[Id, Exp, Int] {
               def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
-                _.anaM[T, Id, Exp](extractFactors) must
-                  equal(i.ana[T, Exp](extractFactors))
+                _.anaM[T](extractFactors) must
+                  equal(i.ana[T](extractFactors))
             })
         }
       }
@@ -835,7 +841,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
           new CorecRunner[Id, Exp, Int] {
             def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
               _.gana[T, Id, Exp](distAna, extractFactors) must
-                equal(i.ana[T, Exp](extractFactors))
+                equal(i.ana[T](extractFactors))
           })
       }
 
@@ -845,7 +851,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
           new CorecRunner[Id, Exp, Int] {
             def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
               _.elgotAna[T, Id, Exp](distAna, extractFactors) must
-                equal(i.ana[T, Exp](extractFactors))
+                equal(i.ana[T](extractFactors))
           })
       }
     }
@@ -853,20 +859,20 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
     "distApo" >> {
       "behave like apo in gana" ! prop { (i: Int) =>
         (i.gana[Fix, Fix[Exp] \/ ?, Exp](distApo, extract2s) must
-          equal(i.apo[Fix, Exp](extract2s))).toResult and
+          equal(i.apo[Fix](extract2s[Fix]))).toResult and
         (i.gana[Mu, Mu[Exp] \/ ?, Exp](distApo, extract2s) must
-          equal(i.apo[Mu, Exp](extract2s))).toResult and
+          equal(i.apo[Mu](extract2s[Mu]))).toResult and
         (i.gana[Nu, Nu[Exp] \/ ?, Exp](distApo, extract2s) must
-          equal(i.apo[Nu, Exp](extract2s))).toResult
+          equal(i.apo[Nu](extract2s[Nu]))).toResult
       }
 
       "behave like elgotApo in elgotAna" ! prop { (i: Int) =>
         (i.elgotAna[Fix, Fix[Exp] \/ ?, Exp](distApo, extract2sAnd5[Fix]) must
-          equal(i.elgotApo[Fix, Exp](extract2sAnd5[Fix]))).toResult and
+          equal(i.elgotApo[Fix](extract2sAnd5[Fix]))).toResult and
         (i.elgotAna[Mu, Mu[Exp] \/ ?, Exp](distApo, extract2sAnd5[Mu]) must
-          equal(i.elgotApo[Mu, Exp](extract2sAnd5[Mu]))).toResult and
+          equal(i.elgotApo[Mu](extract2sAnd5[Mu]))).toResult and
         (i.elgotAna[Nu, Nu[Exp] \/ ?, Exp](distApo, extract2sAnd5[Nu]) must
-          equal(i.elgotApo[Nu, Exp](extract2sAnd5[Nu]))).toResult
+          equal(i.elgotApo[Nu](extract2sAnd5[Nu]))).toResult
       }
     }
 
@@ -878,12 +884,12 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
 
     "ghylo" >> {
       "behave like hylo with distCata/distAna" ! prop { (i: Int) =>
-        i.ghylo[Exp, Id, Id, Int](distCata, distAna, eval, extractFactors) must
+        i.ghylo[Id, Id](distCata, distAna, eval, extractFactors) must
           equal(i.hylo(eval, extractFactors))
       }
 
-      "behave like chrono with distHisto/distFutu" ! prop { i: Int =>
-        i.ghylo[Exp, Cofree[Exp, ?], Free[Exp, ?], Fix[Exp]](
+      "behave like chrono with distHisto/distFutu" ! prop { (i: Int) =>
+        i.ghylo[Cofree[Exp, ?], Free[Exp, ?]](
           distHisto, distFutu, partialEval[Fix], extract2and3) must
           equal(i.chrono(partialEval[Fix], extract2and3))
       }
@@ -935,7 +941,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
     }
 
     "mutu" >> {
-      val toNat: Int => Fix[Nat] = _.ana[Fix, Nat]({
+      val toNat: Int => Fix[Nat] = _.ana[Fix]({
         case 0 => Z()
         case n => S(n - 1)
       })
@@ -992,27 +998,27 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
 
     "postpro" >> {
       "extract original with identity ~>" in {
-        (72.postpro[Fix, Exp](NaturalTransformation.refl[Exp], extractFactors) must
+        (72.postpro[Fix](NaturalTransformation.refl[Exp], extractFactors) must
           equal(mul(num(2), mul(num(2), mul(num(2), num(9)))))).toResult and
-        (72.postpro[Mu, Exp](NaturalTransformation.refl[Exp], extractFactors) must
+        (72.postpro[Mu](NaturalTransformation.refl[Exp], extractFactors) must
           equal(mul(num(2), mul(num(2), mul(num(2), num(9)))).convertTo[Mu])).toResult and
-        (72.postpro[Nu, Exp](NaturalTransformation.refl[Exp], extractFactors) must
+        (72.postpro[Nu](NaturalTransformation.refl[Exp], extractFactors) must
           equal(mul(num(2), mul(num(2), mul(num(2), num(9)))).convertTo[Nu])).toResult
       }
 
       "apply ~> repeatedly" in {
-        (72.postpro[Fix, Exp](MinusThree, extractFactors) must
+        (72.postpro[Fix](MinusThree, extractFactors) must
           equal(mul(num(-1), mul(num(-4), mul(num(-7), num(0)))))).toResult and
-        (72.postpro[Mu, Exp](MinusThree, extractFactors) must
+        (72.postpro[Mu](MinusThree, extractFactors) must
           equal(mul(num(-1), mul(num(-4), mul(num(-7), num(0)))).convertTo[Mu])).toResult and
-        (72.postpro[Nu, Exp](MinusThree, extractFactors) must
+        (72.postpro[Nu](MinusThree, extractFactors) must
           equal(mul(num(-1), mul(num(-4), mul(num(-7), num(0)))).convertTo[Nu])).toResult
       }
     }
 
     "gpostpro" >> {
       "extract original with identity ~>" in {
-        72.gpostpro[Fix, Free[Exp, ?], Exp](distFutu, NaturalTransformation.refl[Exp], extract2and3) must
+        72.gpostpro[Fix, Free[Exp, ?], Exp](distFutu, NaturalTransformation.refl, extract2and3) must
           equal(mul(num(2), mul(num(2), mul(num(2), mul(num(3), num(3))))))
       }
 
@@ -1028,7 +1034,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
           8,
           new CorecRunner[Id, Exp, Int] {
             def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
-              _.futu[T, Exp](extract2and3) must equal(mul(num(2), mul(num(2), num(2))).convertTo[T])
+              _.futu[T](extract2and3) must equal(mul(num(2), mul(num(2), num(2))).convertTo[T])
           })
       }
 
@@ -1037,7 +1043,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
           81,
           new CorecRunner[Id, Exp, Int] {
             def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
-              _.futu[T, Exp](extract2and3) must
+              _.futu[T](extract2and3) must
                 equal(mul(num(3), num(27)).convertTo[T])
           })
       }
@@ -1047,7 +1053,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
           324,
           new CorecRunner[Id, Exp, Int] {
             def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
-              _.futu[T, Exp](extract2and3) must
+              _.futu[T](extract2and3) must
                 equal(mul(num(2), mul(num(2), mul(num(3), num(27)))).convertTo[T])
           })
       }
@@ -1128,7 +1134,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
         // NB: This would look like
         //     >   exp.cata(attrK(())).convertTo[Fix] must equal(exp)
         //     if scalac could find the implicit
-        Recursive[Cofree[?[_], Unit]].convertTo[Exp, Fix](exp.cata(attrK(()))) must
+        Recursive[Cofree[?[_], Unit]].convertTo[Fix, Exp](exp.cata(attrK(()))) must
           equal(exp)
       }
     }

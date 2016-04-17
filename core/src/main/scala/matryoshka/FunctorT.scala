@@ -88,9 +88,11 @@ import simulacrum.{typeclass}
 }
 
 object FunctorT {
-  implicit def recCorecFunctorT[T[_[_]]: Recursive: Corecursive]: FunctorT[T] =
-    new FunctorT[T] {
-      def map[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[G]]) =
-        Corecursive[T].embed(f(Recursive[T].project(t)))
-    }
+  // TODO: Not sure if this is generically implementable any more.
+  // implicit def recCorecFunctorT[T[_[_]]](implicit TR: Functor ~> λ[ϝ[_] => Recursive.Aux[T[ϝ], ϝ]], TC: Functor ~> λ[ϝ[_] => Corecursive.Aux[T[ϝ], ϝ]]):
+  //     FunctorT[T] =
+  //   new FunctorT[T] {
+  //     def map[F[_], G[_]](t: T[F])(f: F[T[F]] => G[T[G]])(implicit F: Functor[F], G: Functor[G]) =
+  //       TC(G).embed(f(TR(F).project(t)))
+  //   }
 }

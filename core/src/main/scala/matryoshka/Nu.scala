@@ -36,20 +36,23 @@ object Nu {
       val unNu = f
     }
 
-  implicit val recursive: Recursive[Nu] = new Recursive[Nu] {
-    def project[F[_]: Functor](t: Nu[F]) = t.unNu(t.a).map(Nu(t.unNu, _))
-  }
+  implicit def nuMatryoshka[F[_]]:
+      Recursive[Nu[F]] with Corecursive[Nu[F]] =
+    new Recursive[Nu[F]] with Corecursive[Nu[F]] {
+      type Base[A] = F[A]
 
-  implicit val corecursive: Corecursive[Nu] = new Corecursive[Nu] {
-    def embed[F[_]: Functor](t: F[Nu[F]]) = colambek(t)
-    override def ana[F[_]: Functor, A](a: A)(f: A => F[A]) = Nu(f, a)
-  }
+      def project(t: Nu[F]) = t.unNu(t.a).map(Nu(t.unNu, _))
 
-  implicit def equal[F[_]: Functor](implicit F: Equal ~> λ[α => Equal[F[α]]]):
+      // FIXME: ugh, shouldn’t have to redefine `colambek` in here?
+      def embed(t: F[Nu[F]]) = ana(t)(_ ∘ project)
+      override def ana[A](a: A)(f: A => F[A]) = Nu(f, a)
+    }
+
+  implicit def equal[F[_]: Functor](implicit F: Equal ~> λ[α => Equal[Recursive[Nu[F]]#Base[α]]]):
       Equal[Nu[F]] =
     Equal.equal((a, b) => F(equal[F]).equal(a.project, b.project))
 
-  implicit def show[F[_]: Functor](implicit F: Show ~> λ[α => Show[F[α]]]):
+  implicit def show[F[_]: Functor](implicit  T: Recursive.Aux[Nu[F], F], F: Show ~> λ[α => Show[F[α]]]):
       Show[Nu[F]] =
-    Recursive.show[Nu, F]
+    Recursive.show[Nu[F], F](T, F)
 }

@@ -22,13 +22,14 @@ import scalaz._
   */
 final case class Fix[F[_]](unFix: F[Fix[F]])
 object Fix {
-  implicit val recursive: Recursive[Fix] = new Recursive[Fix] {
-    def project[F[_]: Functor](t: Fix[F]) = t.unFix
-  }
+  implicit def matryoshka[F[_]]: Recursive[Fix[F]] with Corecursive[Fix[F]] =
+    new Recursive[Fix[F]] with Corecursive[Fix[F]] {
+      type Base[A] = F[A]
 
-  implicit val corecursive: Corecursive[Fix] = new Corecursive[Fix] {
-    def embed[F[_]: Functor](t: F[Fix[F]]) = Fix(t)
-  }
+      def project(t: Fix[F]) = t.unFix
+
+      def embed(t: F[Fix[F]]) = Fix(t)
+    }
 
   implicit def equal[F[_]](implicit F: Equal ~> λ[α => Equal[F[α]]]):
       Equal[Fix[F]] =

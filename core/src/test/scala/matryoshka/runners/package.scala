@@ -48,7 +48,7 @@ package object runners extends SpecificationLike {
     r.run[Fix].apply(t) and
     r.run[Mu].apply(t.convertTo[Mu]) and
     r.run[Nu].apply(t.convertTo[Nu]) and
-    r.run[Cofree[?[_], Unit]].apply(t.convertTo[Cofree[?[_], Unit]](F, cofreeCorecursive[Unit]))
+    r.run[Cofree[?[_], Unit]].apply(t.convertTo[Cofree[?[_], Unit]](cofreeCorecursive[Unit], F))
   }
 
   abstract class CorecRunner[M[_], F[_], A] {
@@ -77,7 +77,7 @@ package object runners extends SpecificationLike {
     r.run[Mu].apply(t.convertTo[Mu]).toResult and
     r.run[Nu].apply(t.convertTo[Nu]).toResult and
     // NB: No Equal for Free, so we can’t test it.
-    r.run[Cofree[?[_], Unit]].apply(t.convertTo[Cofree[?[_], Unit]](F, cofreeCorecursive[Unit])).toResult
+    r.run[Cofree[?[_], Unit]].apply(t.convertTo[Cofree[?[_], Unit]](cofreeCorecursive[Unit], F)).toResult
 
   abstract class TravRunner[M[_], F[_], G[_]] {
     def run[T[_[_]]: TraverseT: Corecursive](implicit Eq: Equal[T[G]], S: Show[T[G]]):
@@ -91,6 +91,6 @@ package object runners extends SpecificationLike {
     r.run[Mu].apply(t.convertTo[Mu]).toResult and
     r.run[Nu].apply(t.convertTo[Nu]).toResult and
     // NB: No Equal for Free, so we can’t test it.
-    r.run[Cofree[?[_], Unit]].apply(t.convertTo[Cofree[?[_], Unit]](F, cofreeCorecursive[Unit])).toResult
+    r.run[Cofree[?[_], Unit]].apply(t.convertTo[Cofree[?[_], Unit]](cofreeCorecursive[Unit], F)).toResult
 
 }

@@ -22,15 +22,7 @@ import scala.collection.immutable.{List, ::}
 import scalaz._, Scalaz._
 
 /** Generalized folds, unfolds, and refolds. */
-package object matryoshka extends CofreeInstances with FreeInstances {
-
-  def lambek[T[_[_]]: Corecursive: Recursive, F[_]: Functor](tf: T[F]):
-      F[T[F]] =
-    tf.cata[F[T[F]]](_ ∘ (_.embed))
-
-  def colambek[T[_[_]]: Corecursive: Recursive, F[_]: Functor](ft: F[T[F]]):
-      T[F] =
-    ft.ana(_ ∘ (_.project))
+package object matryoshka extends instances.scalaz.CofreeInstances with instances.scalaz.FreeInstances {
 
   type GAlgebraM[W[_], M[_], F[_], A] =                    F[W[A]] => M[A]
   type GAlgebra[W[_], F[_], A] = GAlgebraM[W, Id, F, A] // F[W[A]] => A
@@ -54,43 +46,11 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   def interpretCata[F[_]: Functor, A](t: Free[F, A])(φ: F[A] => A): A =
     t.fold(x => x, f => φ(f ∘ (interpretCata(_)(φ))))
 
-  /** The fold of a decomposed `coelgot`, since the Cofree already has the
-    * attribute for each node.
-    */
-  def cofCata[F[_]: Functor, A, B](
-    t: Cofree[F, A])(
-    φ: ElgotAlgebra[(A, ?), F, B]):
-      B =
-    φ((t.head, t.tail ∘ (cofCata(_)(φ))))
-
-  def cofCataM[F[_]: Traverse, M[_]: Monad, A, B](
-    t: Cofree[F, A])(
-    φ: ElgotAlgebraM[(A, ?), M, F, B]):
-      M[B] =
-    t.tail.traverse(cofCataM(_)(φ)) >>= (fb => φ((t.head, fb)))
-
-  /** A version of [[matryoshka.Corecursive.ana]] that annotates each node with
-    * the `A` it was expanded from. This is also the unfold from a decomposed
-    * `coelgot`.
-    */
-  def attributeAna[F[_]: Functor, A](a: A)(ψ: A => F[A]): Cofree[F, A] =
-    Cofree(a, ψ(a) ∘ (attributeAna(_)(ψ)))
-
-  /** A Kleisli [[matryoshka.attributeAna]]. */
-  def attributeAnaM[M[_]: Monad, F[_]: Traverse, A](a: A)(ψ: A => M[F[A]]): M[Cofree[F, A]] =
-    ψ(a).flatMap(_.traverse(attributeAnaM(_)(ψ))) ∘ (Cofree(a, _))
-
   /** The unfold from a decomposed `elgot`. */
   def freeAna[F[_]: Functor, A, B](a: A)(ψ: A => B \/ F[A]): Free[F, B] =
     ψ(a).fold(
       _.point[Free[F, ?]],
       fb => Free.liftF(fb ∘ (freeAna(_)(ψ))).join)
-
-  def cofParaM[M[_]] = new CofParaMPartiallyApplied[M]
-  final class CofParaMPartiallyApplied[M[_]] { self =>
-    def apply[T[_[_]]: Corecursive, S[_]: Traverse, A, B](t: Cofree[S, A])(f: (A, S[(T[S], B)]) => M[B])(implicit M: Monad[M]): M[B] =
-      t.tail.traverseU(cs => self(cs)(f) ∘ ((Recursive[Cofree[?[_], A]].convertTo[S, T](cs), _))) >>= (f(t.head, _))
-  }
 
   /** Composition of an anamorphism and a catamorphism that avoids building the
     * intermediate recursive data structure.
@@ -128,15 +88,13 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     ghylo[Cofree[F, ?], Free[F, ?], F, A, B](a)(distHisto, distFutu, g, f)
 
   def elgot[F[_]: Functor, A, B](a: A)(φ: F[B] => B, ψ: A => B \/ F[A]): B = {
-    def h: A => B =
-      (((x: B) => x) ||| ((x: F[A]) => φ(x ∘ h))) ⋘ ψ
+    def h: A => B = (((x: B) => x) ||| ((x: F[A]) => φ(x ∘ h))) ⋘ ψ
     h(a)
   }
 
   def coelgot[F[_]: Functor, A, B](a: A)(φ: ((A, F[B])) => B, ψ: A => F[A]):
       B = {
-    def h: A => B =
-      φ ⋘ (((x: A) => x) &&& (((x: F[A]) => x ∘ h) ⋘ ψ))
+    def h: A => B = φ ⋘ (((x: A) => x) &&& (((x: F[A]) => x ∘ h) ⋘ ψ))
     h(a)
   }
 
@@ -149,15 +107,15 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     }
   }
 
-  def distPara[T[_[_]]: Corecursive, F[_]: Functor]:
-      DistributiveLaw[F, (T[F], ?)] =
-    distZygo(_.embed)
+  def distPara[T, F[_]: Functor](implicit T: Corecursive.Aux[T, F]):
+      DistributiveLaw[F, (T, ?)] =
+    distZygo[F, T](_.embed)
 
-  def distParaT[T[_[_]], F[_]: Functor, W[_]: Comonad](
+  def distParaT[T, W[_]: Comonad, F[_]: Functor](
     t: DistributiveLaw[F, W])(
-    implicit T: Corecursive[T]):
-      DistributiveLaw[F, EnvT[T[F], W, ?]] =
-    distZygoT(_.embed, t)
+    implicit T: Corecursive.Aux[T, F]):
+      DistributiveLaw[F, EnvT[T, W, ?]] =
+    distZygoT[F, W, T](_.embed, t)
 
   def distCata[F[_]]: DistributiveLaw[F, Id] = NaturalTransformation.refl
 
@@ -194,9 +152,9 @@ package object matryoshka extends CofreeInstances with FreeInstances {
 
   def distAna[F[_]]: DistributiveLaw[Id, F] = NaturalTransformation.refl
 
-  def distApo[T[_[_]]: Recursive, F[_]: Functor]:
-      DistributiveLaw[T[F] \/ ?, F] =
-    distGApo(_.project)
+  def distApo[T, F[_]: Functor](implicit T: Recursive.Aux[T, F]):
+      DistributiveLaw[T \/ ?, F] =
+    distGApo(T.project)
 
   def distGApo[F[_]: Functor, B](g: B => F[B]) =
     new DistributiveLaw[B \/ ?, F] {
@@ -250,22 +208,35 @@ package object matryoshka extends CofreeInstances with FreeInstances {
 
   /** Turns any F-algebra, into an identical one that attributes the tree with
     * the results for each node. */
-  def attributeM[F[_]: Functor, M[_]: Functor, A](f: F[A] => M[A]):
+  def attributeAlgebraM[F[_]: Functor, M[_]: Functor, A](f: F[A] => M[A]):
       F[Cofree[F, A]] => M[Cofree[F, A]] =
     fa => f(fa ∘ (_.head)) ∘ (Cofree(_, fa))
 
-  def attribute[F[_]: Functor, A](f: F[A] => A) = attributeM[F, Id, A](f)
+  def attributeAlgebra[F[_]: Functor, A](f: F[A] => A) =
+    attributeAlgebraM[F, Id, A](f)
 
-  def attrK[F[_]: Functor, A](k: A) = attribute[F, A](Function.const(k))
+  def attributeCoalgebra[F[_], B](ψ: Coalgebra[F, B]):
+      Coalgebra[EnvT[B, F, ?], B] =
+    b => EnvT[B, F, B]((b, ψ(b)))
 
-  def attrSelf[T[_[_]]: Corecursive, F[_]: Functor] =
-    attribute[F, T[F]](_.embed)
+  /** Useful for ignoring the annotation when folding a cofree. */
+  def deattribute[F[_], A, B](φ: Algebra[F, B]): Algebra[EnvT[A, F, ?], B] =
+    ann => φ(ann.lower)
+
+  // def ignoreAttribute[T[_[_]], F[_], G[_], A](φ: F[T[G]] => G[T[G]]):
+  //     EnvT[A, F, T[EnvT[A, G, ?]]] => EnvT[A, G, T[EnvT[A, G, ?]]] =
+  //   ???
+
+  def attrK[F[_]: Functor, A](k: A) = attributeAlgebra[F, A](Function.const(k))
+
+  def attrSelf[T, F[_]: Functor](implicit T: Corecursive.Aux[T, F]) =
+    attributeAlgebra[F, T](_.embed)
 
   /** NB: Since Cofree carries the functor, the resulting algebra is a cata, not
     *     a para. */
-  def attributePara[T[_[_]]: Corecursive, F[_]: Functor, A](f: F[(T[F], A)] => A):
+  def attributePara[T, F[_]: Functor, A](f: F[(T, A)] => A)(implicit T: Corecursive.Aux[T, F]):
       F[Cofree[F, A]] => Cofree[F, A] =
-    fa => Cofree(f(fa ∘ (x => (Recursive[Cofree[?[_], A]].convertTo[F, T](x), x.head))), fa)
+    fa => Cofree(f(fa ∘ (x => (Recursive[Cofree[F, A]].cata[T](x)(_.lower.embed), x.head))), fa)
 
   /** A function to be called like `attributeElgotM[M](myElgotAlgebraM)`.
     */
@@ -278,6 +249,12 @@ package object matryoshka extends CofreeInstances with FreeInstances {
         node => f(node ∘ (_ ∘ (_.head))) ∘ (Cofree(_, node.copoint))
     }
   }
+
+  /** Makes it possible to use ElgotAlgebras on EnvT.
+    */
+  def liftT[F[_], A, B](φ: ElgotAlgebra[(A, ?), F, B]):
+      Algebra[EnvT[A, F, ?], B] =
+    ann => φ(ann.run)
 
   implicit def GAlgebraZip[W[_]: Functor, F[_]: Functor]:
       Zip[GAlgebra[W, F, ?]] =
@@ -316,23 +293,22 @@ package object matryoshka extends CofreeInstances with FreeInstances {
 
   /** Count the instinces of `form` in the structure.
     */
-  def count[T[_[_]]: Recursive, F[_]: Functor: Foldable](form: T[F]): F[(T[F], Int)] => Int =
+  def count[T, F[_]: Functor: Foldable](form: T)(implicit T: Recursive.Aux[T, F]):
+      F[(T, Int)] => Int =
     e => e.foldRight(if (e ∘ (_._1) == form.project) 1 else 0)(_._2 + _)
 
-  implicit def ToIdOps[A](a: A): IdOps[A] = new IdOps[A](a)
+  sealed implicit class CorecursiveOps[T, F[_]](self: F[T])(implicit T: Corecursive.Aux[T, F]) {
+    def embed: T = T.embed(self)
+    def colambek(implicit TR: Recursive.Aux[T, F]): T = T.colambek(self)
+  }
 
-  implicit def ToCorecursiveOps[T[_[_]]: Corecursive, F[_]](f: F[T[F]]):
-      CorecursiveOps[T, F] =
-    new CorecursiveOps[T, F](f)
+  implicit def ToIdOps[A](a: A): IdOps[A] = new IdOps[A](a)
 
   implicit def ToAlgebraOps[F[_], A](a: Algebra[F, A]): AlgebraOps[F, A] =
     new AlgebraOps[F, A](a)
 
   implicit def ToCoalgebraOps[F[_], A](a: Coalgebra[F, A]): CoalgebraOps[F, A] =
     new CoalgebraOps[F, A](a)
-
-  implicit def ToCofreeOps[F[_], A](a: Cofree[F, A]): CofreeOps[F, A] =
-    new CofreeOps[F, A](a)
 
   implicit def ToFreeOps[F[_], A](a: Free[F, A]): FreeOps[F, A] =
     new FreeOps[F, A](a)

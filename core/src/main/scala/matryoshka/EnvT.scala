@@ -18,9 +18,8 @@ package matryoshka
 
 import scalaz._, Scalaz._
 
-/**
- * This is the transformer for the (,) comonad.
- */
+/** This is the transformer for the (,) comonad.
+  */
 final case class EnvT[E, W[_], A](run: (E, W[A])) { self =>
   import EnvT._
 
@@ -72,5 +71,4 @@ private trait EnvTComonad[E, W[_]] extends Comonad[EnvT[E, W, ?]] with EnvTFunct
     cojoin(fa).map(f)
 
   def copoint[A](p: EnvT[E, W, A]): A = p.lower.copoint
-
 }

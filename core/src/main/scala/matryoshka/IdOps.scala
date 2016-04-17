@@ -16,6 +16,8 @@
 
 package matryoshka
 
+import scala.Predef.implicitly
+
 import scalaz._
 
 sealed class IdOps[A](self: A) {
@@ -24,25 +26,26 @@ sealed class IdOps[A](self: A) {
   def hyloM[M[_]: Monad, F[_]: Traverse, B](f: F[B] => M[B], g: A => M[F[A]]):
       M[B] =
     matryoshka.hyloM(self)(f, g)
-  def ghylo[F[_]: Functor, W[_]: Comonad, M[_]: Monad, B](
-    w: DistributiveLaw[F, W],
-    m: DistributiveLaw[M, F],
-    f: F[W[B]] => B,
-    g: A => F[M[A]]):
-      B =
-    matryoshka.ghylo(self)(w, m, f, g)
+
+  object ghylo {
+    def apply[W[_], M[_]] = new Aux[W, M]
+
+    final class Aux[W[_], M[_]] {
+      def apply[F[_]: Functor, B](
+        w: DistributiveLaw[F, W],
+        m: DistributiveLaw[M, F],
+        f: F[W[B]] => B,
+        g: A => F[M[A]])(
+        implicit W: Comonad[W], M: Monad [M]):
+          B =
+        matryoshka.ghylo(self)(w, m, f, g)
+    }
+  }
 
   def chrono[F[_]: Functor, B](
     g: F[Cofree[F, B]] => B, f: A => F[Free[F, A]]):
       B =
     matryoshka.chrono(self)(g, f)
-
-  def attributeAna[F[_]: Functor](ψ: A => F[A]): Cofree[F, A] =
-    matryoshka.attributeAna(self)(ψ)
-
-  def attributeAnaM[M[_]: Monad, F[_]: Traverse](ψ: A => M[F[A]]):
-      M[Cofree[F, A]] =
-    matryoshka.attributeAnaM(self)(ψ)
 
   def freeAna[F[_]: Functor, B](ψ: A => B \/ F[A]): Free[F, B] =
     matryoshka.freeAna(self)(ψ)
@@ -52,43 +55,76 @@ sealed class IdOps[A](self: A) {
 
   def coelgot[F[_]: Functor, B](φ: ((A, F[B])) => B, ψ: A => F[A]): B =
     matryoshka.coelgot(self)(φ, ψ)
-  def coelgotM[M[_]] = new CoelgotMPartiallyApplied[M]
-  final class CoelgotMPartiallyApplied[M[_]] {
-    def apply[F[_]: Traverse, B](φ: ((A, F[B])) => M[B], ψ: A => M[F[A]])(implicit M: Monad[M]):
-        M[B] =
-      matryoshka.coelgotM[M].apply[F, A, B](self)(φ, ψ)
+
+  object coelgotM {
+    def apply[M[_]] = new Aux[M]
+
+    final class Aux[M[_]] {
+      def apply[F[_]: Traverse, B](φ: ((A, F[B])) => M[B], ψ: A => M[F[A]])(implicit M: Monad[M]):
+          M[B] =
+        matryoshka.coelgotM[M].apply[F, A, B](self)(φ, ψ)
+    }
   }
 
-  def ana[T[_[_]], F[_]: Functor](f: A => F[A])(implicit T: Corecursive[T]): T[F] =
+  def ana[T, F[_]](f: A => F[A])(implicit T: Corecursive.Aux[T, F]): T =
     T.ana(self)(f)
-  def anaM[T[_[_]], M[_]: Monad, F[_]: Traverse](f: A => M[F[A]])(implicit T: Corecursive[T]): M[T[F]] =
-    T.anaM(self)(f)
-  def gana[T[_[_]], M[_]: Monad, F[_]: Functor](
+
+  object anaM {
+    def apply[T] = new Aux[T]
+
+    final class Aux[T] {
+      def apply[M[_]: Monad, F[_]](f: A => M[F[A]])(implicit T: Corecursive.Aux[T, F], FT: Traverse[F]):
+          M[T] =
+        T.anaM(self)(f)(implicitly, FT)
+    }
+  }
+
+  def gana[T, M[_]: Monad, F[_]](
     k: DistributiveLaw[M, F], f: A => F[M[A]])(
-    implicit T: Corecursive[T]):
-      T[F] =
+    implicit T: Corecursive.Aux[T, F]):
+      T =
     T.gana(self)(k, f)
-  def elgotAna[T[_[_]], M[_]: Monad, F[_]: Functor](
+
+  def elgotAna[T, M[_]: Monad, F[_]](
     k: DistributiveLaw[M, F], f: A => M[F[A]])(
-    implicit T: Corecursive[T]):
-      T[F] =
+    implicit T: Corecursive.Aux[T, F]):
+      T =
     T.elgotAna(self)(k, f)
-  def apo[T[_[_]], F[_]: Functor](f: A => F[T[F] \/ A])(implicit T: Corecursive[T]): T[F] =
+
+  def apo[T, F[_]](f: A => F[T \/ A])(implicit T: Corecursive.Aux[T, F]): T =
     T.apo(self)(f)
-  def elgotApo[T[_[_]], F[_]: Functor](f: A => T[F] \/ F[A])(implicit T: Corecursive[T]): T[F] =
+
+  object apoM {
+    def apply[T] = new Aux[T]
+
+    final class Aux[T] {
+      def apply[M[_]: Monad, F[_]](f: A => M[F[T \/ A]])(implicit T: Corecursive.Aux[T, F], FT: Traverse[F]):
+          M[T] =
+        T.apoM(self)(f)(implicitly, FT)
+    }
+  }
+
+  def elgotApo[T, F[_]](f: A => T \/ F[A])(implicit T: Corecursive.Aux[T, F]):
+      T =
     T.elgotApo(self)(f)
-  def apoM[T[_[_]], M[_]: Monad, F[_]: Traverse](f: A => M[F[T[F] \/ A]])(implicit T: Corecursive[T]): M[T[F]] =
-    T.apoM(self)(f)
-  def postpro[T[_[_]]: Recursive, F[_]: Functor](e: F ~> F, g: A => F[A])(implicit T: Corecursive[T]): T[F] =
-    T.postpro(self)(e, g)
-  def gpostpro[T[_[_]]: Recursive, M[_]: Monad, F[_]: Functor](
+
+  def postpro[T, F[_]](
+    e: F ~> F, g: A => F[A])(
+    implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]):
+      T =
+    TC.postpro(self)(e, g)
+
+  def gpostpro[T, M[_]: Monad, F[_]](
     k: DistributiveLaw[M, F], e: F ~> F, g: A => F[M[A]])(
-    implicit T: Corecursive[T]):
-      T[F] =
-    T.gpostpro(self)(k, e, g)
-  def futu[T[_[_]], F[_]: Functor](f: A => F[Free[F, A]])(implicit T: Corecursive[T]): T[F] =
+    implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]):
+      T =
+    TC.gpostpro(self)(k, e, g)
+
+  def futu[T, F[_]](f: A => F[Free[F, A]])(implicit T: Corecursive.Aux[T, F]):
+      T =
     T.futu(self)(f)
-  def futuM[T[_[_]], M[_]: Monad, F[_]: Traverse](f: A => M[F[Free[F, A]]])(implicit T: Corecursive[T]):
-      M[T[F]] =
-    T.futuM(self)(f)
+
+  def futuM[T, M[_]: Monad, F[_]](f: A => M[F[Free[F, A]]])(implicit T: Corecursive.Aux[T, F], FT: Traverse[F]):
+      M[T] =
+    T.futuM(self)(f)(implicitly, FT)
 }

@@ -23,107 +23,119 @@ import scalaz._, Scalaz._
 import simulacrum.typeclass
 
 /** Folds for recursive data types. */
-@typeclass trait Recursive[T[_[_]]] {
-  def project[F[_]: Functor](t: T[F]): F[T[F]]
+@typeclass trait Recursive[T] extends Based[T] {
+  // TODO: This works around a bug in Simulacrum (#55). Delete once that is fixed.
+  type BaseT[A] = Base[A]
 
-  def cata[F[_]: Functor, A](t: T[F])(f: F[A] => A): A =
-    f(project(t) ∘ (cata(_)(f)))
+  def project(t: T): BaseT[T]
+
+  /** Roughly a default impl of `project`, given a [[matryoshka.Corecursive]]
+    * instance and an overridden `cata`.
+    */
+  def lambek(tf: T)(implicit T: Corecursive.Aux[T, Base]): Base[T] =
+    cata[Base[T]](tf)(_ ∘ (_.embed))
+
+  def cata[A](t: T)(f: Base[A] => A): A = f(project(t) ∘ (cata(_)(f)))
 
   /** A Kleisli catamorphism. */
-  def cataM[F[_]: Traverse, M[_]: Monad, A](t: T[F])(f: F[A] => M[A]): M[A] =
+  def cataM[M[_]: Monad, A](t: T)(f: Base[A] => M[A])(implicit BT: Traverse[Base]):
+      M[A] =
     project(t).traverse(cataM(_)(f)).flatMap(f)
 
-  /** A catamorphism generalized with a comonad in inside the functor. */
-  def gcata[W[_]: Comonad, F[_]: Functor, A](
-    t: T[F])(
-    k: DistributiveLaw[F, W], g: F[W[A]] => A):
+  /** A catamorphism generalized with a comonad inside the functor. */
+  def gcata[W[_]: Comonad, A](
+    t: T)(
+    k: DistributiveLaw[Base, W], g: Base[W[A]] => A):
       A = {
-    def loop(t: T[F]): W[F[W[A]]] = k(project(t) ∘ (loop(_).map(g).cojoin))
+    def loop(t: T): W[Base[W[A]]] = k(project(t) ∘ (loop(_).map(g).cojoin))
 
     g(loop(t).copoint)
   }
 
   /** A catamorphism generalized with a comonad outside the functor. */
-  def elgotCata[W[_]: Comonad, F[_]: Functor, A](
-    t: T[F])(
-    k: DistributiveLaw[F, W], g: ElgotAlgebra[W, F, A]):
+  def elgotCata[W[_]: Comonad, A](
+    t: T)(
+    k: DistributiveLaw[Base, W], g: ElgotAlgebra[W, Base, A]):
       A = {
-    def loop(t: T[F]): W[F[A]] = k(project(t) ∘ (loop(_).cojoin.map(g)))
+    def loop(t: T): W[Base[A]] = k(project(t) ∘ (loop(_).cojoin.map(g)))
 
     g(loop(t))
   }
 
-  def para[F[_]: Functor, A](t: T[F])(f: F[(T[F], A)] => A): A =
+  def para[A](t: T)(f: Base[(T, A)] => A): A =
     // NB: This is not implemented with [[matryoshka.distPara]] because that
     //     would add a [[matryoshka.Corecursive]] constraint.
     f(project(t) ∘ (t => (t, para(t)(f))))
 
-  def elgotPara[F[_]: Functor, A](t: T[F])(f: ((T[F], F[A])) => A): A =
+  def elgotPara[A](t: T)(f: ((T, Base[A])) => A): A =
     // NB: This is not implemented with [[matryoshka.distPara]] because that
     //     would add a [[matryoshka.Corecursive]] constraint.
     f((t, project(t) ∘ (elgotPara(_)(f))))
 
-  def paraM[F[_]: Traverse, M[_]: Monad, A](t: T[F])(f: F[(T[F], A)] => M[A]):
+  def paraM[M[_]: Monad, A](
+    t: T)(
+    f: Base[(T, A)] => M[A])(
+    implicit BT: Traverse[Base]):
       M[A] =
     project(t).traverse(v => paraM(v)(f) ∘ ((v, _))).flatMap(f)
 
-  def gpara[F[_]: Functor, W[_]: Comonad, A](
-    t: T[F])(
-    e: DistributiveLaw[F, W], f: F[EnvT[T[F], W, A]] => A)(
-    implicit T: Corecursive[T]):
+  def gpara[W[_]: Comonad, A](
+    t: T)(
+    e: DistributiveLaw[Base, W], f: Base[EnvT[T, W, A]] => A)(
+    implicit T: Corecursive.Aux[T, Base]):
       A =
-    gzygo[F, W, A, T[F]](t)(T.embed(_), e, f)
+    gzygo[W, A, T](t)(T.embed(_), e, f)
 
-  def zygo[F[_]: Functor, A, B](t: T[F])(f: F[B] => B, g: F[(B, A)] => A): A =
-    gcata[(B, ?), F, A](t)(distZygo(f), g)
+  def zygo[A, B](t: T)(f: Base[B] => B, g: Base[(B, A)] => A): A =
+    gcata[(B, ?), A](t)(distZygo(f), g)
 
-  def elgotZygo[F[_]: Functor, A, B](t: T[F])(f: F[B] => B, g: ElgotAlgebra[(B, ?), F, A]):
+  def elgotZygo[A, B](t: T)(f: Base[B] => B, g: ElgotAlgebra[(B, ?), Base, A]):
       A =
-    elgotCata[(B, ?), F, A](t)(distZygo(f), g)
+    elgotCata[(B, ?), A](t)(distZygo(f), g)
 
-  def gzygo[F[_]: Functor, W[_]: Comonad, A, B](
-    t: T[F])(
-    f: F[B] => B, w: DistributiveLaw[F, W], g: F[EnvT[B, W, A]] => A):
+  def gzygo[W[_]: Comonad, A, B](
+    t: T)(
+    f: Base[B] => B, w: DistributiveLaw[Base, W], g: Base[EnvT[B, W, A]] => A):
       A =
-    gcata[EnvT[B, W, ?], F, A](t)(distZygoT(f, w), g)
+    gcata[EnvT[B, W, ?], A](t)(distZygoT(f, w), g)
 
   /** Mutually-recursive fold. */
-  def mutu[F[_]: Functor, A, B](t: T[F])(f: F[(A, B)] => B, g: F[(B, A)] => A):
-      A =
+  def mutu[A, B](t: T)(f: Base[(A, B)] => B, g: Base[(B, A)] => A): A =
     g(project(t) ∘ (x => (mutu(x)(g, f), mutu(x)(f, g))))
 
-  def prepro[F[_]: Functor, A](t: T[F])(e: F ~> F, f: F[A] => A)(implicit T: Corecursive[T]): A =
-    f(project(t) ∘ (x => prepro(cata[F, T[F]](x)(c => T.embed(e(c))))(e, f)))
+  def prepro[A](t: T)(e: Base ~> Base, f: Base[A] => A)(implicit T: Corecursive.Aux[T, Base]):
+      A =
+    f(project(t) ∘ (x => prepro(cata[T](x)(c => T.embed(e(c))))(e, f)))
 
-  def gprepro[F[_]: Functor, W[_]: Comonad, A](
-    t: T[F])(
-    k: DistributiveLaw[F, W], e: F ~> F, f: F[W[A]] => A)(
-    implicit T: Corecursive[T]):
+  def gprepro[W[_]: Comonad, A](
+    t: T)(
+    k: DistributiveLaw[Base, W], e: Base ~> Base, f: Base[W[A]] => A)(
+    implicit T: Corecursive.Aux[T, Base]):
       A = {
-    def loop(t: T[F]): W[A] =
-      k(project(t) ∘ (x => loop(cata[F, T[F]](x)(c => T.embed(e(c)))).cojoin)) ∘ f
+    def loop(t: T): W[A] =
+      k(project(t) ∘ (x => loop(cata[T](x)(c => T.embed(e(c)))).cojoin)) ∘ f
 
     loop(t).copoint
   }
 
-  def histo[F[_]: Functor, A](t: T[F])(f: F[Cofree[F, A]] => A): A =
-    gcata[Cofree[F, ?], F, A](t)(distHisto, f)
+  def histo[A](t: T)(f: Base[Cofree[Base, A]] => A): A =
+    gcata[Cofree[Base, ?], A](t)(distHisto, f)
 
-  def elgotHisto[F[_]: Functor, A](t: T[F])(f: Cofree[F, F[A]] => A): A =
-    elgotCata[Cofree[F, ?], F, A](t)(distHisto, f)
+  def elgotHisto[A](t: T)(f: Cofree[Base, Base[A]] => A): A =
+    elgotCata[Cofree[Base, ?], A](t)(distHisto, f)
 
-  def ghisto[F[_]: Functor, H[_]: Functor, A](
-    t: T[F])(
-    g: DistributiveLaw[F, H], f: F[Cofree[H, A]] => A):
+  def ghisto[H[_]: Functor, A](
+    t: T)(
+    g: DistributiveLaw[Base, H], f: Base[Cofree[H, A]] => A):
       A =
-    gcata[Cofree[H, ?], F, A](t)(distGHisto(g), f)
+    gcata[Cofree[H, ?], A](t)(distGHisto(g), f)
 
-  def paraZygo[F[_]:Functor: Unzip, A, B](
-    t: T[F]) (
-    f: F[(T[F], B)] => B,
-    g: F[(B, A)] => A):
+  def paraZygo[A, B](
+    t: T)(
+    f: Base[(T, B)] => B, g: Base[(B, A)] => A)(
+    implicit BU: Unzip[Base]):
       A = {
-    def h(t: T[F]): (B, A) =
+    def h(t: T): (B, A) =
       (project(t) ∘ { x =>
         val (b, a) = h(x)
         ((x, b), (b, a))
@@ -132,21 +144,21 @@ import simulacrum.typeclass
     h(t)._2
   }
 
-  def isLeaf[F[_]: Functor: Foldable](t: T[F]): Boolean =
-    !Tag.unwrap(project[F](t).foldMap(_ => true.disjunction))
+  def isLeaf(t: T)(implicit B: Foldable[Base]): Boolean =
+    !Tag.unwrap(project(t).foldMap(_ => true.disjunction))
 
-  def children[F[_]: Functor: Foldable](t: T[F]): List[T[F]] =
-    project[F](t).foldMap(_ :: Nil)
+  def children(t: T)(implicit B: Foldable[Base]): List[T] =
+    project(t).foldMap(_ :: Nil)
 
-  def universe[F[_]: Functor: Foldable](t: T[F]): List[T[F]] =
-    t :: children(t).flatMap(universe[F])
+  def universe(t: T)(implicit B: Foldable[Base]): List[T] =
+    t :: children(t).flatMap(universe)
 
-  def topDownCataM[F[_]: Traverse, M[_]: Monad, A](
-    t: T[F], a: A)(
-    f: (A, T[F]) => M[(A, T[F])])(
-    implicit T: Corecursive[T]):
-      M[T[F]] = {
-    def loop(a: A, term: T[F]): M[T[F]] = for {
+  def topDownCataM[M[_]: Monad, A](
+    t: T, a: A)(
+    f: (A, T) => M[(A, T)])(
+    implicit T: Corecursive.Aux[T, Base], BT: Traverse[Base]):
+      M[T] = {
+    def loop(a: A, term: T): M[T] = for {
       tuple   <- f(a, term)
       (a, tf) =  tuple
       rec     <- project(tf).traverse(loop(a, _))
@@ -156,59 +168,62 @@ import simulacrum.typeclass
   }
 
   /** Attribute a tree via an algebra starting from the root. */
-  def attributeTopDown[F[_]: Functor, A](t: T[F], z: A)(f: (A, F[T[F]]) => A):
-      Cofree[F, A] = {
+  def attributeTopDown[A](t: T, z: A)(f: (A, Base[T]) => A):
+      Cofree[Base, A] = {
     val ft = project(t)
     val a = f(z, ft)
     Cofree(a, ft ∘ (attributeTopDown(_, a)(f)))
   }
+
   /** Kleisli variant of attributeTopDown */
-  def attributeTopDownM[F[_]: Traverse, M[_]: Monad, A](
-    t: T[F], z: A)(
-    f: (A, F[T[F]]) => M[A]):
-      M[Cofree[F, A]] = {
+  def attributeTopDownM[M[_]: Monad, A](
+    t: T, z: A)(
+    f: (A, Base[T]) => M[A])(
+    implicit BT: Traverse[Base]):
+      M[Cofree[Base, A]] = {
     val ft = project(t)
     f(z, ft) >>=
-      (a => ft.traverse(attributeTopDownM(_, a)(f)) ∘ (Cofree(a, _)))
+    (a => ft.traverse(attributeTopDownM(_, a)(f)) ∘ (Cofree(a, _)))
   }
 
   // Foldable
-  def all[F[_]: Functor: Foldable](t: T[F])(p: T[F] ⇒ Boolean): Boolean =
+  def all(t: T)(p: T ⇒ Boolean)(implicit B: Foldable[Base]): Boolean =
     Tag.unwrap(foldMap(t)(p(_).conjunction))
 
-  def any[F[_]: Functor: Foldable](t: T[F])(p: T[F] ⇒ Boolean): Boolean =
+  def any(t: T)(p: T ⇒ Boolean)(implicit B: Foldable[Base]): Boolean =
     Tag.unwrap(foldMap(t)(p(_).disjunction))
 
-  def collect[F[_]: Functor: Foldable, B](t: T[F])(pf: PartialFunction[T[F], B]):
+  def collect[B](t: T)(pf: PartialFunction[T, B])(implicit B: Foldable[Base]):
       List[B] =
     foldMap(t)(pf.lift(_).toList)
 
-  def contains[F[_]: Functor: Foldable](t: T[F], c: T[F])(implicit T: Equal[T[F]]):
-      Boolean =
+  def contains(t: T, c: T)(implicit T: Equal[T], B: Foldable[Base]): Boolean =
     any(t)(_ ≟ c)
 
-  def foldMap[F[_]: Functor: Foldable, Z: Monoid](t: T[F])(f: T[F] => Z): Z =
-    foldMapM[F, Free.Trampoline, Z](t)(f(_).pure[Free.Trampoline]).run
+  def foldMap[Z: Monoid](t: T)(f: T => Z)(implicit B: Foldable[Base]): Z =
+    foldMapM[Free.Trampoline, Z](t)(f(_).pure[Free.Trampoline]).run
 
-  def foldMapM[F[_]: Functor: Foldable, M[_]: Monad, Z: Monoid](t: T[F])(f: T[F] => M[Z]):
+  def foldMapM[M[_]: Monad, Z: Monoid](t: T)(f: T => M[Z])(implicit B: Foldable[Base]):
       M[Z] = {
-    def loop(z0: Z, term: T[F]): M[Z] = {
+    def loop(z0: Z, term: T): M[Z] = {
       for {
         z1 <- f(term)
-        z2 <- project[F](term).foldLeftM(z0 ⊹ z1)(loop(_, _))
+        z2 <- project(term).foldLeftM(z0 ⊹ z1)(loop(_, _))
       } yield z2
     }
 
     loop(Monoid[Z].zero, t)
   }
 
-  def convertTo[F[_]: Functor, R[_[_]]: Corecursive](t: T[F]): R[F] =
-    cata(t)(Corecursive[R].embed[F])
+  def convertTo[R](t: T)(implicit R: Corecursive.Aux[R, Base]): R =
+    cata(t)(R.embed)
 }
 
 object Recursive {
-  implicit def show[T[_[_]]: Recursive, F[_]: Functor](
-    implicit F: Show ~> λ[α => Show[F[α]]]):
-      Show[T[F]] =
-    Show.show(Recursive[T].cata(_)(F(Cord.CordShow).show))
+  type Aux[T, F[_]] = Recursive[T] { type Base[A] = F[A] }
+
+  implicit def show[T, F[_]](
+    implicit T: Recursive.Aux[T, F], BS: Show ~> λ[α => Show[F[α]]]):
+      Show[T] =
+    Show.show(T.cata(_)(BS(Cord.CordShow).show))
 }

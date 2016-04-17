@@ -16,21 +16,10 @@
 
 package matryoshka
 
-import scalaz._, Scalaz._
+sealed trait ListF[A, B]
+final case class ConsF[A, B](car: A, cdr: B) extends ListF[A, B]
+final case class NilF[A, B]() extends ListF[A, B]
 
-trait FreeInstances {
-  implicit def freeCorecursive[A]: Corecursive[Free[?[_], A]] =
-    new Corecursive[Free[?[_], A]] {
-      def embed[F[_]: Functor](t: F[Free[F, A]]) = Free.liftF(t).join
-    }
+object ListF {
 
-  implicit def freeTraverseT[A]: TraverseT[Free[?[_], A]] =
-    new TraverseT[Free[?[_], A]] {
-      def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: Free[F, A])(f: F[Free[F, A]] => M[G[Free[G, A]]]) =
-        t.fold(
-          _.point[Free[G, ?]].point[M],
-          f(_).map(Free.liftF(_).join))
-    }
 }
-
-object free extends FreeInstances
