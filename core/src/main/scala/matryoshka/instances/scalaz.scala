@@ -26,7 +26,8 @@ trait IdInstances {
     */
   // NB: This should really be available even without an additional dependency,
   //     but [[scalaz.Const]] only exists in Scalaz (and Cats).
-  def idMatryoshka[A]: Recursive[A] with Corecursive[A] =
+  def idMatryoshka[A]:
+      Recursive.Aux[A, Const[A, ?]] with Corecursive.Aux[A, Const[A, ?]] =
     new Recursive[A] with Corecursive[A] {
       type Base[B] = Const[A, B]
       def project(t: A) = Const(t)
@@ -38,7 +39,8 @@ object id extends IdInstances
 
 trait MaybeInstances {
   implicit def maybeMatryoshka[A]:
-      Recursive[Maybe[A]] with Corecursive[Maybe[A]] =
+      Recursive.Aux[Maybe[A], Const[Maybe[A], ?]] with
+      Corecursive.Aux[Maybe[A], Const[Maybe[A], ?]] =
     id.idMatryoshka[Maybe[A]]
 }
 
@@ -46,7 +48,8 @@ object maybe extends MaybeInstances
 
 trait EitherInstances {
   implicit def eitherMatryoshka[A, B]:
-      Recursive[A \/ B] with Corecursive[A \/ B] =
+      Recursive.Aux[A \/ B, Const[A \/ B, ?]] with
+      Corecursive.Aux[A \/ B, Const[A \/ B, ?]] =
     id.idMatryoshka[A \/ B]
 }
 
@@ -54,7 +57,8 @@ object either extends EitherInstances
 
 trait IListInstances {
   implicit def ilistMatryoshka[A]:
-      Recursive[IList[A]] with Corecursive[IList[A]] =
+      Recursive.Aux[IList[A], ListF[A, ?]] with
+      Corecursive.Aux[IList[A], ListF[A, ?]] =
     new Recursive[IList[A]] with Corecursive[IList[A]] {
       type Base[B] = ListF[A, B]
       def project(t: IList[A]) = t match {
@@ -72,7 +76,8 @@ object ilist extends IListInstances
 
 trait CofreeInstances {
   implicit def cofreeMatryoshka[F[_], A]:
-      Recursive[Cofree[F, A]] with Corecursive[Cofree[F, A]] =
+      Recursive.Aux[Cofree[F, A], EnvT[A, F, ?]] with
+      Corecursive.Aux[Cofree[F, A], EnvT[A, F, ?]] =
     new Recursive[Cofree[F, A]] with Corecursive[Cofree[F, A]] {
       type Base[B] = EnvT[A, F, B]
       def project(t: Cofree[F, A]) = EnvT((t.head, t.tail))
@@ -98,7 +103,8 @@ object cofree extends CofreeInstances
 trait FreeInstances {
   // TODO: Remove the Functor constraint when we upgrade to Scalaz 7.2
   implicit def freeMatryoshka[F[_]: Functor, A]:
-      Recursive[Free[F, A]] with Corecursive[Free[F, A]] =
+      Recursive.Aux[Free[F, A], CoEnv[A, F, ?]] with
+      Corecursive.Aux[Free[F, A], CoEnv[A, F, ?]] =
     new Recursive[Free[F, A]] with Corecursive[Free[F, A]] {
       type Base[B] = CoEnv[A, F, B]
       def project(t: Free[F, A]) = CoEnv(t.resume.swap)

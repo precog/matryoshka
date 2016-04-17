@@ -16,8 +16,6 @@
 
 package matryoshka
 
-import Recursive.ops._
-
 import scalaz._, Scalaz._
 
 /** This is for coinductive (potentially infinite) recursive structures, models
@@ -37,7 +35,7 @@ object Nu {
     }
 
   implicit def nuMatryoshka[F[_]]:
-      Recursive[Nu[F]] with Corecursive[Nu[F]] =
+      Recursive.Aux[Nu[F], F] with Corecursive.Aux[Nu[F], F] =
     new Recursive[Nu[F]] with Corecursive[Nu[F]] {
       type Base[A] = F[A]
 
@@ -48,11 +46,13 @@ object Nu {
       override def ana[A](a: A)(f: A => F[A]) = Nu(f, a)
     }
 
-  implicit def equal[F[_]: Functor](implicit F: Equal ~> λ[α => Equal[Recursive[Nu[F]]#Base[α]]]):
+  implicit def equal[F[_]](
+    implicit F: Equal ~> λ[α => Equal[Based[Nu[F]]#Base[α]]]):
       Equal[Nu[F]] =
-    Equal.equal((a, b) => F(equal[F]).equal(a.project, b.project))
+    Recursive.equal[Nu[F]]
 
-  implicit def show[F[_]: Functor](implicit  T: Recursive.Aux[Nu[F], F], F: Show ~> λ[α => Show[F[α]]]):
+  implicit def show[F[_]](
+    implicit  F: Show ~> λ[α => Show[Based[Nu[F]]#Base[α]]]):
       Show[Nu[F]] =
-    Recursive.show[Nu[F], F](T, F)
+    Recursive.show[Nu[F]]
 }

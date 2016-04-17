@@ -16,8 +16,6 @@
 
 package matryoshka
 
-import Recursive.ops._
-
 import scalaz._, Scalaz._
 
 /** This is for inductive (finite) recursive structures, models the concept of
@@ -25,7 +23,8 @@ import scalaz._, Scalaz._
   */
 final case class Mu[F[_]](unMu: λ[A => (F[A] => A)] ~> Id)
 object Mu {
-  implicit def recursive[F[_]]: Recursive[Mu[F]] with Corecursive[Mu[F]] =
+  implicit def recursive[F[_]]:
+      Recursive.Aux[Mu[F], F] with Corecursive.Aux[Mu[F], F] =
     new Recursive[Mu[F]] with Corecursive[Mu[F]] {
       type Base[A] = F[A]
 
@@ -39,11 +38,13 @@ object Mu {
         })
     }
 
-  implicit def equal[F[_]: Functor](implicit F: Equal ~> λ[α => Equal[Recursive[Mu[F]]#Base[α]]]):
+  implicit def equal[F[_]](
+    implicit F: Equal ~> λ[α => Equal[Based[Mu[F]]#Base[α]]]):
       Equal[Mu[F]] =
-    Equal.equal((a, b) => F(equal[F]).equal(a.project, b.project))
+    Recursive.equal[Mu[F]]
 
-  implicit def show[F[_]: Functor](implicit  T: Recursive.Aux[Mu[F], F], F: Show ~> λ[α => Show[F[α]]]):
+  implicit def show[F[_]](
+    implicit F: Show ~> λ[α => Show[Based[Mu[F]]#Base[α]]]):
       Show[Mu[F]] =
-    Recursive.show[Mu[F], F](T, F)
+    Recursive.show[Mu[F]]
 }

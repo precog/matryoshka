@@ -222,8 +222,13 @@ import simulacrum.typeclass
 object Recursive {
   type Aux[T, F[_]] = Recursive[T] { type Base[A] = F[A] }
 
-  implicit def show[T, F[_]](
-    implicit T: Recursive.Aux[T, F], BS: Show ~> λ[α => Show[F[α]]]):
+  implicit def equal[T](
+    implicit T: Recursive[T], BE: Equal ~> λ[α => Equal[Based[T]#Base[α]]]):
+      Equal[T] =
+    Equal.equal((a, b) => BE(equal[T]).equal(T.project(a), T.project(b)))
+
+  implicit def show[T](
+    implicit T: Recursive[T], BS: Show ~> λ[α => Show[Based[T]#Base[α]]]):
       Show[T] =
     Show.show(T.cata(_)(BS(Cord.CordShow).show))
 }

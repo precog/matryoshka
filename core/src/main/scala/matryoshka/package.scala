@@ -17,6 +17,7 @@
 import matryoshka.Recursive.ops._
 
 import scala.{Function, Int, None, Option}
+import scala.Predef.{=:=, implicitly}
 import scala.collection.immutable.{List, ::}
 
 import scalaz._, Scalaz._
@@ -235,8 +236,11 @@ package object matryoshka extends instances.scalaz.CofreeInstances with instance
   /** NB: Since Cofree carries the functor, the resulting algebra is a cata, not
     *     a para. */
   def attributePara[T, F[_]: Functor, A](f: F[(T, A)] => A)(implicit T: Corecursive.Aux[T, F]):
-      F[Cofree[F, A]] => Cofree[F, A] =
-    fa => Cofree(f(fa ∘ (x => (Recursive[Cofree[F, A]].cata[T](x)(_.lower.embed), x.head))), fa)
+      F[Cofree[F, A]] => Cofree[F, A] = {
+    val cof = implicitly[Recursive.Aux[Cofree[F, A], EnvT[A, F, ?]]]
+    val env = implicitly[cof.Base[T] =:= EnvT[A, F, T]]
+    fa => Cofree(f(fa ∘ (x => (cof.cata[T](x)(e => T.embed(env(e).lower)), x.head))), fa)
+  }
 
   /** A function to be called like `attributeElgotM[M](myElgotAlgebraM)`.
     */

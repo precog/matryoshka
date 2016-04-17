@@ -22,9 +22,12 @@ import matryoshka.instances.scalaz.id
 import scala.{Either, Option}
 import scala.collection.immutable.{::, List, Nil}
 
+import scalaz._
+
 trait OptionInstances {
   implicit def optionMatryoshka[A]:
-      Recursive[Option[A]] with Corecursive[Option[A]] =
+      Recursive.Aux[Option[A], Const[Option[A], ?]] with
+      Corecursive.Aux[Option[A], Const[Option[A], ?]] =
     id.idMatryoshka[Option[A]]
 }
 
@@ -32,7 +35,8 @@ object option extends OptionInstances
 
 trait EitherInstances {
   implicit def eitherMatryoshka[A, B]:
-      Recursive[Either[A, B]] with Corecursive[Either[A, B]] =
+      Recursive.Aux[Either[A, B], Const[Either[A, B], ?]] with
+      Corecursive.Aux[Either[A, B], Const[Either[A, B], ?]] =
     id.idMatryoshka[Either[A, B]]
 }
 
@@ -40,7 +44,8 @@ object either extends EitherInstances
 
 trait ListInstances {
   implicit def listMatryoshka[A]:
-      Recursive[List[A]] with Corecursive[List[A]] =
+      Recursive.Aux[List[A], ListF[A, ?]] with
+      Corecursive.Aux[List[A], ListF[A, ?]] =
     new Recursive[List[A]] with Corecursive[List[A]] {
       type Base[B] = ListF[A, B]
       def project(t: List[A]) = t match {

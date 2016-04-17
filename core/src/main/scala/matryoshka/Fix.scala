@@ -22,7 +22,8 @@ import scalaz._
   */
 final case class Fix[F[_]](unFix: F[Fix[F]])
 object Fix {
-  implicit def matryoshka[F[_]]: Recursive[Fix[F]] with Corecursive[Fix[F]] =
+  implicit def matryoshka[F[_]]:
+      Recursive.Aux[Fix[F], F] with Corecursive.Aux[Fix[F], F] =
     new Recursive[Fix[F]] with Corecursive[Fix[F]] {
       type Base[A] = F[A]
 
