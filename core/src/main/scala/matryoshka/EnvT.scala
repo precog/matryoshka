@@ -36,9 +36,15 @@ final case class EnvT[E, W[_], A](run: (E, W[A])) { self =>
 
 object EnvT extends EnvTInstances with EnvTFunctions
 
-sealed abstract class EnvTInstances0 {
+sealed abstract class EnvTInstances1 {
   implicit def envTFunctor[E, W[_]](implicit W0: Functor[W]): Functor[EnvT[E, W, ?]] = new EnvTFunctor[E, W] {
     implicit def W: Functor[W] = W0
+  }
+}
+
+sealed abstract class EnvTInstances0 extends EnvTInstances1 {
+  implicit def envTCobind[E, W[_]](implicit W0: Cobind[W]): Cobind[EnvT[E, W, ?]] = new EnvTCobind[E, W] {
+    implicit def W = W0
   }
 }
 
@@ -59,17 +65,21 @@ trait EnvTFunctions {
 private trait EnvTFunctor[E, W[_]] extends Functor[EnvT[E, W, ?]] {
   implicit def W: Functor[W]
 
-  override def map[A, B](fa: EnvT[E, W, A])(f: A => B) = fa map f
+  override final def map[A, B](fa: EnvT[E, W, A])(f: A => B) = fa map f
 }
 
-private trait EnvTComonad[E, W[_]] extends Comonad[EnvT[E, W, ?]] with EnvTFunctor[E, W] {
-  implicit def W: Comonad[W]
+private trait EnvTCobind[E, W[_]] extends Cobind[EnvT[E, W, ?]] with EnvTFunctor[E, W] {
+  implicit def W: Cobind[W]
 
-  override def cojoin[A](fa: EnvT[E, W, A]): EnvT[E, W, EnvT[E, W, A]] =
+  override final def cojoin[A](fa: EnvT[E, W, A]): EnvT[E, W, EnvT[E, W, A]] =
     EnvT((fa.ask, fa.lower.cobind(x => EnvT((fa.ask, x)))))
 
-  def cobind[A, B](fa: EnvT[E, W, A])(f: EnvT[E, W, A] => B): EnvT[E, W, B] =
+  override final def cobind[A, B](fa: EnvT[E, W, A])(f: EnvT[E, W, A] => B): EnvT[E, W, B] =
     cojoin(fa).map(f)
+}
+
+private trait EnvTComonad[E, W[_]] extends Comonad[EnvT[E, W, ?]] with EnvTCobind[E, W] {
+  implicit def W: Comonad[W]
 
   def copoint[A](p: EnvT[E, W, A]): A = p.lower.copoint
 
