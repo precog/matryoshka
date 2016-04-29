@@ -24,9 +24,9 @@ lazy val standardSettings = Seq(
     "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/",
     "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
     "bintray/non" at "http://dl.bintray.com/non/maven"),
-  addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.7.1"),
-  addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full),
-
+  addCompilerPlugin("org.spire-math" %% "kind-projector"   % "0.7.1"),
+  addCompilerPlugin("org.scalamacros" % "paradise"         % "2.1.0" cross CrossVersion.full),
+  addCompilerPlugin("com.milessabin"  % "si2712fix-plugin" % "1.2.0" cross CrossVersion.full),
   ScoverageKeys.coverageHighlighting := true,
 
   scalacOptions ++= Seq(
@@ -55,17 +55,21 @@ lazy val standardSettings = Seq(
   console <<= console in Test, // console alias test:console
 
   libraryDependencies ++= {
+    val monocleVersion = "1.2.1"
     val scalazVersion = "7.2.1"
     // Latest version built against scalacheck 1.12.5
     val specs2Version = "3.7"
     Seq(
-      "com.github.mpilquist" %% "simulacrum"             % "0.7.0"       % "compile, test",
-      "org.scalaz"        %% "scalaz-core"               % scalazVersion % "compile, test",
-      "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion % "test",
-      "org.specs2"        %% "specs2-core"               % specs2Version % "test" force(),
-      "org.specs2"        %% "specs2-scalacheck"         % specs2Version % "test" force(),
+      "org.typelevel"              %% "discipline"       % "0.4"          % "test",
+      "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion % "compile, test",
+      "com.github.julien-truffaut" %% "monocle-law"      % monocleVersion % "test",
+      "com.github.mpilquist" %% "simulacrum"             % "0.7.0"        % "compile, test",
+      "org.scalaz"        %% "scalaz-core"               % scalazVersion  % "compile, test",
+      "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion  % "test",
+      "org.specs2"        %% "specs2-core"               % specs2Version  % "test" force(),
+      "org.specs2"        %% "specs2-scalacheck"         % specs2Version  % "test" force(),
       // `scalaz-scalacheck-binding` is built with `scalacheck` 1.12.5 so we are stuck with that version
-      "org.scalacheck"    %% "scalacheck"                % "1.12.5"      % "test" force())
+      "org.scalacheck"    %% "scalacheck"                % "1.12.5"       % "test" force())
   },
 
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),

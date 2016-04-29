@@ -16,7 +16,10 @@
 
 package matryoshka
 
-import scala.{Boolean, inline, PartialFunction}
+import Merge.ops._
+import matryoshka.patterns.EnvT
+
+import scala.{Boolean, inline, Option, PartialFunction}
 import scala.collection.immutable.{List, Nil}
 
 import scalaz._, Scalaz._
@@ -132,6 +135,15 @@ import simulacrum.typeclass
     h(t)._2
   }
 
+  // TODO: figure out how to represent this as a elgotHylo with mergeTuple
+  /** Combines two functors that may fail to merge, also providing access to the
+    * inputs at each level. This is akin to an Elgot, not generalized, fold.
+    */
+  def paraMerga[F[_]: Functor: Merge, A](t: T[F], that: T[F])(
+    f: (T[F], T[F], Option[F[A]]) => A):
+      A =
+    f(t, that, project(t).mergeWith(project(that))(paraMerga(_, _)(f)))
+
   def isLeaf[F[_]: Functor: Foldable](t: T[F]): Boolean =
     !Tag.unwrap(project[F](t).foldMap(_ => true.disjunction))
 
@@ -207,7 +219,7 @@ import simulacrum.typeclass
 }
 
 object Recursive {
-  implicit def show[T[_[_]]: Recursive, F[_]: Functor](
+  def show[T[_[_]]: Recursive, F[_]: Functor](
     implicit F: Show ~> λ[α => Show[F[α]]]):
       Show[T[F]] =
     Show.show(Recursive[T].cata(_)(F(Cord.CordShow).show))

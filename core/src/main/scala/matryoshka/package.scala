@@ -15,10 +15,12 @@
  */
 
 import matryoshka.Recursive.ops._
+import matryoshka.patterns.EnvT
 
-import scala.{Function, Int, None, Option}
+import scala.{Function, Int, None, Option, Unit}
 import scala.collection.immutable.{List, ::}
 
+import monocle._
 import scalaz._, Scalaz._
 
 /** Generalized folds, unfolds, and refolds. */
@@ -43,7 +45,27 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   type GCoalgebra[N[_], F[_], A] = GCoalgebraM[N, Id, F, A] // A => N[F[A]]
   type CoalgebraM[M[_], F[_], A] = GCoalgebraM[Id, M, F, A] // A => F[M[A]]
   type Coalgebra[F[_], A]        = GCoalgebra[Id, F, A]     // A => F[A]
+  type ElgotCoalgebraM[E[_], M[_], F[_], A] = A => M[E[F[A]]]
+  type ElgotCoalgebra[E[_], F[_], A] = ElgotCoalgebraM[E, Id, F, A] // A => E[F[A]]
 
+  /** An algebra and its dual form an isomorphism.
+    */
+  type AlgebraIso[F[_], A] = Iso[F[A], A]
+  object AlgebraIso {
+    def apply[F[_], A](get: F[A] => A)(reverseGet: A => F[A]): Iso[F[A], A] =
+      Iso(get)(reverseGet)
+  }
+
+  def recCorecIso[T[_[_]]: Recursive: Corecursive, F[_]: Functor] =
+    AlgebraIso[F, T[F]](_.embed)(_.project)
+
+  def lambekIso[T[_[_]]: Corecursive: Recursive, F[_]: Functor] =
+    AlgebraIso[F, T[F]](colambek)(lambek)
+
+  /** There is a fold/unfold isomorphism for any AlgebraIso.
+    */
+  def foldIso[T[_[_]]: Corecursive: Recursive, F[_]: Functor, A](alg: AlgebraIso[F, A]) =
+    Iso[T[F], A](_.cata(alg.get))(_.ana(alg.reverseGet))
 
   /** A NaturalTransformation that sequences two types */
   type DistributiveLaw[F[_], G[_]] = λ[α => F[G[α]]] ~> λ[α => G[F[α]]]
@@ -89,7 +111,7 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   def cofParaM[M[_]] = new CofParaMPartiallyApplied[M]
   final class CofParaMPartiallyApplied[M[_]] { self =>
     def apply[T[_[_]]: Corecursive, S[_]: Traverse, A, B](t: Cofree[S, A])(f: (A, S[(T[S], B)]) => M[B])(implicit M: Monad[M]): M[B] =
-      t.tail.traverseU(cs => self(cs)(f) ∘ ((Recursive[Cofree[?[_], A]].convertTo[S, T](cs), _))) >>= (f(t.head, _))
+      t.tail.traverse(cs => self(cs)(f) ∘ ((Recursive[Cofree[?[_], A]].convertTo[S, T](cs), _))) >>= (f(t.head, _))
   }
 
   /** Composition of an anamorphism and a catamorphism that avoids building the
@@ -250,16 +272,21 @@ package object matryoshka extends CofreeInstances with FreeInstances {
 
   /** Turns any F-algebra, into an identical one that attributes the tree with
     * the results for each node. */
-  def attributeM[F[_]: Functor, M[_]: Functor, A](f: F[A] => M[A]):
+  def attributeAlgebraM[F[_]: Functor, M[_]: Functor, A](f: F[A] => M[A]):
       F[Cofree[F, A]] => M[Cofree[F, A]] =
     fa => f(fa ∘ (_.head)) ∘ (Cofree(_, fa))
 
-  def attribute[F[_]: Functor, A](f: F[A] => A) = attributeM[F, Id, A](f)
+  def attributeAlgebra[F[_]: Functor, A](f: F[A] => A) =
+    attributeAlgebraM[F, Id, A](f)
 
-  def attrK[F[_]: Functor, A](k: A) = attribute[F, A](Function.const(k))
+  def attributeCoalgebra[F[_], B](ψ: Coalgebra[F, B]):
+      Coalgebra[EnvT[B, F, ?], B] =
+    b => EnvT[B, F, B]((b, ψ(b)))
+
+  def attrK[F[_]: Functor, A](k: A) = attributeAlgebra[F, A](Function.const(k))
 
   def attrSelf[T[_[_]]: Corecursive, F[_]: Functor] =
-    attribute[F, T[F]](_.embed)
+    attributeAlgebra[F, T[F]](_.embed)
 
   /** NB: Since Cofree carries the functor, the resulting algebra is a cata, not
     *     a para. */
@@ -316,24 +343,86 @@ package object matryoshka extends CofreeInstances with FreeInstances {
 
   /** Count the instinces of `form` in the structure.
     */
-  def count[T[_[_]]: Recursive, F[_]: Functor: Foldable](form: T[F]): F[(T[F], Int)] => Int =
+  def count[T[_[_]]: Recursive, F[_]: Functor: Foldable](form: T[F]):
+      F[(T[F], Int)] => Int =
     e => e.foldRight(if (e ∘ (_._1) == form.project) 1 else 0)(_._2 + _)
 
-  implicit def ToIdOps[A](a: A): IdOps[A] = new IdOps[A](a)
+  /** The number of nodes in this structure.
+    */
+  def size[F[_]: Foldable]: F[Int] => Int = _.foldRight(1)(_ + _)
 
-  implicit def ToCorecursiveOps[T[_[_]]: Corecursive, F[_]](f: F[T[F]]):
-      CorecursiveOps[T, F] =
-    new CorecursiveOps[T, F](f)
+  /** The largest number of hops from a node to a leaf.
+    */
+  def height[F[_]: Foldable]: F[Int] => Int = _.foldRight(0)(_ max _)
 
-  implicit def ToAlgebraOps[F[_], A](a: Algebra[F, A]): AlgebraOps[F, A] =
+  /** Combines a tuple of zippable functors.
+    */
+  def zipTuple[T[_[_]]: Recursive, F[_]: Functor: Zip]:
+      Coalgebra[F, (T[F], T[F])] =
+    p => Zip[F].zip[T[F], T[F]](p._1.project, p._2.project)
+
+  /** Aligns “These” into a single structure, short-circuting when we hit a
+    * “This” or “That”.
+    */
+  def alignThese[T[_[_]]: Recursive, F[_]: Align]:
+      ElgotCoalgebra[T[F] \/ ?, F, T[F] \&/ T[F]] =
+    _.fold(_.left, _.left, (a, b) => a.project.align(b.project).right)
+
+  /** Merges a tuple of functors, if possible.
+    */
+  def mergeTuple[T[_[_]]: Recursive, F[_]: Functor: Merge]:
+      CoalgebraM[Option, F, (T[F], T[F])] =
+    p => Merge[F].merge[T[F], T[F]](p._1.project, p._2.project)
+
+  /** Generates an infinite sequence from two seed values.
+    */
+  def binarySequence[A](relation: (A, A) => A): Coalgebra[(A, ?), (A, A)] = {
+    case (a1, a2) =>
+      val c = relation(a1, a2)
+      (c, (a2, c))
+  }
+
+  /** Converts a fixed-point structure into a generic Tree.
+    * One use of this is using `.cata(toTree).drawTree` rather than `.show` to
+    * get a pretty-printed tree.
+    */
+  def toTree[F[_]: Functor: Foldable]: Algebra[F, Tree[F[Unit]]] =
+    x => Tree.Node(x.void, x.toStream)
+
+  /** To avoid diverging implicits with fixed-point types, we need to defer the
+    * lookup. We do this with a `NaturalTransformation` (although there
+    * are more type class-y solutions available now). This implicit allows those
+    * implicits to be looked up when searching for a traditionally-defined
+    * instance.
+    */
+  implicit def NTEqual[F[_], A](implicit A: Equal[A], F: Equal ~> λ[α => Equal[F[α]]]):
+      Equal[F[A]] =
+    F(A)
+
+  /** See `NTEqual`.
+    */
+  implicit def NTShow[F[_], A](implicit A: Show[A], F: Show ~> λ[α => Show[F[α]]]):
+      Show[F[A]] =
+    F(A)
+
+  implicit def toIdOps[A](a: A): IdOps[A] = new IdOps[A](a)
+
+  implicit final class CorecursiveOps[T[_[_]], F[_]](
+    self: F[T[F]])(
+    implicit T: Corecursive[T]) {
+
+    def embed(implicit F: Functor[F]): T[F] = T.embed(self)
+  }
+
+  implicit def toAlgebraOps[F[_], A](a: Algebra[F, A]): AlgebraOps[F, A] =
     new AlgebraOps[F, A](a)
 
-  implicit def ToCoalgebraOps[F[_], A](a: Coalgebra[F, A]): CoalgebraOps[F, A] =
+  implicit def toCoalgebraOps[F[_], A](a: Coalgebra[F, A]): CoalgebraOps[F, A] =
     new CoalgebraOps[F, A](a)
 
-  implicit def ToCofreeOps[F[_], A](a: Cofree[F, A]): CofreeOps[F, A] =
+  implicit def toCofreeOps[F[_], A](a: Cofree[F, A]): CofreeOps[F, A] =
     new CofreeOps[F, A](a)
 
-  implicit def ToFreeOps[F[_], A](a: Free[F, A]): FreeOps[F, A] =
+  implicit def toFreeOps[F[_], A](a: Free[F, A]): FreeOps[F, A] =
     new FreeOps[F, A](a)
 }
