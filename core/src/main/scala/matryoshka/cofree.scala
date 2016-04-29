@@ -39,7 +39,7 @@ trait CofreeInstances {
 
   implicit def cofreeShow[F[_], A: Show](implicit F: (Show ~> λ[α => Show[F[α]]])):
       Show[Cofree[F, A]] =
-        Show.shows(cof => "(" + cof.head.show + ", " + F(cofreeShow).shows(cof.tail) + ")")
+        Show.shows(cof => "(" + cof.head.show + ", " + cof.tail.shows + ")")
 }
 
 object cofree extends CofreeInstances

@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-package matryoshka
+package matryoshka.patterns
+
+import matryoshka._
 
 import scalaz._, Scalaz._
 
-/**
- * This is the transformer for the (,) comonad.
- */
+/** This is the transformer for the (,) comonad.
+  */
 final case class EnvT[E, W[_], A](run: (E, W[A])) { self =>
   import EnvT._
 
@@ -56,6 +57,10 @@ sealed abstract class EnvTInstances extends EnvTInstances0 {
 
 trait EnvTFunctions {
   def envT[E, W[_], A](v: (E, W[A])): EnvT[E, W, A] = EnvT(v)
+
+  def cofreeIso[E, W[_]] = AlgebraIso[EnvT[E, W, ?], Cofree[W, E]](
+    et => Cofree(et.ask, et.lower))(
+    cof => EnvT((cof.head, cof.tail)))
 }
 
 //
