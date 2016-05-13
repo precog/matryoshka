@@ -17,6 +17,9 @@
 package matryoshka
 
 import Recursive.ops._, FunctorT.ops._
+import matryoshka.exp._
+import matryoshka.exp2._
+import matryoshka.helpers._
 import matryoshka.runners._
 import matryoshka.specs2.scalacheck.CheckAll
 
@@ -27,157 +30,10 @@ import scala.collection.immutable.{List, Map, Nil, ::}
 import org.scalacheck._
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
-import scalaz._, Scalaz._
-import scalaz.scalacheck.ScalaCheckBinding._
+import scalaz.{Apply => _, _}, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
-sealed trait Exp[A]
-object Exp {
-  case class Num[A](value: Int) extends Exp[A]
-  case class Mul[A](left: A, right: A) extends Exp[A]
-  case class Var[A](value: Symbol) extends Exp[A]
-  case class Lambda[A](param: Symbol, body: A) extends Exp[A]
-  case class Apply[A](func: A, arg: A) extends Exp[A]
-  case class Let[A](name: Symbol, value: A, inBody: A) extends Exp[A]
-
-  implicit val arbSymbol = Arbitrary(Arbitrary.arbitrary[String].map(Symbol(_)))
-
-  implicit val arbExp: Arbitrary ~> λ[α => Arbitrary[Exp[α]]] =
-    new (Arbitrary ~> λ[α => Arbitrary[Exp[α]]]) {
-      def apply[α](arb: Arbitrary[α]): Arbitrary[Exp[α]] =
-        Arbitrary(Gen.oneOf(
-          Arbitrary.arbitrary[Int].map(Num[α](_)),
-          (arb.arbitrary ⊛ arb.arbitrary)(Mul(_, _)),
-          Arbitrary.arbitrary[Symbol].map(Var[α](_)),
-          (Arbitrary.arbitrary[Symbol] ⊛ arb.arbitrary)(Lambda(_, _)),
-          (arb.arbitrary ⊛ arb.arbitrary)(Apply(_, _)),
-          (Arbitrary.arbitrary[Symbol] ⊛ arb.arbitrary ⊛ arb.arbitrary)(
-            Let(_, _, _))))
-    }
-
-  def num(v: Int) = Fix[Exp](Num(v))
-  def mul(left: Fix[Exp], right: Fix[Exp]) = Fix[Exp](Mul(left, right))
-  def vari(v: Symbol) = Fix[Exp](Var(v))
-  def lam(param: Symbol, body: Fix[Exp]) = Fix[Exp](Lambda(param, body))
-  def ap(func: Fix[Exp], arg: Fix[Exp]) = Fix[Exp](Apply(func, arg))
-  def let(name: Symbol, v: Fix[Exp], inBody: Fix[Exp]) = Fix[Exp](Let(name, v, inBody))
-
-  implicit val ExpTraverse: Traverse[Exp] = new Traverse[Exp] {
-    def traverseImpl[G[_], A, B](fa: Exp[A])(f: A => G[B])(implicit G: Applicative[G]): G[Exp[B]] = fa match {
-      case Num(v)           => G.point(Num(v))
-      case Mul(left, right) => G.apply2(f(left), f(right))(Mul(_, _))
-      case Var(v)           => G.point(Var(v))
-      case Lambda(p, b)     => G.map(f(b))(Lambda(p, _))
-      case Apply(func, arg) => G.apply2(f(func), f(arg))(Apply(_, _))
-      case Let(n, v, i)     => G.apply2(f(v), f(i))(Let(n, _, _))
-    }
-  }
-
-  // NB: an unusual definition of equality, in that only the first 3 characters
-  //     of variable names are significant. This is to distinguish it from `==`
-  //     as well as from a derivable Equal.
-  implicit val ExpEqual: Equal ~> λ[α => Equal[Exp[α]]] =
-    new (Equal ~> λ[α => Equal[Exp[α]]]) {
-      def apply[α](eq: Equal[α]) =
-        Equal.equal[Exp[α]] {
-          case (Num(v1), Num(v2))                 => v1 ≟ v2
-          case (Mul(a1, b1), Mul(a2, b2))         =>
-            eq.equal(a1, a2) && eq.equal(b1, b2)
-          case (Var(s1), Var(s2))                 =>
-            s1.name.substring(0, 3 min s1.name.length) ==
-              s2.name.substring(0, 3 min s2.name.length)
-          case (Lambda(p1, a1), Lambda(p2, a2))   =>
-            p1 == p2 && eq.equal(a1, a2)
-          case (Apply(f1, a1), Apply(f2, a2))     =>
-            eq.equal(f1, f2) && eq.equal(a1, a2)
-          case (Let(n1, v1, i1), Let(n2, v2, i2)) =>
-            n1 == n2 && eq.equal(v1, v2) && eq.equal(i1, i2)
-          case _                                  => false
-        }
-    }
-  implicit def ExpEqual2[A](implicit A: Equal[A]): Equal[Exp[A]] = ExpEqual(A)
-
-  // NB: Something like this currently needs to be defined for any Functor in
-  //     order to get the generalize operations for the algebra.
-  implicit def ToExpAlgebraOps[A](a: Algebra[Exp, A]): AlgebraOps[Exp, A] =
-    ToAlgebraOps[Exp, A](a)
-
-  implicit val ExpShow: Show ~> λ[α => Show[Exp[α]]] =
-    new (Show ~> λ[α => Show[Exp[α]]]) {
-      def apply[α](show: Show[α]) =
-        Show.show {
-          case Num(v)       => v.shows
-          case Mul(a, b)    =>
-            "Mul(" + show.shows(a) + ", " + show.shows(b) + ")"
-          case Var(s)       => "$" + s.name
-          case Lambda(p, a) => "Lambda(" + p.name + ", " + show.shows(a) + ")"
-          case Apply(f, a)  =>
-            "Apply(" + show.shows(f) + ", " + show.shows(a) + ")"
-          case Let(n, v, i) =>
-            "Let(" + n.name + ", " + show.shows(v) + ", " + show.shows(i) + ")"
-        }
-    }
-
-  implicit val ExpUnzip = new Unzip[Exp] {
-    def unzip[A, B](f: Exp[(A, B)]) = (f.map(_._1), f.map(_._2))
-  }
-}
-
-sealed trait Exp2[A]
-object Exp2 {
-  case class Const[A]() extends Exp2[A]
-  case class Num2[A](value: Int) extends Exp2[A]
-  case class Single[A](a: A) extends Exp2[A]
-
-  implicit val arbExp2: Arbitrary ~> λ[α => Arbitrary[Exp2[α]]] =
-    new (Arbitrary ~> λ[α => Arbitrary[Exp2[α]]]) {
-      def apply[α](arb: Arbitrary[α]): Arbitrary[Exp2[α]] =
-        Arbitrary(Gen.oneOf(
-          Gen.const(Const[α]),
-          Arbitrary.arbitrary[Int].map(Num2[α](_)),
-          arb.arbitrary.map(Single(_))))
-    }
-
-  def const = Fix[Exp2](Const())
-  def num2(v: Int) = Fix[Exp2](Num2(v))
-  def single(a: Fix[Exp2]) = Fix[Exp2](Single(a))
-
-  implicit val Exp2Functor: Functor[Exp2] = new Functor[Exp2] {
-    def map[A, B](fa: Exp2[A])(f: A => B): Exp2[B] = fa match {
-      case Const()   => Const[B]()
-      case Num2(v)   => Num2[B](v)
-      case Single(a) => Single(f(a))
-    }
-  }
-
-  implicit val Exp2Show: Show ~> λ[α => Show[Exp2[α]]] =
-    new (Show ~> λ[α => Show[Exp2[α]]]) {
-      def apply[α](show: Show[α]) =
-        Show.show {
-          case Const()   => "Const()"
-          case Num2(v)   => "Num2(" + v.shows + ")"
-          case Single(a) => "Single(" + show.shows(a) + ")"
-        }
-    }
-
-  implicit val Exp2Equal: Equal ~> λ[α => Equal[Exp2[α]]] =
-    new (Equal ~> λ[α => Equal[Exp2[α]]]) {
-      def apply[α](eq: Equal[α]) =
-        Equal.equal[Exp2[α]] {
-          case (Const(), Const())       => true
-          case (Num2(v1), Num2(v2))     => v1 ≟ v2
-          case (Single(a1), Single(a2)) => eq.equal(a1, a2)
-          case _                        => false
-        }
-    }
-  implicit def Exp2Equal2[A](implicit A: Equal[A]): Equal[Exp2[A]] = Exp2Equal(A)
-}
-
-
 class ExpSpec extends Specification with ScalaCheck with CheckAll {
-  import Exp._
-
-  implicit val arbExpInt: Arbitrary[Exp[Int]] = arbExp(Arbitrary.arbInt)
   // NB: These are just a sanity check that the data structure created for the
   //     tests is lawful.
   "Exp should satisfy relevant laws" >> {
@@ -187,9 +43,6 @@ class ExpSpec extends Specification with ScalaCheck with CheckAll {
 }
 
 class Exp2Spec extends Specification with ScalaCheck with CheckAll {
-  import Exp2._
-
-  implicit val arbExp2Int: Arbitrary[Exp2[Int]] = arbExp2(Arbitrary.arbInt)
   // NB: These are just a sanity check that the data structure created for the
   //     tests is lawful.
   "Exp2 should satisfy relevant laws" >> {
@@ -199,21 +52,6 @@ class Exp2Spec extends Specification with ScalaCheck with CheckAll {
 }
 
 class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.Matchers {
-  import Exp._
-
-  implicit def arbFix[F[_]]:
-      (Arbitrary ~> λ[α => Arbitrary[F[α]]]) => Arbitrary[Fix[F]] =
-    new ((Arbitrary ~> λ[α => Arbitrary[F[α]]]) => Arbitrary[Fix[F]]) {
-      def apply(FA: Arbitrary ~> λ[α => Arbitrary[F[α]]]):
-          Arbitrary[Fix[F]] =
-        Arbitrary(Gen.sized(size =>
-          FA(
-            if (size <= 0)
-              Arbitrary(Gen.fail[Fix[F]])
-            else
-              Arbitrary(Gen.resize(size - 1, arbFix(FA).arbitrary))).arbitrary.map(Fix(_))))
-    }
-
   val example1ƒ: Exp[Option[Int]] => Option[Int] = {
     case Num(v)           => v.some
     case Mul(left, right) => (left ⊛ right)(_ * _)
@@ -232,16 +70,16 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
     orOriginal(addOneOptƒ)
 
   def addOneOptExpExp2ƒ[T[_[_]]]: Exp[T[Exp2]] => Option[Exp2[T[Exp2]]] = {
-    case Num(n) => Exp2.Num2(n+1).some
+    case Num(n) => Num2(n+1).some
     case _      => None
   }
 
   def addOneExpExp2ƒ[T[_[_]]]: Exp[T[Exp2]] => Exp2[T[Exp2]] =
-    orDefault[Exp[T[Exp2]], Exp2[T[Exp2]]](Exp2.Const())(addOneOptExpExp2ƒ)
+    orDefault[Exp[T[Exp2]], Exp2[T[Exp2]]](exp2.Const())(addOneOptExpExp2ƒ)
 
   def addOneOptExp2Expƒ[T[_[_]]]: Exp2[T[Exp2]] => Option[Exp[T[Exp2]]] = {
-    case Exp2.Num2(n) => Num(n+1).some
-    case _            => None
+    case Num2(n) => Num(n+1).some
+    case _       => None
   }
 
   def addOneExp2Expƒ[T[_[_]]]: Exp2[T[Exp2]] => Exp[T[Exp2]] =
@@ -266,10 +104,10 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
 
   def extractLambdaƒ[T[_[_]]: Recursive]: Exp[(T[Exp], T[Exp2])] => Exp2[T[Exp2]] = {
     case Lambda(_, (exp, exp2)) => exp.project match {
-      case Num(a) => Exp2.Num2(a)
-      case _      => Exp2.Single(exp2)
+      case Num(a) => Num2(a)
+      case _      => Single(exp2)
     }
-    case _                      => Exp2.Const[T[Exp2]]
+    case _                      => exp2.Const[T[Exp2]]
   }
 
   val MinusThree: Exp ~> Exp =
@@ -447,7 +285,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
           new FuncRunner[Exp, Exp2] {
             def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp2]], S: Show[T[Exp2]]) =
               _.transPrepro(MinusThree, addOneExpExp2ƒ) must
-                equal(Exp2.num2(2).convertTo[T])
+                equal(num2(2).convertTo[T])
           })
       }
     }
@@ -475,7 +313,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
 
       "apply ~> with change of space" in {
         testFunc(
-          Exp2.num2(1),
+          num2(1),
           new FuncRunner[Exp2, Exp] {
             def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
               _.transPostpro(MinusThree, addOneExp2Expƒ) must
@@ -486,12 +324,12 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
 
     "transPara" >> {
       "project basic exp" in {
-        lam('sym, num(3)).transPara(extractLambdaƒ) must equal(Exp2.num2(3))
+        lam('sym, num(3)).transPara(extractLambdaƒ) must equal(num2(3))
       }
 
       "project basic exp recursively" in {
         lam('sym, mul(num(5), num(7))).transPara(extractLambdaƒ) must
-          equal(Exp2.single(Exp2.const))
+          equal(single(const))
       }
     }
 
@@ -1118,8 +956,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
         //     >   exp.cata(attrSelf).universe must
         //     >     equal(exp.universe.map(_.cata(attrSelf)))
         //     if scalac could find the implicit
-        Recursive[Cofree[?[_], Fix[Exp]]].universe(exp.cata[Cofree[Exp, Fix[Exp]]](attrSelf)) must
-          equal(exp.universe.map(_.cata[Cofree[Exp, Fix[Exp]]](attrSelf)))
+        Recursive[Cofree[?[_], Mu[Exp]]].universe(exp.cata[Cofree[Exp, Mu[Exp]]](attrSelf)) must
+          equal(exp.universe.map(_.cata[Cofree[Exp, Mu[Exp]]](attrSelf)))
       }
     }
 
@@ -1128,7 +966,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
         // NB: This would look like
         //     >   exp.cata(attrK(())).convertTo[Fix] must equal(exp)
         //     if scalac could find the implicit
-        Recursive[Cofree[?[_], Unit]].convertTo[Exp, Fix](exp.cata(attrK(()))) must
+        Recursive[Cofree[?[_], Unit]].convertTo[Exp, Mu](exp.cata(attrK(()))) must
           equal(exp)
       }
     }
@@ -1140,11 +978,11 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
       }
 
       "selves" ! Prop.forAll(expGen) { exp =>
-        Foldable[Cofree[Exp, ?]].foldMap(exp.cata[Cofree[Exp, Fix[Exp]]](attrSelf))(_ :: Nil) must
+        Foldable[Cofree[Exp, ?]].foldMap(exp.cata[Cofree[Exp, Mu[Exp]]](attrSelf))(_ :: Nil) must
           equal(exp.universe)
       }
     }
   }
 
-  def expGen = Gen.resize(100, arbFix(arbExp).arbitrary)
+  def expGen = Gen.resize(100, corecArbitrary[Mu, Exp].arbitrary)
 }

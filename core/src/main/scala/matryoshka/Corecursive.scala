@@ -97,7 +97,3 @@ import simulacrum.typeclass
     f(a).flatMap(_.traverse(loop)) ∘ (embed(_))
   }
 }
-
-sealed class CorecursiveOps[T[_[_]], F[_]](self: F[T[F]])(implicit T: Corecursive[T]) {
-  def embed(implicit F: Functor[F]): T[F] = T.embed(self)
-}

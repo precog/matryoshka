@@ -15,6 +15,16 @@ Generalized folds, unfolds, and traversals for fixed point data structures in Sc
 - [Efficient Nanopass Compilers using Cats and Matryoshka](https://github.com/sellout/recursion-scheme-talk/blob/master/nanopass-compiler-talk.org) – Greg Pfeil’s talk on this library (and some other things)
 - [Fix Haskell (by eliminating recursion)](https://github.com/sellout/recursion-scheme-talk/blob/master/recursion-scheme-talk.org) – Greg Pfeil’s talk on recursion schemes in Haskell
 
+## Usage
+
+To use Matryoshka, the following import should bring in pretty much everything:
+
+```scala
+import matryoshka._, Recursive.ops._, TraverseT.ops._
+```
+
+Also, there are a number of implicits that scalac has trouble finding. Adding @milessabin’s [SI-2712 fix compiler plugin](https://github.com/milessabin/si2712fix-plugin) will simplify a ton of Matryoshka-related code.
+
 ## Introduction
 
 This library is predicated on the idea of rewriting your recursive data structures, replacing the recursive type reference with a fresh type parameter.
@@ -66,7 +76,8 @@ val eval: Expr[Long] => Long = {
 }
 
 def someExpr[T[_[_]]: Corecursive]: T[Expr] =
-  Mul(Num(2).embed, Mul(Num(3).embed, Num(4).embed).embed).embed
+  Mul(Num[T[Expr]](2).embed, Mul(Num[T[Expr]](3).embed,
+      Num[T[Expr]](4).embed).embed).embed
 
 someExpr[Mu].cata(eval) // ⇒ 24
 ```
