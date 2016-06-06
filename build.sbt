@@ -1,9 +1,27 @@
 import de.heikoseeberger.sbtheader.HeaderPlugin
 import de.heikoseeberger.sbtheader.license.Apache2_0
 import scoverage._
-import sbt._, Keys._
+import sbt._
+import Keys._
+import org.scalajs.sbtplugin.cross.CrossProject
 
 lazy val checkHeaders = taskKey[Unit]("Fail the build if createHeaders is not up-to-date")
+
+val monocleVersion = "1.2.1"
+val scalazVersion = "7.2.1"
+// Latest version built against scalacheck 1.12.5
+// doesn't support scala.js yet, until then tests are JVM-only
+val specs2Version = "3.7"
+
+val testDependencies = libraryDependencies ++= Seq(
+  "com.github.julien-truffaut" %% "monocle-law"      % monocleVersion % "test",
+  "org.typelevel"              %% "discipline"       % "0.4"          % "test",
+  "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion  % "test",
+  "org.specs2"        %% "specs2-core"               % specs2Version  % "test" force(),
+  "org.specs2"        %% "specs2-scalacheck"         % specs2Version  % "test" force(),
+  // `scalaz-scalacheck-binding` is built with `scalacheck` 1.12.5 so we are stuck with that version
+  "org.scalacheck"    %% "scalacheck"                % "1.12.5"       % "test" force()
+)
 
 lazy val standardSettings = Seq(
   headers := Map(
@@ -54,23 +72,11 @@ lazy val standardSettings = Seq(
 
   console <<= console in Test, // console alias test:console
 
-  libraryDependencies ++= {
-    val monocleVersion = "1.2.1"
-    val scalazVersion = "7.2.1"
-    // Latest version built against scalacheck 1.12.5
-    val specs2Version = "3.7"
-    Seq(
-      "org.typelevel"              %% "discipline"       % "0.4"          % "test",
-      "com.github.julien-truffaut" %% "monocle-core"     % monocleVersion % "compile, test",
-      "com.github.julien-truffaut" %% "monocle-law"      % monocleVersion % "test",
-      "com.github.mpilquist" %% "simulacrum"             % "0.7.0"        % "compile, test",
-      "org.scalaz"        %% "scalaz-core"               % scalazVersion  % "compile, test",
-      "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion  % "test",
-      "org.specs2"        %% "specs2-core"               % specs2Version  % "test" force(),
-      "org.specs2"        %% "specs2-scalacheck"         % specs2Version  % "test" force(),
-      // `scalaz-scalacheck-binding` is built with `scalacheck` 1.12.5 so we are stuck with that version
-      "org.scalacheck"    %% "scalacheck"                % "1.12.5"       % "test" force())
-  },
+  libraryDependencies ++= Seq(
+    "com.github.julien-truffaut" %%% "monocle-core"     % monocleVersion % "compile, test",
+    "com.github.mpilquist" %%% "simulacrum"             % "0.7.0"        % "compile, test",
+    "org.scalaz"        %%% "scalaz-core"               % scalazVersion  % "compile, test"
+  ),
 
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
 
@@ -144,10 +150,14 @@ lazy val root = Project("root", file("."))
     publishLocal := (),
     publishArtifact := false))
   .settings(name := "matryoshka")
-  .aggregate(core)
+  .aggregate(coreJVM, coreJS)
   .enablePlugins(AutomateHeaderPlugin)
 
-lazy val core = (project in file("core"))
+lazy val core = crossProject.in(file("core"))
   .settings(standardSettings ++ publishSettings: _*)
   .settings(name := "matryoshka-core")
+  .jvmSettings(testDependencies)
   .enablePlugins(AutomateHeaderPlugin)
+
+lazy val coreJVM = core.jvm
+lazy val coreJS = core.js
