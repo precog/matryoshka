@@ -16,11 +16,13 @@
 
 package matryoshka.patterns
 
+import matryoshka._
 import matryoshka.helpers._
 import matryoshka.specs2.scalacheck.CheckAll
 
 import java.lang.String
-import scala.Int
+import scala.{Int, Seq}
+import scala.Predef.{implicitly => imp}
 
 import org.scalacheck._
 import org.specs2.ScalaCheck
@@ -30,12 +32,12 @@ import scalaz.scalacheck.ScalazProperties._
 
 class ListFSpec extends Specification with ScalaCheck with CheckAll {
   implicit def listFArbitrary[A: Arbitrary]:
-      Arbitrary ~> λ[β => Arbitrary[ListF[A, β]]] =
-    new (Arbitrary ~> λ[β => Arbitrary[ListF[A, β]]]) {
-      def apply[β](arb: Arbitrary[β]) =
+      Arbitrary ~> (Arbitrary ∘ ListF[A, ?])#λ =
+    new (Arbitrary ~> (Arbitrary ∘ ListF[A, ?])#λ) {
+      def apply[B](arb: Arbitrary[B]) =
         Arbitrary(Gen.oneOf(
-          NilF[A, β]().point[Gen],
-          (Arbitrary.arbitrary[A] ⊛ arb.arbitrary)(ConsF[A, β])))
+          NilF[A, B]().point[Gen],
+          (Arbitrary.arbitrary[A] ⊛ arb.arbitrary)(ConsF[A, B])))
     }
 
   "ListF should satisfy relevant laws" >> {
@@ -43,7 +45,6 @@ class ListFSpec extends Specification with ScalaCheck with CheckAll {
     checkAll(bitraverse.laws[ListF])
   }
 
-  // TODO: check these, but currently missing Arbs for List and Seq
-  // checkAlgebraIsoLaws(ListF.listIso[Int])
-  // checkAlgebraIsoLaws(ListF.seqIso[Int])
+  checkAlgebraIsoLaws(ListF.listIso[Int])(imp, Arbitrary(Gen.listOf(Arbitrary.arbInt.arbitrary)), imp, imp)
+  checkAlgebraIsoLaws(ListF.seqIso[Int])(imp, Arbitrary(Gen.listOf(Arbitrary.arbInt.arbitrary).map(_.toSeq)), imp, Equal.equalRef[Seq[Int]])
 }

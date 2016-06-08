@@ -65,25 +65,32 @@ package object matryoshka extends CofreeInstances with FreeInstances {
 
   /** An algebra and its dual form an isomorphism.
     */
-  type AlgebraIso[F[_], A] = Iso[F[A], A]
+  type GAlgebraIso[W[_], M[_], F[_], A] = PIso[F[W[A]], F[M[A]], A, A]
+  object GAlgebraIso {
+    def apply[W[_], M[_], F[_], A](φ: F[W[A]] => A)(ψ: A => F[M[A]]):
+        GAlgebraIso[W, M, F, A] =
+      PIso(φ)(ψ)
+  }
+
+  type AlgebraIso[F[_], A] = GAlgebraIso[Id, Id, F, A]
   object AlgebraIso {
-    def apply[F[_], A](get: F[A] => A)(reverseGet: A => F[A]):
+    def apply[F[_], A](φ: F[A] => A)(ψ: A => F[A]):
         AlgebraIso[F, A] =
-      Iso(get)(reverseGet)
+      Iso(φ)(ψ)
   }
 
   type AlgebraPrism[F[_], A] = Prism[F[A], A]
   object AlgebraPrism {
-    def apply[F[_], A](get: F[A] => Option[A])(reverseGet: A => F[A]):
+    def apply[F[_], A](φ: F[A] => Option[A])(ψ: A => F[A]):
         AlgebraPrism[F, A] =
-      Prism(get)(reverseGet)
+      Prism(φ)(ψ)
   }
 
   type CoalgebraPrism[F[_], A] = Prism[A, F[A]]
   object CoalgebraPrism {
-    def apply[F[_], A](get: A => Option[F[A]])(reverseGet: F[A] => A):
+    def apply[F[_], A](ψ: A => Option[F[A]])(φ: F[A] => A):
         CoalgebraPrism[F, A] =
-      Prism(get)(reverseGet)
+      Prism(ψ)(φ)
   }
 
   def recCorecIso[T[_[_]]: Recursive: Corecursive, F[_]: Functor] =
