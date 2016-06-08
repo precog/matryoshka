@@ -21,7 +21,6 @@ import matryoshka.helpers._
 
 import scala.Int
 
-import monocle.law.discipline.IsoTests
 import org.scalacheck._
 import org.specs2.mutable._
 import org.typelevel.discipline.specs2.mutable._
@@ -45,5 +44,5 @@ class CoEnvSpec extends Specification with Discipline {
           F(arb).arbitrary.map(_.right))) ∘ (CoEnv(_))
     }
 
-  checkAll("CoEnv ⇔ Free", IsoTests(CoEnv.freeIso[Int, Exp]))
+  checkAlgebraIsoLaws(CoEnv.freeIso[Int, Exp])
 }

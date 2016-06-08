@@ -19,7 +19,8 @@ package matryoshka.instances
 import matryoshka._, Recursive.ops._
 import matryoshka.patterns._
 
-import scala.{Boolean, Int, Option}
+import scala.{Boolean, Int, None, Option, Some}
+import scala.annotation.{tailrec}
 
 import scalaz._, Scalaz._
 
@@ -27,16 +28,39 @@ import scalaz._, Scalaz._
   * implemented explicitly as fixed-points.
   */
 package object fixedpoint {
-  type Free[F[_], A] = Mu[CoEnv[A, F, ?]]
-  type Cofree[F[_], A] = Mu[EnvT[A, F, ?]]
-  type List[A] = Mu[ListF[A, ?]]
+  type Nat = Mu[Option]
+  object Nat {
+    def fromInt: CoalgebraM[Option, Option, Int] =
+      x => if (x < 0) None else Some(if (x > 0) (x - 1).some else None)
 
+    def intPrism = CoalgebraPrism[Option, Int](fromInt)(height)
+  }
+
+  type Conat = Nu[Option]
+  object Conat {
+    val inf: Conat = ().ana[Nu, Option](_.some)
+  }
+
+  type Free[F[_], A]   = Mu[CoEnv[A, F, ?]]
+  type Cofree[F[_], A] = Mu[EnvT[A, F, ?]]
+  type List[A]         = Mu[ListF[A, ?]]
   object List {
     def apply[A](elems: A*) =
       elems.ana[Mu, ListF[A, ?]](ListF.seqIso[A].reverseGet)
 
+    def fillƒ[A](elem: => A): Option ~> ListF[A, ?] =
+      new (Option ~> ListF[A, ?]) {
+        def apply[β](opt: Option[β]) = opt match {
+          case None    => NilF()
+          case Some(b) => ConsF(elem, b)
+        }
+      }
+
     def fill[A](n: Int)(elem: => A): List[A] =
-      n.ana[Mu, ListF[A, ?]](r => if (r > 0) ConsF(elem, r - 1) else NilF())
+      n.hyloM(
+        transformToAlgebra[Mu, Id, Option, Option, ListF[A, ?]](fillƒ(elem).apply(_).point[Option]),
+        Nat.fromInt)
+        .getOrElse(NilF[A, List[A]]().embed)
   }
 
   implicit class ListOps[A](self: Mu[ListF[A, ?]]) {
@@ -59,7 +83,7 @@ package object fixedpoint {
   implicit class StreamOps[A](self: Nu[(A, ?)]) {
     def head: A = self.project._1
     def tail: Nu[(A, ?)] = self.project._2
-    def drop(n: Int): Nu[(A, ?)] =
+    @tailrec final def drop(n: Int): Nu[(A, ?)] =
       if (n > 0) tail.drop(n - 1) else self
     def take(n: Int): Mu[ListF[A, ?]] =
       (n, self).ana[Mu, ListF[A, ?]] {

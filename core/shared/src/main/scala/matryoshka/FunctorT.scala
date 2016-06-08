@@ -77,9 +77,6 @@ import simulacrum.{typeclass}
       T[G] =
     map(t)(f(_).map(_.fold(Predef.identity, transApo(_)(f))))
 
-  def translate[F[_]: Functor, G[_]: Functor](t: T[F])(f: F ~> G): T[G] =
-    map(t)(f(_).map(translate(_)(f)))
-
   def topDownCata[F[_]: Functor, A](t: T[F], a: A)(f: (A, T[F]) => (A, T[F])):
       T[F] = {
     val (a0, tf) = f(a, t)

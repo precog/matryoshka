@@ -24,13 +24,30 @@ sealed class IdOps[A](self: A) {
   def hyloM[M[_]: Monad, F[_]: Traverse, B](f: F[B] => M[B], g: A => M[F[A]]):
       M[B] =
     matryoshka.hyloM(self)(f, g)
-  def ghylo[F[_]: Functor, W[_]: Comonad, M[_]: Monad, B](
+  def ghylo[W[_]: Comonad, M[_]: Monad, F[_]: Functor, B](
     w: DistributiveLaw[F, W],
     m: DistributiveLaw[M, F],
     f: F[W[B]] => B,
     g: A => F[M[A]]):
       B =
     matryoshka.ghylo(self)(w, m, f, g)
+
+  def ghyloM[W[_]: Comonad: Traverse, M[_]: Monad: Traverse, N[_]: Monad, F[_]: Traverse, B](
+    w: DistributiveLaw[F, W],
+    m: DistributiveLaw[M, F],
+    f: F[W[B]] => N[B],
+    g: A => N[F[M[A]]]):
+      N[B] =
+    matryoshka.ghyloM(self)(w, m, f, g)
+
+  def dyna[F[_]: Functor, B](φ: F[Cofree[F, B]] => B, ψ: A => F[A]): B =
+    matryoshka.dyna(self)(φ, ψ)
+
+  def codyna[F[_]: Functor, B](φ: F[B] => B, ψ: A => F[Free[F, A]]): B =
+    matryoshka.codyna(self)(φ, ψ)
+
+  def codynaM[M[_]: Monad, F[_]: Traverse, B](φ: F[B] => M[B], ψ: A => M[F[Free[F, A]]]): M[B] =
+    matryoshka.codynaM(self)(φ, ψ)
 
   def chrono[F[_]: Functor, B](
     g: F[Cofree[F, B]] => B, f: A => F[Free[F, A]]):
@@ -73,6 +90,11 @@ sealed class IdOps[A](self: A) {
     implicit T: Corecursive[T]):
       T[F] =
     T.elgotAna(self)(k, f)
+  def ganaM[T[_[_]], M[_]: Monad: Traverse, N[_]: Monad, F[_]: Traverse](
+    k: DistributiveLaw[M, F], f: A => N[F[M[A]]])(
+    implicit T: Corecursive[T]):
+      N[T[F]] =
+    T.ganaM(self)(k, f)
   def apo[T[_[_]], F[_]: Functor](f: A => F[T[F] \/ A])(implicit T: Corecursive[T]): T[F] =
     T.apo(self)(f)
   def elgotApo[T[_[_]], F[_]: Functor](f: A => T[F] \/ F[A])(implicit T: Corecursive[T]): T[F] =

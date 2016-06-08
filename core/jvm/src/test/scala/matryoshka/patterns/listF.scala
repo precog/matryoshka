@@ -42,4 +42,8 @@ class ListFSpec extends Specification with ScalaCheck with CheckAll {
     checkAll(equal.laws[ListF[String, Int]])
     checkAll(bitraverse.laws[ListF])
   }
+
+  // TODO: check these, but currently missing Arbs for List and Seq
+  // checkAlgebraIsoLaws(ListF.listIso[Int])
+  // checkAlgebraIsoLaws(ListF.seqIso[Int])
 }

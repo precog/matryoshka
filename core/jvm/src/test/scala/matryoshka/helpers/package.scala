@@ -16,13 +16,14 @@
 
 package matryoshka
 
-import scala.Predef.implicitly
-
+import monocle.law.discipline._
 import org.scalacheck._
+import org.specs2.mutable._
+import org.typelevel.discipline.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalaCheckBinding._
 
-package object helpers {
+package object helpers extends Specification with Discipline {
   implicit def NTArbitrary[F[_], A](
     implicit A: Arbitrary[A], F: Arbitrary ~> λ[α => Arbitrary[F[α]]]):
       Arbitrary[F[A]] =
@@ -53,16 +54,15 @@ package object helpers {
               F(freeArbitrary[F](F)(arb)).arbitrary.map(Free.roll))))
     }
 
-  implicit def freeEqual[F[_]: Functor](
-    implicit F: Equal ~> λ[α => Equal[F[α]]]):
-      Equal ~> λ[α => Equal[Free[F, α]]] =
-    new (Equal ~> λ[α => Equal[Free[F, α]]]) {
-      def apply[α](eq: Equal[α]) =
-        Equal.equal((a, b) => (a.resume, b.resume) match {
-          case (-\/(f1), -\/(f2)) =>
-            F(freeEqual[F](implicitly, F)(eq)).equal(f1, f2)
-          case (\/-(a1), \/-(a2)) => eq.equal(a1, a2)
-          case (_,       _)       => false
-        })
-    }
+  def checkAlgebraIsoLaws[F[_], A](iso: AlgebraIso[F, A])(
+    implicit FA: Arbitrary ~> (Arbitrary ∘ F)#λ, AA: Arbitrary[A], FE: Equal ~> (Equal ∘ F)#λ, AE: Equal[A]) =
+    checkAll("algebra Iso", IsoTests(iso))
+
+  def checkAlgebraPrismLaws[F[_], A](prism: AlgebraPrism[F, A])(
+    implicit FA: Arbitrary ~> (Arbitrary ∘ F)#λ, AA: Arbitrary[A], FE: Equal ~> (Equal ∘ F)#λ, AE: Equal[A]) =
+    checkAll("algebra Prism", PrismTests(prism))
+
+  def checkCoalgebraPrismLaws[F[_], A](prism: CoalgebraPrism[F, A])(
+    implicit FA: Arbitrary ~> (Arbitrary ∘ F)#λ, AA: Arbitrary[A], FE: Equal ~> (Equal ∘ F)#λ, AE: Equal[A]) =
+    checkAll("coalgebra Prism", PrismTests(prism))
 }

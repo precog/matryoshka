@@ -48,12 +48,42 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   type ElgotCoalgebraM[E[_], M[_], F[_], A] = A => M[E[F[A]]]
   type ElgotCoalgebra[E[_], F[_], A] = ElgotCoalgebraM[E, Id, F, A] // A => E[F[A]]
 
+  type GAlgebraicTransformM[T[_[_]], W[_], M[_], F[_], G[_]] = F[W[T[G]]] => M[G[T[G]]]
+  type AlgebraicTransformM[T[_[_]], M[_], F[_], G[_]] = GAlgebraicTransformM[T, Id, M, F, G]
+  type GAlgebraicTransform[T[_[_]], W[_], F[_], G[_]] = GAlgebraicTransformM[T, W, Id, F, G]
+  type AlgebraicTransform[T[_[_]], F[_], G[_]] = GAlgebraicTransformM[T, Id, Id, F, G]
+
+  type GCoalgebraicTransformM[T[_[_]], M[_], N[_], F[_], G[_]] = F[T[F]] => N[G[M[T[F]]]]
+  type CoalgebraicTransformM[T[_[_]], N[_], F[_], G[_]] = GCoalgebraicTransformM[T, Id, N, F, G]
+  type GCoalgebraicTransform[T[_[_]], M[_], F[_], G[_]] = GCoalgebraicTransformM[T, M, Id, F, G]
+  type CoalgebraicTransform[T[_[_]], F[_], G[_]] = GCoalgebraicTransformM[T, Id, Id, F, G]
+
+  def transformToAlgebra[T[_[_]]: Corecursive, W[_], M[_]: Functor, F[_], G[_]: Functor](
+    self: GAlgebraicTransformM[T, W, M, F, G]):
+      GAlgebraM[W, M, F, T[G]] =
+    self(_) ∘ (_.embed)
+
   /** An algebra and its dual form an isomorphism.
     */
   type AlgebraIso[F[_], A] = Iso[F[A], A]
   object AlgebraIso {
-    def apply[F[_], A](get: F[A] => A)(reverseGet: A => F[A]): Iso[F[A], A] =
+    def apply[F[_], A](get: F[A] => A)(reverseGet: A => F[A]):
+        AlgebraIso[F, A] =
       Iso(get)(reverseGet)
+  }
+
+  type AlgebraPrism[F[_], A] = Prism[F[A], A]
+  object AlgebraPrism {
+    def apply[F[_], A](get: F[A] => Option[A])(reverseGet: A => F[A]):
+        AlgebraPrism[F, A] =
+      Prism(get)(reverseGet)
+  }
+
+  type CoalgebraPrism[F[_], A] = Prism[A, F[A]]
+  object CoalgebraPrism {
+    def apply[F[_], A](get: A => Option[F[A]])(reverseGet: F[A] => A):
+        CoalgebraPrism[F, A] =
+      Prism(get)(reverseGet)
   }
 
   def recCorecIso[T[_[_]]: Recursive: Corecursive, F[_]: Functor] =
@@ -67,8 +97,14 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   def foldIso[T[_[_]]: Corecursive: Recursive, F[_]: Functor, A](alg: AlgebraIso[F, A]) =
     Iso[T[F], A](_.cata(alg.get))(_.ana(alg.reverseGet))
 
+  def foldPrism[T[_[_]]: Corecursive: Recursive, F[_]: Traverse, A](alg: AlgebraPrism[F, A]) =
+    Prism[T[F], A](_.cataM(alg.getOption))(_.ana(alg.reverseGet))
+
+  def unfoldPrism[T[_[_]]: Corecursive: Recursive, F[_]: Traverse, A](coalg: CoalgebraPrism[F, A]) =
+    Prism[A, T[F]](_.anaM(coalg.getOption))(_.cata(coalg.reverseGet))
+
   /** A NaturalTransformation that sequences two types */
-  type DistributiveLaw[F[_], G[_]] = λ[α => F[G[α]]] ~> λ[α => G[F[α]]]
+  type DistributiveLaw[F[_], G[_]] = (F ∘ G)#λ ~> (G ∘ F)#λ
 
   /** This folds a Free that you may think of as “already partially-folded”.
     * It’s also the fold of a decomposed `elgot`.
@@ -123,7 +159,16 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   /** A Kleisli hylomorphism. */
   def hyloM[M[_]: Monad, F[_]: Traverse, A, B](a: A)(f: F[B] => M[B], g: A => M[F[A]]):
       M[B] =
-    g(a) >>= (_.traverse(hyloM(_)(f, g)) >>= (f))
+    g(a) >>= (_.traverse(hyloM(_)(f, g)) >>= f)
+
+  def dyna[F[_]: Functor, A, B](a: A)(φ: F[Cofree[F, B]] => B, ψ: A => F[A]): B =
+    ghylo[Cofree[F, ?], Id, F, A, B](a)(distHisto, distAna, φ, ψ)
+
+  def codyna[F[_]: Functor, A, B](a: A)(φ: F[B] => B, ψ: A => F[Free[F, A]]): B =
+    ghylo[Id, Free[F, ?], F, A, B](a)(distCata, distFutu, φ, ψ)
+
+  def codynaM[M[_]: Monad, F[_]: Traverse, A, B](a: A)(φ: F[B] => M[B], ψ: A => M[F[Free[F, A]]]): M[B] =
+    ghyloM[Id, Free[F, ?], M, F, A, B](a)(distCata, distFutu, φ, ψ)
 
   /** A generalized version of a hylomorphism that composes any coalgebra and
     * algebra.
@@ -138,6 +183,22 @@ package object matryoshka extends CofreeInstances with FreeInstances {
       B = {
     def h(x: M[A]): W[B] = w(m(M.lift(g)(x)) ∘ (y => h(y.join).cojoin)) ∘ f
     h(a.point[M]).copoint
+  }
+
+  def ghyloM[W[_]: Comonad: Traverse, M[_]: Traverse, N[_]: Monad, F[_]: Traverse, A, B](
+    a: A)(
+    w: DistributiveLaw[F, W],
+    m: DistributiveLaw[M, F],
+    f: F[W[B]] => N[B],
+    g: A => N[F[M[A]]])(
+    implicit M: Monad[M]):
+      N[B] = {
+    def h(x: M[A]): N[W[B]] =
+      (M.lift(g)(x).sequence >>=
+        (m(_: M[F[M[A]]]).traverse(y => h(y.join) ∘ (_.cojoin)))) ∘
+        (w(_)) >>=
+        (_.traverse(f))
+    h(a.point[M]) ∘ (_.copoint)
   }
 
   /** Similar to a hylomorphism, this composes a futumorphism and a
@@ -389,19 +450,21 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   def toTree[F[_]: Functor: Foldable]: Algebra[F, Tree[F[Unit]]] =
     x => Tree.Node(x.void, x.toStream)
 
+  sealed abstract class ∘[F[_], G[_]] { type λ[A] = F[G[A]] }
+
   /** To avoid diverging implicits with fixed-point types, we need to defer the
     * lookup. We do this with a `NaturalTransformation` (although there
     * are more type class-y solutions available now). This implicit allows those
     * implicits to be looked up when searching for a traditionally-defined
     * instance.
     */
-  implicit def NTEqual[F[_], A](implicit A: Equal[A], F: Equal ~> λ[α => Equal[F[α]]]):
+  implicit def NTEqual[F[_], A](implicit A: Equal[A], F: Equal ~> (Equal ∘ F)#λ):
       Equal[F[A]] =
     F(A)
 
   /** See `NTEqual`.
     */
-  implicit def NTShow[F[_], A](implicit A: Show[A], F: Show ~> λ[α => Show[F[α]]]):
+  implicit def NTShow[F[_], A](implicit A: Show[A], F: Show ~> (Show ∘ F)#λ):
       Show[F[A]] =
     F(A)
 

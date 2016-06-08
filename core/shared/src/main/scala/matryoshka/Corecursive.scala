@@ -43,6 +43,17 @@ import simulacrum.typeclass
     loop(f(a).point[M])
   }
 
+  def ganaM[M[_]: Traverse, N[_]: Monad, F[_]: Traverse, A](
+    a: A)(
+    k: DistributiveLaw[M, F], f: A => N[F[M[A]]])(
+    implicit M: Monad[M]):
+      N[T[F]] = {
+    def loop(x: M[F[M[A]]]): N[T[F]] =
+      k(x).traverse(x => M.lift(f)(x.join).sequence >>= loop) ∘ (embed(_))
+
+    f(a) ∘ (_.point[M]) >>= loop
+  }
+
   def elgotAna[M[_], F[_]: Functor, A](
     a: A)(
     k: DistributiveLaw[M, F], ψ: A => M[F[A]])(
