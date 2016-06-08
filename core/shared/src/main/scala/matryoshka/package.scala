@@ -97,9 +97,13 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   def foldIso[T[_[_]]: Corecursive: Recursive, F[_]: Functor, A](alg: AlgebraIso[F, A]) =
     Iso[T[F], A](_.cata(alg.get))(_.ana(alg.reverseGet))
 
+  /** There is a fold prism for any AlgebraPrism.
+    */
   def foldPrism[T[_[_]]: Corecursive: Recursive, F[_]: Traverse, A](alg: AlgebraPrism[F, A]) =
-    Prism[T[F], A](_.cataM(alg.getOption))(_.ana(alg.reverseGet))
+    Prism[T[F], A](Recursive[T].cataM(_)(alg.getOption))(_.ana(alg.reverseGet))
 
+  /** There is an unfold prism for any CoalgebraPrism.
+    */
   def unfoldPrism[T[_[_]]: Corecursive: Recursive, F[_]: Traverse, A](coalg: CoalgebraPrism[F, A]) =
     Prism[A, T[F]](_.anaM(coalg.getOption))(_.cata(coalg.reverseGet))
 
