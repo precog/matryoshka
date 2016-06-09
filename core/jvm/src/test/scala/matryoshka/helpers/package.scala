@@ -84,6 +84,12 @@ package object helpers extends Specification with Discipline {
         }
     }
 
+  implicit def optionShowNT: Show ~> (Show ∘ Option)#λ =
+    new (Show ~> (Show ∘ Option)#λ) {
+      def apply[A](s: Show[A]) =
+        Show.show(_.fold(Cord("None"))(Cord("Some(") ++ s.show(_) ++ Cord(")")))
+    }
+
   implicit def eitherArbitrary[A: Arbitrary]:
       Arbitrary ~> (Arbitrary ∘ (A \/ ?))#λ =
     new (Arbitrary ~> (Arbitrary ∘ (A \/ ?))#λ) {

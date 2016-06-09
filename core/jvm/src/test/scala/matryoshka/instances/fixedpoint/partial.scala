@@ -30,11 +30,6 @@ import org.specs2.scalaz.{ScalazMatchers}
 import scalaz._, Scalaz._
 import scalaz.scalacheck.{ScalazProperties => Props}
 
-// TODO: Figure out how to implement Monads generically for fixed-point types,
-//       and get them scoped automatically (companion for a type alias doesn’t
-//       work)
-import Partial.monad
-
 class PartialSpec extends Specification with ScalazMatchers with ScalaCheck with CheckAll {
   /** For testing cases that should work with truly diverging functions. */
   def sometimesNeverGen[A: Arbitrary]: Gen[Partial[A]] =
@@ -102,9 +97,9 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck with
     }
 
     // TODO: Should work with any Int, but stack overflows on big negatives.
-    "always terminate with mc91" ! prop { (n: Nat) =>
-      val i = n.cata(height)
-      mc91(i).unsafePerformSync must equal(if (i <= 100) 91 else i - 10)
+    "always terminate with mc91" ! prop { (n: Int) =>
+      n > -3000 ==>
+        (mc91(n).unsafePerformSync must equal(if (n <= 100) 91 else n - 10))
     }
   }
 }

@@ -17,7 +17,7 @@
 package matryoshka.specs2.scalacheck
 
 import scala.{Any, StringContext}
-import scala.Predef.{Set}
+import scala.Predef.Set
 
 import org.scalacheck._
 import org.scalacheck.util.{FreqMap, Pretty}
