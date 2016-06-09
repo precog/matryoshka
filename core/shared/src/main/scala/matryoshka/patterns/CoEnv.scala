@@ -56,19 +56,19 @@ sealed abstract class CoEnvInstances extends CoEnvInstances0 {
     }
 
   // TODO: write a test to ensure the two monad instances are identical
-  implicit def monadCo[F[_]: Applicative: Comonad, A]: Monad[CoEnv[A, F, ?]] =
-    new Monad[CoEnv[A, F, ?]] {
-      def bind[B, C](fa: CoEnv[A, F, B])(f: (B) ⇒ CoEnv[A, F, C]) =
-        fa.run.fold(a => CoEnv(a.left), fb => f(fb.copoint))
-      def point[B](x: => B) = CoEnv(x.point[F].right)
-    }
+  // implicit def monadCo[F[_]: Applicative: Comonad, A]: Monad[CoEnv[A, F, ?]] =
+  //   new Monad[CoEnv[A, F, ?]] {
+  //     def bind[B, C](fa: CoEnv[A, F, B])(f: (B) ⇒ CoEnv[A, F, C]) =
+  //       CoEnv(fa.run >>= (fb => f(fb.copoint).run))
+  //     def point[B](x: => B) = CoEnv(x.point[F].right)
+  //   }
 }
 
 sealed abstract class CoEnvInstances0 {
-  implicit def monad[F[_]: Monad: Traverse, A]: Monad[CoEnv[A, F, ?]] =
-    new Monad[CoEnv[A, F, ?]] {
-      def bind[B, C](fa: CoEnv[A, F, B])(f: (B) ⇒ CoEnv[A, F, C]) =
-        CoEnv(fa.run.fold(_.left, _.traverse[CoEnv[A, F, ?], C](f).run.map(_.join)))
-      def point[B](x: => B) = CoEnv(x.point[F].right)
-    }
+  // implicit def monad[F[_]: Monad: Traverse, A]: Monad[CoEnv[A, F, ?]] =
+  //   new Monad[CoEnv[A, F, ?]] {
+  //     def bind[B, C](fa: CoEnv[A, F, B])(f: (B) ⇒ CoEnv[A, F, C]) =
+  //       CoEnv(fa.run >>= (_.traverse[CoEnv[A, F, ?], C](f).run.map(_.join)))
+  //     def point[B](x: => B) = CoEnv(x.point[F].right)
+  //   }
 }

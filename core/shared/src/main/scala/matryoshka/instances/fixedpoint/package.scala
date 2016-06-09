@@ -19,7 +19,8 @@ package matryoshka.instances
 import matryoshka._, Recursive.ops._
 import matryoshka.patterns._
 
-import scala.{Boolean, Int, Option}
+import scala.{Boolean, Int, None, Option, Some}
+import scala.annotation.{tailrec}
 
 import scalaz._, Scalaz._
 
@@ -27,16 +28,60 @@ import scalaz._, Scalaz._
   * implemented explicitly as fixed-points.
   */
 package object fixedpoint {
-  type Free[F[_], A] = Mu[CoEnv[A, F, ?]]
-  type Cofree[F[_], A] = Mu[EnvT[A, F, ?]]
-  type List[A] = Mu[ListF[A, ?]]
+  type Nat = Mu[Option]
+  object Nat {
+    def fromInt: CoalgebraM[Option, Option, Int] =
+      x => if (x < 0) None else Some(if (x > 0) (x - 1).some else None)
 
+    def intPrism = CoalgebraPrism[Option, Int](fromInt)(height)
+  }
+
+  implicit class NatOps[T[_[_]]: Recursive: Corecursive](self: T[Option]) {
+    def +(other: T[Option]) = self.cata[T[Option]] {
+      case None => other
+      case o    => o.embed
+    }
+
+    def min(other: T[Option]) =
+      (self, other).ana(_.bimap(_.project, _.project) match {
+        case (None,    _)       => None
+        case (_,       None)    => None
+        case (Some(a), Some(b)) => Some((a, b))
+    })
+
+    def max(other: T[Option]) =
+      (self, other).apo(_.bimap(_.project, _.project) match {
+        case (None,    b)       => b ∘ (_.left)
+        case (a,       None)    => a ∘ (_.left)
+        case (Some(a), Some(b)) => Some((a, b).right)
+    })
+}
+
+  type Conat = Nu[Option]
+  object Conat {
+    val inf: Conat = ().ana[Nu, Option](_.some)
+  }
+
+  type Free[F[_], A]   = Mu[CoEnv[A, F, ?]]
+  type Cofree[F[_], A] = Mu[EnvT[A, F, ?]]
+  type List[A]         = Mu[ListF[A, ?]]
   object List {
     def apply[A](elems: A*) =
       elems.ana[Mu, ListF[A, ?]](ListF.seqIso[A].reverseGet)
 
+    def fillƒ[A](elem: => A): Option ~> ListF[A, ?] =
+      new (Option ~> ListF[A, ?]) {
+        def apply[β](opt: Option[β]) = opt match {
+          case None    => NilF()
+          case Some(b) => ConsF(elem, b)
+        }
+      }
+
     def fill[A](n: Int)(elem: => A): List[A] =
-      n.ana[Mu, ListF[A, ?]](r => if (r > 0) ConsF(elem, r - 1) else NilF())
+      n.hyloM(
+        transformToAlgebra[Mu, Id, Option, Option, ListF[A, ?]](fillƒ(elem).apply(_).point[Option]),
+        Nat.fromInt)
+        .getOrElse(NilF[A, List[A]]().embed)
   }
 
   implicit class ListOps[A](self: Mu[ListF[A, ?]]) {
@@ -59,7 +104,7 @@ package object fixedpoint {
   implicit class StreamOps[A](self: Nu[(A, ?)]) {
     def head: A = self.project._1
     def tail: Nu[(A, ?)] = self.project._2
-    def drop(n: Int): Nu[(A, ?)] =
+    @tailrec final def drop(n: Int): Nu[(A, ?)] =
       if (n > 0) tail.drop(n - 1) else self
     def take(n: Int): Mu[ListF[A, ?]] =
       (n, self).ana[Mu, ListF[A, ?]] {
@@ -76,15 +121,13 @@ package object fixedpoint {
     def now[A](a: A): Partial[A] = a.left[Nu[A \/ ?]].embed
     def later[A](partial: Partial[A]): Partial[A] = partial.right[A].embed
 
+    def delay[A](a: A): Option ~> (A \/ ?) = new (Option ~> (A \/ ?)) {
+      def apply[B](b: Option[B]) = b \/> a
+    }
+
     /** Canonical function that diverges.
       */
     def never[A]: Partial[A] = ().ana[Nu, A \/ ?](_.right)
-
-    implicit def monad: Monad[Partial] = new Monad[Partial] {
-      def point[A](a: => A) = now(a)
-      def bind[A, B](fa: Partial[A])(f: A => Partial[B]) =
-        fa.project.fold(f, l => later(bind(l)(f)))
-    }
 
     /** This instance is not implicit, because it potentially runs forever.
       */
@@ -95,6 +138,12 @@ package object fixedpoint {
     def fromPartialFunction[A, B](pf: scala.PartialFunction[A, B]):
         A => Partial[B] =
       pf.lift ⋙ fromOption
+  }
+
+  implicit val partialMonad: Monad[Partial] = new Monad[Partial] {
+    def point[A](a: => A) = Partial.now(a)
+    def bind[A, B](fa: Partial[A])(f: A => Partial[B]) =
+      fa.project.fold(f, l => Partial.later(bind(l)(f)))
   }
 
   implicit class PartialOps[A](self: Nu[A \/ ?]) {
@@ -109,7 +158,10 @@ package object fixedpoint {
 
     /** Run to completion (if it completes).
       */
-    def unsafePerformSync: A = self.project.fold(x => x, _.unsafePerformSync)
+    @tailrec final def unsafePerformSync: A = self.project match {
+      case -\/(a) => a
+      case \/-(p) => p.unsafePerformSync
+    }
 
     /** If two `Partial`s eventually have the same value, then they are
       * equivalent.

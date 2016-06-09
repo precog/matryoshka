@@ -53,6 +53,13 @@ sealed abstract class EnvTInstances extends EnvTInstances0 {
   implicit def envTComonad[E, W[_]](implicit W0: Comonad[W]):
       Comonad[EnvT[E, W, ?]] =
     new EnvTComonad[E, W] { implicit def W: Comonad[W] = W0 }
+
+  implicit def equal[E: Equal, W[_]](implicit W: Equal ~> (Equal ∘ W)#λ):
+      Equal ~> (Equal ∘ EnvT[E, W, ?])#λ =
+    new (Equal ~> (Equal ∘ EnvT[E, W, ?])#λ) {
+      def apply[A](eq: Equal[A]) =
+        Equal.equal((a, b) => a.ask ≟ b.ask && W(eq).equal(a.lower, b.lower))
+    }
 }
 
 trait EnvTFunctions {

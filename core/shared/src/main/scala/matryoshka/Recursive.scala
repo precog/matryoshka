@@ -46,6 +46,16 @@ import simulacrum.typeclass
     g(loop(t).copoint)
   }
 
+  def gcataM[W[_]: Comonad: Traverse, M[_]: Monad, F[_]: Traverse, A](
+    t: T[F])(
+    k: DistributiveLaw[F, W], g: F[W[A]] => M[A]):
+      M[A] = {
+    def loop(t: T[F]): M[W[F[W[A]]]] =
+      project(t).traverse(loop(_) >>= (_.traverse(g) ∘ (_.cojoin))) ∘ (k(_))
+
+    loop(t) ∘ (_.copoint) >>= g
+  }
+
   /** A catamorphism generalized with a comonad outside the functor. */
   def elgotCata[W[_]: Comonad, F[_]: Functor, A](
     t: T[F])(
@@ -89,6 +99,12 @@ import simulacrum.typeclass
     f: F[B] => B, w: DistributiveLaw[F, W], g: F[EnvT[B, W, A]] => A):
       A =
     gcata[EnvT[B, W, ?], F, A](t)(distZygoT(f, w), g)
+
+  def gElgotZygo[F[_]: Functor, W[_]: Comonad, A, B](
+    t: T[F])(
+    f: F[B] => B, w: DistributiveLaw[F, W], g: ElgotAlgebra[EnvT[B, W, ?], F, A]):
+      A =
+    elgotCata[EnvT[B, W, ?], F, A](t)(distZygoT(f, w), g)
 
   /** Mutually-recursive fold. */
   def mutu[F[_]: Functor, A, B](t: T[F])(f: F[(A, B)] => B, g: F[(B, A)] => A):

@@ -52,7 +52,7 @@ object ListF {
     case NilF()      => Seq.empty
   } (s => s.headOption.fold[ListF[A, Seq[A]]](NilF())(ConsF(_, s.tail)))
 
-  implicit def equal[A: Equal, B]: Equal ~> λ[β => Equal[ListF[A, β]]] =
+  implicit def equal[A: Equal]: Equal ~> λ[β => Equal[ListF[A, β]]] =
     new (Equal ~> λ[β => Equal[ListF[A, β]]]) {
       def apply[β](eq: Equal[β]) = Equal.equal((a, b) => (a, b) match {
         case (ConsF(h1, t1), ConsF(h2, t2)) => h1 ≟ h2 && eq.equal(t1, t2)
@@ -61,7 +61,7 @@ object ListF {
       })
     }
 
-  implicit def show[A: Show, B]: Show ~> λ[β => Show[ListF[A, β]]] =
+  implicit def show[A: Show]: Show ~> λ[β => Show[ListF[A, β]]] =
     new (Show ~> λ[β => Show[ListF[A, β]]]) {
       def apply[β](show: Show[β]) = Show.show {
         case ConsF(h, t) => h.show ++ Cord("::") ++ show.show(t)
@@ -76,7 +76,7 @@ object ListF {
         implicit G: Applicative[G]) =
         fab match {
           case NilF()        => G.point(NilF())
-          case ConsF(a, b)        => (f(a) ⊛ g(b))(ConsF(_, _))
+          case ConsF(a, b)   => (f(a) ⊛ g(b))(ConsF(_, _))
         }
     }
 

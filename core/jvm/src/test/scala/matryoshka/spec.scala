@@ -27,13 +27,16 @@ import java.lang.String
 import scala.{Boolean, Function, Int, None, Option, Predef, Symbol, Unit}
 import scala.collection.immutable.{List, Map, Nil, ::}
 
+import monocle.law.discipline._
 import org.scalacheck._
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
+import org.specs2.scalaz.{ScalazMatchers}
+import org.typelevel.discipline.specs2.mutable._
 import scalaz.{Apply => _, _}, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
-class ExpSpec extends Specification with ScalaCheck with CheckAll {
+class ExpSpec extends Specification with CheckAll {
   // NB: These are just a sanity check that the data structure created for the
   //     tests is lawful.
   "Exp should satisfy relevant laws" >> {
@@ -42,7 +45,7 @@ class ExpSpec extends Specification with ScalaCheck with CheckAll {
   }
 }
 
-class Exp2Spec extends Specification with ScalaCheck with CheckAll {
+class Exp2Spec extends Specification with CheckAll {
   // NB: These are just a sanity check that the data structure created for the
   //     tests is lawful.
   "Exp2 should satisfy relevant laws" >> {
@@ -51,7 +54,7 @@ class Exp2Spec extends Specification with ScalaCheck with CheckAll {
   }
 }
 
-class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.Matchers {
+class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers with Discipline {
   val example1ƒ: Exp[Option[Int]] => Option[Int] = {
     case Num(v)           => v.some
     case Mul(left, right) => (left ⊛ right)(_ * _)
@@ -128,6 +131,12 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
       }
       case _ => t.map(_.head).embed
     }
+
+  checkAlgebraIsoLaws(recCorecIso[Mu, Exp])
+  checkAlgebraIsoLaws(lambekIso[Mu, Exp])
+
+  // TODO: add checks for the prism versions
+  checkAll("fold Iso", IsoTests(foldIso[Mu, Exp, Mu[Exp]](lambekIso)))
 
   "Recursive" >> {
     "isLeaf" >> {
@@ -716,12 +725,12 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
 
     "ghylo" >> {
       "behave like hylo with distCata/distAna" ! prop { (i: Int) =>
-        i.ghylo[Exp, Id, Id, Int](distCata, distAna, eval, extractFactors) must
+        i.ghylo[Id, Id, Exp, Int](distCata, distAna, eval, extractFactors) must
           equal(i.hylo(eval, extractFactors))
       }
 
       "behave like chrono with distHisto/distFutu" ! prop { i: Int =>
-        i.ghylo[Exp, Cofree[Exp, ?], Free[Exp, ?], Fix[Exp]](
+        i.ghylo[Cofree[Exp, ?], Free[Exp, ?], Exp, Fix[Exp]](
           distHisto, distFutu, partialEval[Fix], extract2and3) must
           equal(i.chrono(partialEval[Fix], extract2and3))
       }
@@ -909,8 +918,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
       "find and replace two children" in {
         (holes(mul(num(0), num(1)).unFix) match {
           case Mul((Fix(Num(0)), f1), (Fix(Num(1)), f2)) =>
-            f1(num(2)) must_=== Mul(num(2), num(1))
-            f2(num(2)) must_=== Mul(num(0), num(2))
+            f1(num(2)) must equal(Mul(num(2), num(1)))
+            f2(num(2)) must equal(Mul(num(0), num(2)))
           case r => failure
         }): org.specs2.execute.Result
       }
@@ -925,9 +934,9 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with specs2.scalaz.M
         (holesList(mul(num(0), num(1)).unFix) match {
           case (t1, f1) :: (t2, f2) :: Nil =>
             t1         must equal(num(0))
-            f1(num(2)) must_=== Mul(num(2), num(1))
+            f1(num(2)) must equal(Mul(num(2), num(1)))
             t2         must equal(num(1))
-            f2(num(2)) must_=== Mul(num(0), num(2))
+            f2(num(2)) must equal(Mul(num(0), num(2)))
           case _ => failure
         }): org.specs2.execute.Result
       }
