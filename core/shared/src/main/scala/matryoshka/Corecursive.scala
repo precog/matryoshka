@@ -64,6 +64,8 @@ import simulacrum.typeclass
     loop(ψ(a))
   }
 
+  /** An unfold that can short-circuit certain sections.
+    */
   def apo[F[_]: Functor, A](a: A)(f: A => F[T[F] \/ A]): T[F] =
     // NB: This is not implemented with [[matryoshka.distApo]] because that
     //     would add a [[matryoshka.Recursive]] constraint.
@@ -73,6 +75,11 @@ import simulacrum.typeclass
     // NB: This is not implemented with [[matryoshka.distApo]] because that
     //     would add a [[matryoshka.Recursive]] constraint.
     f(a).fold(Predef.identity, fa => embed(fa ∘ (elgotApo(_)(f))))
+
+  /** An unfold that can handle sections with a secondary unfold.
+    */
+  def gapo[F[_]: Functor, A, B](a: A)(ψ0: B => F[B], ψ: A => F[B \/ A]): T[F] =
+    embed(ψ(a) ∘ (_.fold(ana(_)(ψ0), gapo(_)(ψ0, ψ))))
 
   def apoM[F[_]: Traverse, M[_]: Monad, A](a: A)(f: A => M[F[T[F] \/ A]]): M[T[F]] =
     f(a).flatMap(_.traverse(_.fold(_.point[M], apoM(_)(f)))) ∘ (embed(_))

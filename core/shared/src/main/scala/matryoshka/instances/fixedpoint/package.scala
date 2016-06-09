@@ -41,7 +41,21 @@ package object fixedpoint {
       case None => other
       case o    => o.embed
     }
-  }
+
+    def min(other: T[Option]) =
+      (self, other).ana(_.bimap(_.project, _.project) match {
+        case (None,    _)       => None
+        case (_,       None)    => None
+        case (Some(a), Some(b)) => Some((a, b))
+    })
+
+    def max(other: T[Option]) =
+      (self, other).apo(_.bimap(_.project, _.project) match {
+        case (None,    b)       => b ∘ (_.left)
+        case (a,       None)    => a ∘ (_.left)
+        case (Some(a), Some(b)) => Some((a, b).right)
+    })
+}
 
   type Conat = Nu[Option]
   object Conat {
@@ -115,12 +129,6 @@ package object fixedpoint {
       */
     def never[A]: Partial[A] = ().ana[Nu, A \/ ?](_.right)
 
-    implicit def monad: Monad[Partial] = new Monad[Partial] {
-      def point[A](a: => A) = now(a)
-      def bind[A, B](fa: Partial[A])(f: A => Partial[B]) =
-        fa.project.fold(f, l => later(bind(l)(f)))
-    }
-
     /** This instance is not implicit, because it potentially runs forever.
       */
     def equal[A: Equal]: Equal[Partial[A]] =
@@ -130,6 +138,12 @@ package object fixedpoint {
     def fromPartialFunction[A, B](pf: scala.PartialFunction[A, B]):
         A => Partial[B] =
       pf.lift ⋙ fromOption
+  }
+
+  implicit val partialMonad: Monad[Partial] = new Monad[Partial] {
+    def point[A](a: => A) = Partial.now(a)
+    def bind[A, B](fa: Partial[A])(f: A => Partial[B]) =
+      fa.project.fold(f, l => Partial.later(bind(l)(f)))
   }
 
   implicit class PartialOps[A](self: Nu[A \/ ?]) {
@@ -144,7 +158,10 @@ package object fixedpoint {
 
     /** Run to completion (if it completes).
       */
-    def unsafePerformSync: A = self.project.fold(x => x, _.unsafePerformSync)
+    @tailrec final def unsafePerformSync: A = self.project match {
+      case -\/(a) => a
+      case \/-(p) => p.unsafePerformSync
+    }
 
     /** If two `Partial`s eventually have the same value, then they are
       * equivalent.
