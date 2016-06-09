@@ -22,9 +22,10 @@ import scala.Int
 
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
+import org.specs2.scalaz.{ScalazMatchers}
 import scalaz._, Scalaz._
 
-class StreamSpec extends Specification with ScalaCheck with specs2.scalaz.Matchers {
+class StreamSpec extends Specification with ScalaCheck with ScalazMatchers {
   /** Infinite sequence of Fibonacci numbers (at least until they overflow
     * int32)
     */
@@ -60,12 +61,12 @@ class StreamSpec extends Specification with ScalaCheck with specs2.scalaz.Matche
     // FIXME: These two blow up the stack with much larger inputs
 
     "have the given value at an arbitrary point" ! prop { (i: Int, d: Int) =>
-      i.ana[Nu, (Int, ?)](constantly).drop(20000).head must equal(i)
+      i.ana[Nu, (Int, ?)](constantly).drop(30000).head must equal(i)
     }
 
     "have subsequence of the given value" ! prop { (i: Int, t: Int) =>
-      i.ana[Nu, (Int, ?)](constantly).take(900) must
-        equal(List.fill(900)(i))
+      i.ana[Nu, (Int, ?)](constantly).take(450) must
+        equal(List.fill(450)(i))
     }
   }
 }

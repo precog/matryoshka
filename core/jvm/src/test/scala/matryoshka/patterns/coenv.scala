@@ -16,23 +16,21 @@
 
 package matryoshka.patterns
 
+import matryoshka._
 import matryoshka.exp._
 import matryoshka.helpers._
+import matryoshka.specs2.scalacheck._
 
-import scala.Int
+import java.lang.{String}
+import scala.{Int}
 
-import monocle.law.discipline.IsoTests
 import org.scalacheck._
 import org.specs2.mutable._
-import org.typelevel.discipline.specs2.mutable._
 import scalaz._, Scalaz._
-import scalaz.scalacheck.ScalaCheckBinding._
+import scalaz.scalacheck.ScalaCheckBinding.{GenMonad => _, _}
+import scalaz.scalacheck.ScalazProperties._
 
-class CoEnvSpec extends Specification with Discipline {
-  implicit def NTArbitrary[F[_], A](implicit A: Arbitrary[A], F: Arbitrary ~> λ[α => Arbitrary[F[α]]]):
-      Arbitrary[F[A]] =
-    F(A)
-
+class CoEnvSpec extends Specification with CheckAll {
   implicit def coEnvArbitrary[E: Arbitrary, F[_]](
     implicit F: Arbitrary ~> λ[α => Arbitrary[F[α]]]):
       Arbitrary ~> λ[α => Arbitrary[CoEnv[E, F, α]]] =
@@ -45,5 +43,13 @@ class CoEnvSpec extends Specification with Discipline {
           F(arb).arbitrary.map(_.right))) ∘ (CoEnv(_))
     }
 
-  checkAll("CoEnv ⇔ Free", IsoTests(CoEnv.freeIso[Int, Exp]))
+  "CoEnv should satisfy relevant laws" in {
+    checkAll(equal.laws[CoEnv[String, Exp, Int]])
+    checkAll(traverse.laws[CoEnv[String, Exp, ?]])
+    // FIXME: These instances don’t fulfill the laws
+    // checkAll(monad.laws[CoEnv[String, Option, ?]])
+    // checkAll(monad.laws[CoEnv[String, NonEmptyList, ?]])
+  }
+
+  checkAlgebraIsoLaws(CoEnv.freeIso[Int, Exp])
 }

@@ -37,7 +37,14 @@ trait CofreeInstances {
         f(t.tail).map(Cofree(t.head, _))
     }
 
-  implicit def cofreeShow[F[_], A: Show](implicit F: (Show ~> λ[α => Show[F[α]]])):
+  implicit def cofreeEqual[F[_]](implicit F: Equal ~> (Equal ∘ F)#λ):
+      Equal ~> (Equal ∘ Cofree[F, ?])#λ =
+    new (Equal ~> (Equal ∘ Cofree[F, ?])#λ) {
+      def apply[A](eq: Equal[A]) = Equal.equal((a, b) =>
+        eq.equal(a.head, b.head) && F(cofreeEqual(F)(eq)).equal(a.tail, b.tail))
+    }
+
+  implicit def cofreeShow[F[_], A: Show](implicit F: Show ~> λ[α => Show[F[α]]]):
       Show[Cofree[F, A]] =
         Show.shows(cof => "(" + cof.head.show + ", " + cof.tail.shows + ")")
 }

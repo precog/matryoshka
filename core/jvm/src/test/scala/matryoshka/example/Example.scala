@@ -28,7 +28,6 @@ import org.scalacheck._
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
 import scalaz._, Scalaz._
-import scalaz.scalacheck.ScalaCheckBinding._
 import scalaz.scalacheck.ScalazProperties._
 
 sealed trait Example[A]

@@ -45,5 +45,6 @@ class PotentialFailureSpec extends Specification with ScalaCheck with CheckAll {
   "PotentialFailure should satisfy relevant laws" >> {
     checkAll(equal.laws[PotentialFailure[Fix, Exp, String, Int]])
     checkAll(bitraverse.laws[PotentialFailure[Fix, Exp, ?, ?]])
+    checkAll(traverse.laws[PotentialFailure[Fix, Exp, String, ?]])
   }
 }
