@@ -69,9 +69,9 @@ package object helpers extends Specification with Discipline {
   implicit def optionArbitrary: Arbitrary ~> (Arbitrary ∘ Option)#λ =
     new (Arbitrary ~> (Arbitrary ∘ Option)#λ) {
       def apply[A](arb: Arbitrary[A]) =
-        Arbitrary(Gen.oneOf(
-          None.point[Gen],
-          arb.arbitrary.map(_.some)))
+        Arbitrary(Gen.frequency(
+          ( 1, None.point[Gen]),
+          (75, arb.arbitrary.map(_.some))))
     }
 
   implicit def optionEqualNT: Equal ~> (Equal ∘ Option)#λ =
@@ -84,7 +84,17 @@ package object helpers extends Specification with Discipline {
         }
     }
 
-  implicit def nonEmptyListArbitrary: Arbitrary ~> (Arbitrary ∘ NonEmptyList)#λ =
+  implicit def eitherArbitrary[A: Arbitrary]:
+      Arbitrary ~> (Arbitrary ∘ (A \/ ?))#λ =
+    new (Arbitrary ~> (Arbitrary ∘ (A \/ ?))#λ) {
+      def apply[B](arb: Arbitrary[B]) =
+        Arbitrary(Gen.oneOf(
+          Arbitrary.arbitrary[A].map(-\/(_)),
+          arb.arbitrary.map(\/-(_))))
+    }
+
+  implicit def nonEmptyListArbitrary:
+      Arbitrary ~> (Arbitrary ∘ NonEmptyList)#λ =
     new (Arbitrary ~> (Arbitrary ∘ NonEmptyList)#λ) {
       def apply[A](arb: Arbitrary[A]) =
         Arbitrary((arb.arbitrary ⊛ Gen.listOf[A](arb.arbitrary))((h, t) =>

@@ -14,13 +14,15 @@ val scalazVersion = "7.2.1"
 val specs2Version = "3.7"
 
 val testDependencies = libraryDependencies ++= Seq(
-  "com.github.julien-truffaut" %% "monocle-law"      % monocleVersion % "test",
-  "org.typelevel"              %% "discipline"       % "0.4"          % "test",
-  "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion  % "test",
-  "org.specs2"        %% "specs2-core"               % specs2Version  % "test" force(),
-  "org.specs2"        %% "specs2-scalacheck"         % specs2Version  % "test" force(),
-  // `scalaz-scalacheck-binding` is built with `scalacheck` 1.12.5 so we are stuck with that version
-  "org.scalacheck"    %% "scalacheck"                % "1.12.5"       % "test" force()
+  "org.typelevel"  %% "discipline"                % "0.4"          % "test",
+  "com.github.julien-truffaut" %% "monocle-law"   % monocleVersion % "test",
+  "org.scalaz"     %% "scalaz-scalacheck-binding" % scalazVersion  % "test",
+  "org.typelevel"  %% "scalaz-specs2"             % "0.4.0"        % "test",
+  "org.specs2"     %% "specs2-core"               % specs2Version  % "test" force(),
+  "org.specs2"     %% "specs2-scalacheck"         % specs2Version  % "test" force(),
+  // `scalaz-scalack-binding` is built with `scalacheck` 1.12.5 so we are stuck
+  // with that version
+  "org.scalacheck" %% "scalacheck"                % "1.12.5"       % "test" force()
 )
 
 lazy val standardSettings = Seq(
@@ -66,17 +68,15 @@ lazy val standardSettings = Seq(
     "-Ywarn-value-discard"),
   scalacOptions in (Test, console) --= Seq(
     "-Yno-imports",
-    "-Ywarn-unused-import"
-  ),
+    "-Ywarn-unused-import"),
   wartremoverErrors in (Compile, compile) ++= warts, // Warts.all,
 
   console <<= console in Test, // console alias test:console
 
   libraryDependencies ++= Seq(
-    "com.github.julien-truffaut" %%% "monocle-core"     % monocleVersion % "compile, test",
-    "com.github.mpilquist" %%% "simulacrum"             % "0.7.0"        % "compile, test",
-    "org.scalaz"        %%% "scalaz-core"               % scalazVersion  % "compile, test"
-  ),
+    "com.github.julien-truffaut" %%% "monocle-core" % monocleVersion % "compile, test",
+    "org.scalaz"                 %%% "scalaz-core"  % scalazVersion  % "compile, test",
+    "com.github.mpilquist"       %%% "simulacrum"   % "0.7.0"        % "compile, test"),
 
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
 

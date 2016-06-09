@@ -22,9 +22,10 @@ import scala.Int
 
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
+import org.specs2.scalaz.{ScalazMatchers}
 import scalaz._, Scalaz._
 
-class StreamSpec extends Specification with ScalaCheck with specs2.scalaz.Matchers {
+class StreamSpec extends Specification with ScalaCheck with ScalazMatchers {
   /** Infinite sequence of Fibonacci numbers (at least until they overflow
     * int32)
     */

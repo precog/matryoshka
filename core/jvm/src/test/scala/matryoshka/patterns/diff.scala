@@ -28,6 +28,7 @@ import scala.{Int, List, Unit}
 import org.scalacheck._
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
+import org.specs2.scalaz.{ScalazMatchers}
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
@@ -62,7 +63,7 @@ class DiffLaws extends Specification with DiffArb with ScalaCheck with CheckAll 
   }
 }
 
-class DiffSpec extends Specification with DiffArb with specs2.scalaz.Matchers {
+class DiffSpec extends Specification with DiffArb with ScalazMatchers {
   "diff" should {
     "find non-recursive differences" in {
       NonRec[Mu[Example]]("a", 1).embed.paraMerga(NonRec[Mu[Example]]("b", 1).embed)(diff) must

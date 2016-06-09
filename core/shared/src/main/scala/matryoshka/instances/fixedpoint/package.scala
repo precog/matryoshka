@@ -36,6 +36,13 @@ package object fixedpoint {
     def intPrism = CoalgebraPrism[Option, Int](fromInt)(height)
   }
 
+  implicit class NatOps[T[_[_]]: Recursive: Corecursive](self: T[Option]) {
+    def +(other: T[Option]) = self.cata[T[Option]] {
+      case None => other
+      case o    => o.embed
+    }
+  }
+
   type Conat = Nu[Option]
   object Conat {
     val inf: Conat = ().ana[Nu, Option](_.some)
@@ -99,6 +106,10 @@ package object fixedpoint {
   object Partial {
     def now[A](a: A): Partial[A] = a.left[Nu[A \/ ?]].embed
     def later[A](partial: Partial[A]): Partial[A] = partial.right[A].embed
+
+    def delay[A](a: A): Option ~> (A \/ ?) = new (Option ~> (A \/ ?)) {
+      def apply[B](b: Option[B]) = b \/> a
+    }
 
     /** Canonical function that diverges.
       */

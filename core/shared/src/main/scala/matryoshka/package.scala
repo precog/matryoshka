@@ -425,7 +425,7 @@ package object matryoshka extends CofreeInstances with FreeInstances {
 
   /** The largest number of hops from a node to a leaf.
     */
-  def height[F[_]: Foldable]: F[Int] => Int = _.foldRight(0)(_ max _)
+  def height[F[_]: Foldable]: F[Int] => Int = _.foldRight(-1)(_ max _) + 1
 
   /** Combines a tuple of zippable functors.
     */

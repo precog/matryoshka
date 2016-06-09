@@ -23,9 +23,10 @@ import scala.Int
 
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
+import org.specs2.scalaz.{ScalazMatchers}
 import scalaz._, Scalaz._
 
-class ListSpec extends Specification with ScalaCheck with specs2.scalaz.Matchers {
+class ListSpec extends Specification with ScalaCheck with ScalazMatchers {
   "apply" should {
     "be equivalent to scala.List.apply" in {
       List(1, 2, 3, 4).cata(ListF.listIso.get) must
