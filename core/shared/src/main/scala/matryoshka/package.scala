@@ -17,7 +17,7 @@
 import matryoshka.Recursive.ops._
 import matryoshka.patterns.EnvT
 
-import scala.{Function, Int, None, Option, Unit}
+import scala.{Function, Int, Nil, None, Option, Some, Unit}
 import scala.collection.immutable.{List, ::}
 
 import monocle._
@@ -635,6 +635,19 @@ package object matryoshka extends CofreeInstances with FreeInstances {
       val c = relation(a1, a2)
       (c, (a2, c))
   }
+
+  def partition[A: Order]: Coalgebra[λ[α => Option[(A, (α, α))]], List[A]] = {
+    case Nil    => None
+    case h :: t => (h, (t.filter(_ <= h), t.filter(_ > h))).some
+  }
+
+  def join[A]: Algebra[λ[α => Option[(A, (α, α))]], List[A]] = {
+    case None              => Nil
+    case Some((a, (x, y))) => x ++ List(a) ++ y
+  }
+
+  // NB: Fake, because it’s not in-place
+  // def quicksort[A]: List[A] => List[A] = _.hylo(join, partition)
 
   /** Converts a fixed-point structure into a generic Tree.
     * One use of this is using `.cata(toTree).drawTree` rather than `.show` to
