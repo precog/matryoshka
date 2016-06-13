@@ -21,8 +21,10 @@ import scala.Unit
 import scalaz._, Scalaz._
 
 package object mutu {
+  type GAlgebra[W[_[_], _], F[_[_], _], E[_]] = F[W[E, ?], ?] ~> E
   type Algebra[F[_[_], _], E[_]] = F[E, ?] ~> E
   type AlgebraM[M[_], F[_[_], _], E[_]] = F[E, ?] ~> (M ∘ E)#λ
+  type GCoalgebra[M[_[_], _], F[_[_], _], A[_]] = A ~> F[M[A, ?], ?]
   type Coalgebra[F[_[_], _], A[_]] = A ~> F[A, ?]
   type CoalgebraM[M[_], F[_[_], _], A[_]] = A ~> (M ∘ F[A, ?])#λ
 
@@ -102,6 +104,18 @@ package object mutu {
         def apply[I](t: T[F, I]) =
           HTraverse[F].htraverse(cataM(φ)).apply(hproject(t)) >>= (φ(_))
       }
+
+    def para[F[_[_], _]: HFunctor, A[_]](
+      φ: GAlgebra[λ[(γ[_], α) => (T[F, ?] :*: γ)#λ[α]], F, A]):
+        T[F, ?] ~> A =
+      new (T[F, ?] ~> A) {
+        def apply[Q](t: T[F, Q]) =
+          φ(HFunctor[F].hmap[T[F, ?], (T[F, ?] :*: A)#λ](
+            new (T[F, ?] ~> (T[F, ?] :*: A)#λ) {
+              def apply[P](t: T[F, P]) = (t, para(φ).apply(t))
+            })(hproject[F, Q](t)))
+      }
+
   }
   object HRecursive {
     def apply[T[_[_[_], _], _]](implicit T: HRecursive[T]) = T
@@ -127,10 +141,10 @@ package object mutu {
   }
 
   sealed trait HCoproduct[F[_[_], _], G[_[_], _], H[_], E]
-  final case class Inl[F[_[_], _], G[_[_], _], H[_], E](out: F[H, E]) extends
-      HCoproduct[F, G, H, E]
-  final case class Inr[F[_[_], _], G[_[_], _], H[_], E](out: G[H, E]) extends
-      HCoproduct[F, G, H, E]
+  final case class Inl[F[_[_], _], G[_[_], _], H[_], E](out: F[H, E])
+      extends HCoproduct[F, G, H, E]
+  final case class Inr[F[_[_], _], G[_[_], _], H[_], E](out: G[H, E])
+      extends HCoproduct[F, G, H, E]
 
   object HCoproduct {
     implicit def equalHF[F[_[_], _]: EqualHF, G[_[_], _]: EqualHF]:
@@ -155,6 +169,10 @@ package object mutu {
             }
           }
       }
+  }
+
+  trait :*:[F[_], G[_]] {
+    type λ[A] = (F[A], G[A])
   }
 
   trait ^+^[F[_[_], _], G[_[_], _]] {

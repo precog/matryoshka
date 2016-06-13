@@ -52,11 +52,11 @@ trait HFunctor[H[_[_], _]] {
 object HFunctor {
   def apply[H[_[_], _]](implicit H: HFunctor[H]) = H
 
-  implicit def hfunctorFunctor[H[_[_], _]: HFunctor, F[_]: Functor]:
-      Functor[H[F, ?]] =
-    new Functor[H[F, ?]] {
-      def map[A, B](fa: H[F, A])(f: A => B) = HFunctor[H].fmap(fa)(f)
-    }
+  // implicit def hfunctorFunctor[H[_[_], _]: HFunctor, F[_]: Functor]:
+  //     Functor[H[F, ?]] =
+  //   new Functor[H[F, ?]] {
+  //     def map[A, B](fa: H[F, A])(f: A => B) = HFunctor[H].fmap(fa)(f)
+  //   }
 }
 
 trait HPointed[H[_[_], _]] extends HFunctor[H] {
@@ -74,11 +74,11 @@ trait HCopointed[H[_[_], _]] extends HFunctor[H] {
   def hcopoint[F[_]: Functor, A](hf: H[F, A]): F[A]
 }
 object HCopointed {
-  implicit def hcopointedCopointed[H[_[_], _]: HCopointed, F[_]: Copointed]:
-      Copointed[H[F, ?]] =
-    new Copointed[H[F, ?]] {
-      def copoint[A](hf: H[F, A]) = HCopointed[H].hcopoint(hf).copoint
-    }
+  // implicit def hcopointedCopointed[H[_[_], _]: HCopointed, F[_]: Copointed]:
+  //     Copointed[H[F, ?]] =
+  //   new Copointed[H[F, ?]] {
+  //     def copoint[A](hf: H[F, A]) = HCopointed[H].hcopoint(hf).copoint
+  //   }
 }
 
 // trait HFoldable[H[_[_], _]] {
