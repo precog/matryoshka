@@ -31,9 +31,9 @@ import scalaz.scalacheck.ScalazProperties._
 
 class EnvTSpec extends Specification with CheckAll {
   implicit def envTArbitrary[E: Arbitrary, F[_]](
-    implicit F: Arbitrary ~> (Arbitrary ∘ F)#λ):
-      Arbitrary ~> (Arbitrary ∘ EnvT[E, F, ?])#λ =
-    new (Arbitrary ~> (Arbitrary ∘ EnvT[E, F, ?])#λ) {
+    implicit F: Delay[Arbitrary, F]):
+      Delay[Arbitrary, EnvT[E, F, ?]] =
+    new Delay[Arbitrary, EnvT[E, F, ?]] {
       def apply[A](arb: Arbitrary[A]) =
         Arbitrary(
           (Arbitrary.arbitrary[E] ⊛ F(arb).arbitrary)((e, f) => EnvT((e, f))))

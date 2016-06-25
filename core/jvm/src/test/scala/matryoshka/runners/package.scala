@@ -29,15 +29,6 @@ import org.specs2.mutable.SpecificationLike
 
 package object runners extends SpecificationLike {
 
-  // Extracted from scalaz 7.1.x. Was removed in scalaz 7.2.0 because `~>` is not a typeclass but it's replacement
-  // `Eq1` is only defined in tests. We only use it for tests as well, so sticking it here for now.
-  // TODO: Consider using the version in `shapeless-scalaz` although that would require pulling in all of shapeless just
-  // for this.
-  implicit def cofreeEqual[A, F[_]](implicit A: Equal[A], F: Equal ~> λ[α => Equal[F[α]]]): Equal[Cofree[F, A]] =
-    Equal.equal{ (a, b) =>
-      A.equal(a.head, b.head) && F(cofreeEqual[A, F]).equal(a.tail, b.tail)
-    }
-
   abstract class RecRunner[F[_], A] {
     // NB: This is defined as a function to make the many definition sites
     //     slightly shorter.
@@ -57,12 +48,12 @@ package object runners extends SpecificationLike {
   }
   def testCorec[M[_], F[_]: Functor, A](
     a: A, r: CorecRunner[M, F, A])(
-    implicit Eq0: Equal ~> λ[α => Equal[F[α]]], S0: Show ~> λ[α => Show[F[α]]]):
+    implicit Eq0: Delay[Equal, F], S0: Delay[Show, F]):
       Result =
     r.run[Fix].apply(a).toResult and
     r.run[Mu].apply(a).toResult and
     r.run[Nu].apply(a).toResult and
-    // NB: No Equal for Free, so we can’t test it.
+    r.run[Free[?[_], Unit]](freeCorecursive[Unit], implicitly, implicitly).apply(a).toResult and
     r.run[Cofree[?[_], Unit]](cofreeCorecursive[Unit], implicitly, implicitly).apply(a).toResult
 
   abstract class FuncRunner[F[_], G[_]] {
@@ -71,12 +62,12 @@ package object runners extends SpecificationLike {
   }
   def testFunc[F[_], G[_]: Functor](
     t: Fix[F], r: FuncRunner[F, G])(
-    implicit F: Functor[F], Eq0: Equal ~> λ[α => Equal[G[α]]], S0: Show ~> λ[α => Show[G[α]]]):
+    implicit F: Functor[F], Eq0: Delay[Equal, G], S0: Delay[Show, G]):
       Result =
     r.run[Fix].apply(t).toResult and
     r.run[Mu].apply(t.convertTo[Mu]).toResult and
     r.run[Nu].apply(t.convertTo[Nu]).toResult and
-    // NB: No Equal for Free, so we can’t test it.
+    r.run[Free[?[_], Unit]].apply(t.convertTo[Free[?[_], Unit]](F, freeCorecursive[Unit])).toResult and
     r.run[Cofree[?[_], Unit]].apply(t.convertTo[Cofree[?[_], Unit]](F, cofreeCorecursive[Unit])).toResult
 
   abstract class TravRunner[M[_], F[_], G[_]] {
@@ -85,12 +76,12 @@ package object runners extends SpecificationLike {
   }
   def testTrav[M[_], F[_], G[_]: Functor](
     t: Fix[F], r: TravRunner[M, F, G])(
-    implicit F: Functor[F], Eq0: Equal ~> λ[α => Equal[G[α]]], S0: Show ~> λ[α => Show[G[α]]]):
+    implicit F: Functor[F], Eq0: Delay[Equal, G], S0: Delay[Show, G]):
       Result =
     r.run[Fix].apply(t).toResult and
     r.run[Mu].apply(t.convertTo[Mu]).toResult and
     r.run[Nu].apply(t.convertTo[Nu]).toResult and
-    // NB: No Equal for Free, so we can’t test it.
+    r.run[Free[?[_], Unit]].apply(t.convertTo[Free[?[_], Unit]](F, freeCorecursive[Unit])).toResult and
     r.run[Cofree[?[_], Unit]].apply(t.convertTo[Cofree[?[_], Unit]](F, cofreeCorecursive[Unit])).toResult
 
 }

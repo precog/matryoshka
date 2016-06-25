@@ -31,10 +31,9 @@ object CoEnv extends CoEnvInstances {
 }
 
 sealed abstract class CoEnvInstances extends CoEnvInstances0 {
-  implicit def equal[E: Equal, F[_]](
-    implicit F: Equal ~> λ[α => Equal[F[α]]]):
-      Equal ~> λ[α => Equal[CoEnv[E, F, α]]] =
-    new (Equal ~> λ[α => Equal[CoEnv[E, F, α]]]) {
+  implicit def equal[E: Equal, F[_]](implicit F: Delay[Equal, F]):
+      Delay[Equal, CoEnv[E, F, ?]] =
+    new Delay[Equal, CoEnv[E, F, ?]] {
       def apply[α](arb: Equal[α]) = {
         Equal.equal((a, b) => (a.run, b.run) match {
           case (-\/(e1), -\/(e2)) => e1 ≟ e2
@@ -44,15 +43,14 @@ sealed abstract class CoEnvInstances extends CoEnvInstances0 {
       }
     }
 
-  // TODO: Need to have lower-prio instances of Functor and Foldable, with
-  //       corresponding constraints on F.
-  implicit def traverse[F[_]: Traverse, A]: Traverse[CoEnv[A, F, ?]] =
-    new Traverse[CoEnv[A, F, ?]] {
-      def traverseImpl[G[_]: Applicative, R, B](
-        fa: CoEnv[A, F, R])(
-        f: R => G[B]):
-          G[CoEnv[A, F, B]] =
-        fa.run.traverse(_.traverse(f)).map(CoEnv(_))
+  // TODO: Need to have lower-prio instances of Bifoldable, with
+  //       corresponding constraint on F.
+  implicit def bitraverse[F[_]: Traverse, A]: Bitraverse[CoEnv[?, F, ?]] =
+    new Bitraverse[CoEnv[?, F, ?]] {
+      def bitraverseImpl[G[_]: Applicative, A, B, C, D](
+        fab: CoEnv[A, F, B])(
+        f: A ⇒ G[C], g: B ⇒ G[D]) =
+        fab.run.bitraverse(f, _.traverse(g)).map(CoEnv(_))
     }
 
   // TODO: write a test to ensure the two monad instances are identical
@@ -65,6 +63,12 @@ sealed abstract class CoEnvInstances extends CoEnvInstances0 {
 }
 
 sealed abstract class CoEnvInstances0 {
+  implicit def bifunctor[F[_]: Functor]: Bifunctor[CoEnv[?, F, ?]] =
+    new Bifunctor[CoEnv[?, F, ?]] {
+      def bimap[A, B, C, D](fab: CoEnv[A, F, B])(f: A ⇒ C, g: B ⇒ D) =
+        CoEnv(fab.run.bimap(f, _.map(g)))
+    }
+
   // implicit def monad[F[_]: Monad: Traverse, A]: Monad[CoEnv[A, F, ?]] =
   //   new Monad[CoEnv[A, F, ?]] {
   //     def bind[B, C](fa: CoEnv[A, F, B])(f: (B) ⇒ CoEnv[A, F, C]) =

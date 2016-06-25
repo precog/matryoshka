@@ -18,7 +18,6 @@ package matryoshka
 
 import scalaz._
 import scalaz.syntax.functor._
-import scalaz.syntax.show._
 
 trait CofreeInstances {
   implicit def cofreeRecursive[A]: Recursive[Cofree[?[_], A]] =
@@ -37,16 +36,19 @@ trait CofreeInstances {
         f(t.tail).map(Cofree(t.head, _))
     }
 
-  implicit def cofreeEqual[F[_]](implicit F: Equal ~> (Equal ∘ F)#λ):
-      Equal ~> (Equal ∘ Cofree[F, ?])#λ =
-    new (Equal ~> (Equal ∘ Cofree[F, ?])#λ) {
+  implicit def cofreeEqual[F[_]](implicit F: Delay[Equal, F]):
+      Delay[Equal, Cofree[F, ?]] =
+    new Delay[Equal, Cofree[F, ?]] {
       def apply[A](eq: Equal[A]) = Equal.equal((a, b) =>
         eq.equal(a.head, b.head) && F(cofreeEqual(F)(eq)).equal(a.tail, b.tail))
     }
 
-  implicit def cofreeShow[F[_], A: Show](implicit F: Show ~> λ[α => Show[F[α]]]):
-      Show[Cofree[F, A]] =
-        Show.shows(cof => "(" + cof.head.show + ", " + cof.tail.shows + ")")
+  implicit def cofreeShow[F[_]](implicit F: Delay[Show, F]):
+      Delay[Show, Cofree[F, ?]] =
+    new Delay[Show, Cofree[F, ?]] {
+      def apply[A](s: Show[A]) =
+        Show.show(cof => Cord("(") ++ s.show(cof.head) ++ Cord(", ") ++ F(cofreeShow(F)(s)).show(cof.tail) ++ Cord(")"))
+    }
 }
 
 object cofree extends CofreeInstances
