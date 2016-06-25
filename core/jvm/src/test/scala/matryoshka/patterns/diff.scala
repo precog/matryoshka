@@ -34,9 +34,9 @@ import scalaz.scalacheck.ScalazProperties._
 
 trait DiffArb {
   implicit def diffArbitrary[T[_[_]], F[_]](
-    implicit F: Arbitrary ~> λ[α => Arbitrary[F[α]]], T: Arbitrary[T[F]]):
-      Arbitrary ~> λ[α => Arbitrary[Diff[T, F, α]]] =
-    new (Arbitrary ~> λ[α => Arbitrary[Diff[T, F, α]]]) {
+    implicit T: Arbitrary[T[F]], F: Delay[Arbitrary, F]):
+      Delay[Arbitrary, Diff[T, F, ?]] =
+    new Delay[Arbitrary, Diff[T, F, ?]] {
       def apply[α](arb: Arbitrary[α]) =
         Arbitrary(Gen.oneOf(
           T.arbitrary.map(Same[T, F, α](_)),

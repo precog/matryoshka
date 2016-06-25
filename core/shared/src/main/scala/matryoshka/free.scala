@@ -32,10 +32,9 @@ trait FreeInstances {
           f(_).map(Free.liftF(_).join))
     }
 
-  implicit def freeEqual[F[_]: Functor](
-    implicit F: Equal ~> λ[α => Equal[F[α]]]):
-      Equal ~> λ[α => Equal[Free[F, α]]] =
-    new (Equal ~> λ[α => Equal[Free[F, α]]]) {
+  implicit def freeEqual[F[_]: Functor](implicit F: Delay[Equal, F]):
+      Delay[Equal, Free[F, ?]] =
+    new Delay[Equal, Free[F, ?]] {
       def apply[α](eq: Equal[α]) =
         Equal.equal((a, b) => (a.resume, b.resume) match {
           case (-\/(f1), -\/(f2)) =>
@@ -43,6 +42,13 @@ trait FreeInstances {
           case (\/-(a1), \/-(a2)) => eq.equal(a1, a2)
           case (_,       _)       => false
         })
+    }
+
+  implicit def freeShow[F[_]: Functor](implicit F: Delay[Show, F]):
+      Delay[Show, Free[F, ?]] =
+    new Delay[Show, Free[F, ?]] {
+      def apply[A](s: Show[A]) =
+        Show.show(_.resume.fold(F(freeShow[F].apply(s)).show(_), s.show(_)))
     }
 }
 

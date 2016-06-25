@@ -30,12 +30,10 @@ object Fix {
     def embed[F[_]: Functor](t: F[Fix[F]]) = Fix(t)
   }
 
-  implicit def equal[F[_]](implicit F: Equal ~> λ[α => Equal[F[α]]]):
-      Equal[Fix[F]] =
+  implicit def equal[F[_]](implicit F: Delay[Equal, F]): Equal[Fix[F]] =
     Equal.equal((a, b) => F(equal[F]).equal(a.unFix, b.unFix))
 
-  implicit def show[F[_]](implicit F: Show ~> λ[α => Show[F[α]]]):
-      Show[Fix[F]] =
+  implicit def show[F[_]](implicit F: Delay[Show, F]): Show[Fix[F]] =
     // NB: Doesn’t use Recursive.show in order to avoid the Functor constraint.
     Show.show(f => F(show[F]).show(f.unFix))
 }

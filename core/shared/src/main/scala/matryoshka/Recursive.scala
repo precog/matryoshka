@@ -235,8 +235,12 @@ import simulacrum.typeclass
 }
 
 object Recursive {
-  def show[T[_[_]]: Recursive, F[_]: Functor](
-    implicit F: Show ~> λ[α => Show[F[α]]]):
+  def equal[T[_[_]], F[_]: Functor](
+    implicit T: Recursive[T], F: Delay[Equal, F]):
+      Equal[T[F]] =
+    Equal.equal((a, b) => F(equal(Functor[F], T, F)).equal(T.project(a), T.project(b)))
+
+  def show[T[_[_]]: Recursive, F[_]: Functor](implicit F: Delay[Show, F]):
       Show[T[F]] =
     Show.show(Recursive[T].cata(_)(F(Cord.CordShow).show))
 }

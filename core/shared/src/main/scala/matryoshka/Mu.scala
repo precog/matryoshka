@@ -37,11 +37,9 @@ object Mu {
       })
   }
 
-  implicit def equal[F[_]: Functor](implicit F: Equal ~> λ[α => Equal[F[α]]]):
-      Equal[Mu[F]] =
-    Equal.equal((a, b) => F(equal[F]).equal(a.project, b.project))
+  implicit def equal[F[_]: Functor](implicit F: Delay[Equal, F]): Equal[Mu[F]] =
+    Recursive.equal[Mu, F]
 
-  implicit def show[F[_]: Functor](implicit F: Show ~> λ[α => Show[F[α]]]):
-      Show[Mu[F]] =
+  implicit def show[F[_]: Functor](implicit F: Delay[Show, F]): Show[Mu[F]] =
     Recursive.show[Mu, F]
 }

@@ -26,13 +26,13 @@ import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalaCheckBinding.{GenMonad => _, _}
 
 package object helpers extends Specification with Discipline {
-  implicit def NTArbitrary[F[_], A](
-    implicit A: Arbitrary[A], F: Arbitrary ~> λ[α => Arbitrary[F[α]]]):
+  implicit def delayArbitrary[F[_], A](
+    implicit A: Arbitrary[A], F: Delay[Arbitrary, F]):
       Arbitrary[F[A]] =
     F(A)
 
   implicit def corecArbitrary[T[_[_]]: Corecursive, F[_]: Functor](
-    implicit F: Arbitrary ~> λ[α => Arbitrary[F[α]]]):
+    implicit F: Delay[Arbitrary, F]):
       Arbitrary[T[F]] =
     Arbitrary(Gen.sized(size =>
       F(
@@ -41,10 +41,9 @@ package object helpers extends Specification with Discipline {
         else
           Arbitrary(Gen.resize(size - 1, corecArbitrary[T, F].arbitrary))).arbitrary.map(_.embed)))
 
-  implicit def freeArbitrary[F[_]](
-    implicit F: Arbitrary ~> (Arbitrary ∘ F)#λ):
-      Arbitrary ~> (Arbitrary ∘ Free[F, ?])#λ =
-    new (Arbitrary ~> (Arbitrary ∘ Free[F, ?])#λ) {
+  implicit def freeArbitrary[F[_]](implicit F: Delay[Arbitrary, F]):
+      Delay[Arbitrary, Free[F, ?]] =
+    new Delay[Arbitrary, Free[F, ?]] {
       def apply[α](arb: Arbitrary[α]) =
         Arbitrary(Gen.sized(size =>
           if (size <= 1)
@@ -55,10 +54,9 @@ package object helpers extends Specification with Discipline {
               F(freeArbitrary[F](F)(arb)).arbitrary.map(Free.roll))))
     }
 
-  implicit def cofreeArbitrary[F[_]](
-    implicit F: Arbitrary ~> (Arbitrary ∘ F)#λ):
-      Arbitrary ~> (Arbitrary ∘ Cofree[F, ?])#λ =
-    new (Arbitrary ~> (Arbitrary ∘ Cofree[F, ?])#λ) {
+  implicit def cofreeArbitrary[F[_]](implicit F: Delay[Arbitrary, F]):
+      Delay[Arbitrary, Cofree[F, ?]] =
+    new Delay[Arbitrary, Cofree[F, ?]] {
       def apply[A](arb: Arbitrary[A]) =
         Arbitrary(Gen.sized(size =>
           if (size <= 0)
@@ -66,62 +64,58 @@ package object helpers extends Specification with Discipline {
           else (arb.arbitrary ⊛ F(cofreeArbitrary(F)(arb)).arbitrary)(Cofree(_, _))))
     }
 
-  implicit def optionArbitrary: Arbitrary ~> (Arbitrary ∘ Option)#λ =
-    new (Arbitrary ~> (Arbitrary ∘ Option)#λ) {
+  implicit val optionArbitrary: Delay[Arbitrary, Option] =
+    new Delay[Arbitrary, Option] {
       def apply[A](arb: Arbitrary[A]) =
         Arbitrary(Gen.frequency(
           ( 1, None.point[Gen]),
           (75, arb.arbitrary.map(_.some))))
     }
 
-  implicit def optionEqualNT: Equal ~> (Equal ∘ Option)#λ =
-    new (Equal ~> (Equal ∘ Option)#λ) {
-      def apply[A](eq: Equal[A]) =
-        Equal.equal {
-          case (None,    None)    => true
-          case (Some(a), Some(b)) => eq.equal(a, b)
-          case (_,       _)       => false
-        }
-    }
+  implicit val optionEqualNT: Delay[Equal, Option] = new Delay[Equal, Option] {
+    def apply[A](eq: Equal[A]) =
+      Equal.equal {
+        case (None,    None)    => true
+        case (Some(a), Some(b)) => eq.equal(a, b)
+        case (_,       _)       => false
+      }
+  }
 
-  implicit def optionShowNT: Show ~> (Show ∘ Option)#λ =
-    new (Show ~> (Show ∘ Option)#λ) {
-      def apply[A](s: Show[A]) =
-        Show.show(_.fold(Cord("None"))(Cord("Some(") ++ s.show(_) ++ Cord(")")))
-    }
+  implicit val optionShowNT: Delay[Show, Option] = new Delay[Show, Option] {
+    def apply[A](s: Show[A]) =
+      Show.show(_.fold(Cord("None"))(Cord("Some(") ++ s.show(_) ++ Cord(")")))
+  }
 
-  implicit def eitherArbitrary[A: Arbitrary]:
-      Arbitrary ~> (Arbitrary ∘ (A \/ ?))#λ =
-    new (Arbitrary ~> (Arbitrary ∘ (A \/ ?))#λ) {
+  implicit def eitherArbitrary[A: Arbitrary]: Delay[Arbitrary, A \/ ?] =
+    new Delay[Arbitrary, A \/ ?] {
       def apply[B](arb: Arbitrary[B]) =
         Arbitrary(Gen.oneOf(
           Arbitrary.arbitrary[A].map(-\/(_)),
           arb.arbitrary.map(\/-(_))))
     }
 
-  implicit def nonEmptyListArbitrary:
-      Arbitrary ~> (Arbitrary ∘ NonEmptyList)#λ =
-    new (Arbitrary ~> (Arbitrary ∘ NonEmptyList)#λ) {
+  implicit def nonEmptyListArbitrary: Delay[Arbitrary, NonEmptyList] =
+    new Delay[Arbitrary, NonEmptyList] {
       def apply[A](arb: Arbitrary[A]) =
         Arbitrary((arb.arbitrary ⊛ Gen.listOf[A](arb.arbitrary))((h, t) =>
           NonEmptyList.nel(h, t.toIList)))
     }
 
-  implicit def nonEmptyListEqual: Equal ~> (Equal ∘ NonEmptyList)#λ =
-    new (Equal ~> (Equal ∘ NonEmptyList)#λ) {
+  implicit def nonEmptyListEqual: Delay[Equal, NonEmptyList] =
+    new Delay[Equal, NonEmptyList] {
       def apply[A](eq: Equal[A]) = NonEmptyList.nonEmptyListEqual(eq)
     }
 
 
   def checkAlgebraIsoLaws[F[_], A](iso: AlgebraIso[F, A])(
-    implicit FA: Arbitrary ~> (Arbitrary ∘ F)#λ, AA: Arbitrary[A], FE: Equal ~> (Equal ∘ F)#λ, AE: Equal[A]) =
+    implicit FA: Delay[Arbitrary, F], AA: Arbitrary[A], FE: Delay[Equal, F], AE: Equal[A]) =
     checkAll("algebra Iso", IsoTests(iso))
 
   def checkAlgebraPrismLaws[F[_], A](prism: AlgebraPrism[F, A])(
-    implicit FA: Arbitrary ~> (Arbitrary ∘ F)#λ, AA: Arbitrary[A], FE: Equal ~> (Equal ∘ F)#λ, AE: Equal[A]) =
+    implicit FA: Delay[Arbitrary, F], AA: Arbitrary[A], FE: Delay[Equal, F], AE: Equal[A]) =
     checkAll("algebra Prism", PrismTests(prism))
 
   def checkCoalgebraPrismLaws[F[_], A](prism: CoalgebraPrism[F, A])(
-    implicit FA: Arbitrary ~> (Arbitrary ∘ F)#λ, AA: Arbitrary[A], FE: Equal ~> (Equal ∘ F)#λ, AE: Equal[A]) =
+    implicit FA: Delay[Arbitrary, F], AA: Arbitrary[A], FE: Delay[Equal, F], AE: Equal[A]) =
     checkAll("coalgebra Prism", PrismTests(prism))
 }

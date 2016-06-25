@@ -31,9 +31,8 @@ import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
 class ListFSpec extends Specification with ScalaCheck with CheckAll {
-  implicit def listFArbitrary[A: Arbitrary]:
-      Arbitrary ~> (Arbitrary ∘ ListF[A, ?])#λ =
-    new (Arbitrary ~> (Arbitrary ∘ ListF[A, ?])#λ) {
+  implicit def listFArbitrary[A: Arbitrary]: Delay[Arbitrary, ListF[A, ?]] =
+    new Delay[Arbitrary, ListF[A, ?]] {
       def apply[B](arb: Arbitrary[B]) =
         Arbitrary(Gen.oneOf(
           NilF[A, B]().point[Gen],
