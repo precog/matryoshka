@@ -52,42 +52,40 @@ object Example {
     }
   }
 
-  implicit val equal: Equal ~> λ[α => Equal[Example[α]]] =
-    new (Equal ~> λ[α => Equal[Example[α]]]) {
-      def apply[α](eq: Equal[α]) = Equal.equal((a, b) => {
-        implicit val ieq = eq
-          (a, b) match {
-          case (Empty(),          Empty())          => true
-          case (NonRec(s1, i1),   NonRec(s2, i2))   => s1 ≟ s2 && i1 ≟ i2
-          case (SemiRec(i1, a1),  SemiRec(i2, a2))  =>
-            i1 ≟ i2 && eq.equal(a1, a2)
-          case (MultiRec(a1, b1), MultiRec(a2, b2)) =>
-            eq.equal(a1, a2) && eq.equal(b1, b2)
-          case (OneList(l),       OneList(r))       => l ≟ r
-          case (TwoLists(l1, l2), TwoLists(r1, r2)) => l1 ≟ r1 && l2 ≟ r2
-          case (_,                _)                => false
-        }
-      })
-    }
+  implicit val equal: Delay[Equal, Example] = new Delay[Equal, Example] {
+    def apply[α](eq: Equal[α]) = Equal.equal((a, b) => {
+      implicit val ieq = eq
+        (a, b) match {
+        case (Empty(),          Empty())          => true
+        case (NonRec(s1, i1),   NonRec(s2, i2))   => s1 ≟ s2 && i1 ≟ i2
+        case (SemiRec(i1, a1),  SemiRec(i2, a2))  =>
+          i1 ≟ i2 && eq.equal(a1, a2)
+        case (MultiRec(a1, b1), MultiRec(a2, b2)) =>
+          eq.equal(a1, a2) && eq.equal(b1, b2)
+        case (OneList(l),       OneList(r))       => l ≟ r
+        case (TwoLists(l1, l2), TwoLists(r1, r2)) => l1 ≟ r1 && l2 ≟ r2
+        case (_,                _)                => false
+      }
+    })
+  }
 
-  implicit val show: Show ~> λ[α => Show[Example[α]]] =
-    new (Show ~> λ[α => Show[Example[α]]]) {
-      def apply[α](s: Show[α]) = {
-        implicit val is = s
-        Show.show {
-          case Empty()          => Cord("Empty()")
-          case NonRec(s2, i2)   =>
-            Cord("NonRec(" + s2.shows + ", " + i2.shows + ")")
-          case SemiRec(i2, a2)   =>
-            Cord("SemiRec(") ++ i2.show ++ Cord(", ") ++ s.show(a2) ++ Cord(")")
-          case MultiRec(a2, b2) =>
-            Cord("MultiRec(") ++ s.show(a2) ++ Cord(", ") ++ s.show(b2) ++ Cord(")")
-          case OneList(r)       => Cord("OneList(") ++ r.show ++ Cord(")")
-          case TwoLists(r1, r2) =>
-            Cord("TwoLists(") ++ r1.show ++ Cord(", ") ++ r2.show ++ Cord(")")
-        }
+  implicit val show: Delay[Show, Example] = new Delay[Show, Example] {
+    def apply[α](s: Show[α]) = {
+      implicit val is = s
+      Show.show {
+        case Empty()          => Cord("Empty()")
+        case NonRec(s2, i2)   =>
+          Cord("NonRec(" + s2.shows + ", " + i2.shows + ")")
+        case SemiRec(i2, a2)   =>
+          Cord("SemiRec(") ++ i2.show ++ Cord(", ") ++ s.show(a2) ++ Cord(")")
+        case MultiRec(a2, b2) =>
+          Cord("MultiRec(") ++ s.show(a2) ++ Cord(", ") ++ s.show(b2) ++ Cord(")")
+        case OneList(r)       => Cord("OneList(") ++ r.show ++ Cord(")")
+        case TwoLists(r1, r2) =>
+          Cord("TwoLists(") ++ r1.show ++ Cord(", ") ++ r2.show ++ Cord(")")
       }
     }
+  }
 
   implicit val diffable: Diffable[Example] = new Diffable[Example] {
     def diffImpl[T[_[_]]: Recursive: Corecursive](l: T[Example], r: T[Example]):
@@ -105,8 +103,8 @@ object Example {
       }
   }
 
-  implicit val arbitrary: Arbitrary ~> λ[α => Arbitrary[Example[α]]] =
-    new (Arbitrary ~> λ[α => Arbitrary[Example[α]]]) {
+  implicit val arbitrary: Delay[Arbitrary, Example] =
+    new Delay[Arbitrary, Example] {
       def apply[α](arb: Arbitrary[α]) =
         Arbitrary(Gen.sized(size =>
           Gen.oneOf(

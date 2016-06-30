@@ -649,17 +649,20 @@ package object matryoshka extends CofreeInstances with FreeInstances {
 
   /** To avoid diverging implicits with fixed-point types, we need to defer the
     * lookup. We do this with a `NaturalTransformation` (although there
-    * are more type class-y solutions available now). This implicit allows those
-    * implicits to be looked up when searching for a traditionally-defined
-    * instance.
+    * are more type class-y solutions available now).
     */
-  implicit def NTEqual[F[_], A](implicit A: Equal[A], F: Equal ~> (Equal ∘ F)#λ):
+  type Delay[F[_], G[_]] = F ~> (F ∘ G)#λ
+
+  /** This implicit allows Delay implicits to be found when searching for a
+    * traditionally-defined instance.
+    */
+  implicit def delayEqual[F[_], A](implicit A: Equal[A], F: Delay[Equal, F]):
       Equal[F[A]] =
     F(A)
 
-  /** See `NTEqual`.
+  /** See `delayEqual`.
     */
-  implicit def NTShow[F[_], A](implicit A: Show[A], F: Show ~> (Show ∘ F)#λ):
+  implicit def delayShow[F[_], A](implicit A: Show[A], F: Delay[Show, F]):
       Show[F[A]] =
     F(A)
 

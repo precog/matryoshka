@@ -52,8 +52,8 @@ object ListF {
     case NilF()      => Seq.empty
   } (s => s.headOption.fold[ListF[A, Seq[A]]](NilF())(ConsF(_, s.tail)))
 
-  implicit def equal[A: Equal]: Equal ~> λ[β => Equal[ListF[A, β]]] =
-    new (Equal ~> λ[β => Equal[ListF[A, β]]]) {
+  implicit def equal[A: Equal]: Delay[Equal, ListF[A, ?]] =
+    new Delay[Equal, ListF[A, ?]] {
       def apply[β](eq: Equal[β]) = Equal.equal((a, b) => (a, b) match {
         case (ConsF(h1, t1), ConsF(h2, t2)) => h1 ≟ h2 && eq.equal(t1, t2)
         case (NilF(),        NilF())        => true
@@ -61,8 +61,8 @@ object ListF {
       })
     }
 
-  implicit def show[A: Show]: Show ~> λ[β => Show[ListF[A, β]]] =
-    new (Show ~> λ[β => Show[ListF[A, β]]]) {
+  implicit def show[A: Show]: Delay[Show, ListF[A, ?]] =
+    new Delay[Show, ListF[A, ?]] {
       def apply[β](show: Show[β]) = Show.show {
         case ConsF(h, t) => h.show ++ Cord("::") ++ show.show(t)
         case NilF()      => Cord("nil")

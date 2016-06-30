@@ -32,9 +32,9 @@ import scalaz.scalacheck.ScalazProperties._
 
 class PotentialFailureSpec extends Specification with ScalaCheck with CheckAll {
   implicit def potentialFailureArbitrary[T[_[_]], F[_], E: Arbitrary](
-    implicit F: Arbitrary ~> λ[α => Arbitrary[F[α]]], T: Arbitrary[T[F]]):
-      Arbitrary ~> λ[α => Arbitrary[PotentialFailure[T, F, E, α]]] =
-    new (Arbitrary ~> λ[α => Arbitrary[PotentialFailure[T, F, E, α]]]) {
+    implicit T: Arbitrary[T[F]], F: Delay[Arbitrary, F]):
+      Delay[Arbitrary, PotentialFailure[T, F, E, ?]] =
+    new Delay[Arbitrary, PotentialFailure[T, F, E, ?]] {
       def apply[α](arb: Arbitrary[α]) =
         Arbitrary(Gen.oneOf(
           T.arbitrary.map(Success[T, F, E, α](_)),

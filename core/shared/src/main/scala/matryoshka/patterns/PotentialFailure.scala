@@ -16,6 +16,8 @@
 
 package matryoshka.patterns
 
+import matryoshka.Delay
+
 import scalaz._, Scalaz._
 
 /** Generally similar to CoEnv (Free), this has an additional `success` case
@@ -33,9 +35,9 @@ final case class PartialFailure[T[_[_]], F[_], E, A] private[patterns](v: F[A])
 
 object PotentialFailure {
   implicit def potentialFailureEqual[T[_[_]], F[_], E: Equal](
-    implicit F: Equal ~> λ[α => Equal[F[α]]], T: Equal[T[F]]):
-      Equal ~> λ[α => Equal[PotentialFailure[T, F, E, α]]] =
-    new (Equal ~> λ[α => Equal[PotentialFailure[T, F, E, α]]]) {
+    implicit T: Equal[T[F]], F: Delay[Equal, F]):
+      Delay[Equal, PotentialFailure[T, F, E, ?]] =
+    new Delay[Equal, PotentialFailure[T, F, E, ?]] {
       def apply[α](eq: Equal[α]) =
         Equal.equal {
           case (Success(v1),        Success(v2))        => T.equal(v1, v2)

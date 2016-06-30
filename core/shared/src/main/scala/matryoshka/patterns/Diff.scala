@@ -65,9 +65,10 @@ sealed abstract class DiffInstances extends DiffInstances0 {
         }
     }
 
-  implicit def equal[T[_[_]], F[_]](implicit T: Equal[T[F]], F: Equal ~> λ[α => Equal[F[α]]]):
-      Equal ~> λ[α => Equal[Diff[T, F, α]]] =
-    new (Equal ~> λ[α => Equal[Diff[T, F, α]]]) {
+  implicit def equal[T[_[_]], F[_]](
+    implicit T: Equal[T[F]], F: Delay[Equal, F]):
+      Delay[Equal, Diff[T, F, ?]] =
+    new Delay[Equal, Diff[T, F, ?]] {
       def apply[α](eq: Equal[α]) =
         Equal.equal((a, b) => (a, b) match {
           case (Same(i1), Same(i2)) => T.equal(i1, i2)
@@ -84,9 +85,10 @@ sealed abstract class DiffInstances extends DiffInstances0 {
         })
     }
 
-  implicit def show[T[_[_]], F[_]: Functor: Foldable](implicit T: Show[T[F]], F: Show ~> λ[α => Show[F[α]]]):
-      Show ~> λ[α => Show[Diff[T, F, α]]] =
-    new (Show ~> λ[α => Show[Diff[T, F, α]]]) {
+  implicit def show[T[_[_]], F[_]: Functor: Foldable](
+    implicit T: Show[T[F]], F: Delay[Show, F]):
+      Delay[Show, Diff[T, F, ?]] =
+    new Delay[Show, Diff[T, F, ?]] {
       def apply[α](s: Show[α]) = Show.show {
         case Same(_) => Cord("...")
         case Similar(x) => F(s).show(x)

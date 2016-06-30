@@ -17,7 +17,8 @@
 package matryoshka.patterns
 
 import matryoshka._
-import matryoshka.exp._
+import matryoshka.exp.Exp
+import matryoshka.exp2.Exp2
 import matryoshka.helpers._
 import matryoshka.specs2.scalacheck._
 
@@ -32,9 +33,9 @@ import scalaz.scalacheck.ScalazProperties._
 
 class CoEnvSpec extends Specification with CheckAll {
   implicit def coEnvArbitrary[E: Arbitrary, F[_]](
-    implicit F: Arbitrary ~> λ[α => Arbitrary[F[α]]]):
-      Arbitrary ~> λ[α => Arbitrary[CoEnv[E, F, α]]] =
-    new (Arbitrary ~> λ[α => Arbitrary[CoEnv[E, F, α]]]) {
+    implicit F: Delay[Arbitrary, F]):
+      Delay[Arbitrary, CoEnv[E, F, ?]] =
+    new Delay[Arbitrary, CoEnv[E, F, ?]] {
       def apply[α](arb: Arbitrary[α]) =
         // NB: Not sure why this version doesn’t work.
         // Arbitrary.arbitrary[E \/ F[α]] ∘ (CoEnv(_))
@@ -45,7 +46,10 @@ class CoEnvSpec extends Specification with CheckAll {
 
   "CoEnv should satisfy relevant laws" in {
     checkAll(equal.laws[CoEnv[String, Exp, Int]])
-    checkAll(traverse.laws[CoEnv[String, Exp, ?]])
+    checkAll(bitraverse.laws[CoEnv[?, Exp, ?]])
+    // NB: This is to test the low-prio Bifunctor, so if Exp2 gets a Traverse
+    //     instance, this needs to change.
+    checkAll(bifunctor.laws[CoEnv[?, Exp2, ?]])
     // FIXME: These instances don’t fulfill the laws
     // checkAll(monad.laws[CoEnv[String, Option, ?]])
     // checkAll(monad.laws[CoEnv[String, NonEmptyList, ?]])
