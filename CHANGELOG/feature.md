@@ -1,0 +1,3 @@
+- add `Delay` type alias for the deferred type class instance pattern,
+- add `Bifunctor[CoEnv]`, `Delay[Show, Free]`, and `Equal[Recursive]`
+- change `Traverse[CoEnv]` to `Bitraverse`
