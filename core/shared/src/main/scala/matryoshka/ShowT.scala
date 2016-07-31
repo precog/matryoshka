@@ -16,21 +16,19 @@
 
 package matryoshka
 
+import java.lang.String
+import scala.inline
+
 import scalaz._
+import simulacrum.typeclass
 
-/** This is the simplest fixpoint type, implemented with general recursion.
-  */
-final case class Fix[F[_]](unFix: F[Fix[F]])
-object Fix {
-  implicit val recursive: Recursive[Fix] = new Recursive[Fix] {
-    def project[F[_]: Functor](t: Fix[F]) = t.unFix
-  }
+@typeclass trait ShowT[T[_[_]]] {
+  def show[F[_]: Functor](tf: T[F])(implicit del: Delay[Show, F]): Cord =
+    Cord(shows(tf))
 
-  implicit val corecursive: Corecursive[Fix] = new Corecursive[Fix] {
-    def embed[F[_]: Functor](t: F[Fix[F]]) = Fix(t)
-  }
+  def shows[F[_]: Functor](tf: T[F])(implicit del: Delay[Show, F]): String =
+    show(tf).toString
 
-  implicit val equalT: EqualT[Fix] = Recursive.equalT[Fix]
-
-  implicit val showT: ShowT[Fix] = Recursive.showT[Fix]
+  def showT[F[_]: Functor](delay: Delay[Show, F]): Show[T[F]] =
+    Show.show[T[F]](show[F](_)(Functor[F], delay))
 }

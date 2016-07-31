@@ -43,9 +43,7 @@ object Nu {
     override def ana[F[_]: Functor, A](a: A)(f: A => F[A]) = Nu(f, a)
   }
 
-  implicit def equal[F[_]: Functor](implicit F: Delay[Equal, F]): Equal[Nu[F]] =
-    Recursive.equal[Nu, F]
+  implicit val equalT: EqualT[Nu] = Recursive.equalT[Nu]
 
-  implicit def show[F[_]: Functor](implicit F: Delay[Show, F]): Show[Nu[F]] =
-    Recursive.show[Nu, F]
+  implicit val showT: ShowT[Nu] = Recursive.showT[Nu]
 }

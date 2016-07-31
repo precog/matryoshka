@@ -696,4 +696,12 @@ package object matryoshka extends CofreeInstances with FreeInstances {
 
   implicit def toFreeOps[F[_], A](a: Free[F, A]): FreeOps[F, A] =
     new FreeOps[F, A](a)
+
+  implicit def equalTEqual[T[_[_]], F[_]: Functor](implicit T: EqualT[T], F: Delay[Equal, F]):
+      Equal[T[F]] =
+    T.equalT[F](F)
+
+  implicit def showTShow[T[_[_]], F[_]: Functor](implicit T: ShowT[T], F: Delay[Show, F]):
+      Show[T[F]] =
+    T.showT[F](F)
 }
