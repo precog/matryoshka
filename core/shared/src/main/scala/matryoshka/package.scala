@@ -293,6 +293,16 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     h(a)
   }
 
+  /** `cataM ⋘ elgotGApoM`
+    *
+    * @group refolds
+    */
+  def elgotM[M[_]: Monad, F[_]: Traverse, A, B](a: A)(φ: F[B] => M[B], ψ: A => M[B \/ F[A]]):
+      M[B] = {
+    def h(a: A): M[B] = ψ(a) >>= (_.traverse(_.traverse(h) >>= φ).map(_.merge))
+    h(a)
+  }
+
   /** `elgotZygo ⋘ ana`
     *
     * @group refolds

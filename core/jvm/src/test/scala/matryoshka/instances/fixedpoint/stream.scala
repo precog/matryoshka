@@ -54,17 +54,17 @@ class StreamSpec extends Specification with ScalaCheck with ScalazMatchers {
   }
 
   "constantly" should {
-    "begin with the given value" ! prop { (i: Int) =>
+    "begin with the given value" >> prop { (i: Int) =>
       i.ana[Nu, (Int, ?)](constantly).head must_== i
     }
 
     // FIXME: These two blow up the stack with much larger inputs
 
-    "have the given value at an arbitrary point" ! prop { (i: Int, d: Int) =>
+    "have the given value at an arbitrary point" >> prop { (i: Int, d: Int) =>
       i.ana[Nu, (Int, ?)](constantly).drop(30000).head must equal(i)
     }
 
-    "have subsequence of the given value" ! prop { (i: Int, t: Int) =>
+    "have subsequence of the given value" >> prop { (i: Int, t: Int) =>
       i.ana[Nu, (Int, ?)](constantly).take(450) must
         equal(List.fill(450)(i))
     }

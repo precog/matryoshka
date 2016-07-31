@@ -29,21 +29,21 @@ class NatSpec extends Specification with ScalazMatchers {
   checkCoalgebraPrismLaws(Nat.intPrism)
 
   "+" should {
-    "sum values" ! prop { (a: Nat, b: Nat) =>
+    "sum values" >> prop { (a: Nat, b: Nat) =>
       val (ai, bi) = (a.cata(height), b.cata(height))
       (a + b).some must equal((ai + bi).anaM[Mu, Option, Option](Nat.fromInt))
     }
   }
 
   "min" should {
-    "pick smaller value" ! prop { (a: Nat, b: Nat) =>
+    "pick smaller value" >> prop { (a: Nat, b: Nat) =>
       val (ai, bi) = (a.cata(height), b.cata(height))
       (a min b).some must equal((ai min bi).anaM[Mu, Option, Option](Nat.fromInt))
     }
   }
 
   "max" should {
-    "pick larger value" ! prop { (a: Nat, b: Nat) =>
+    "pick larger value" >> prop { (a: Nat, b: Nat) =>
       val (ai, bi) = (a.cata(height), b.cata(height))
       (a max b).some must equal((ai max bi).anaM[Mu, Option, Option](Nat.fromInt))
     }

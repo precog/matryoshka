@@ -57,6 +57,9 @@ import simulacrum.{typeclass}
   def transAnaT[F[_]: Functor](t: T[F])(f: T[F] => T[F]): T[F] =
     map(f(t))(_.map(transAnaT(_)(f)))
 
+  def transApoT[F[_]: Functor](t: T[F])(f: T[F] => T[F] \/ T[F]): T[F] =
+    f(t).fold(Predef.identity, map(_)(_.map(transApoT(_)(f))))
+
   def transCata[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[G]] => G[T[G]]): T[G] =
     map(t)(ft => f(ft.map(transCata(_)(f))))
 

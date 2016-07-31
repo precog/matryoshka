@@ -410,26 +410,26 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "coelgot" >> {
-      "behave like cofCata ⋘ attributeAna" ! prop { (i: Int) =>
+      "behave like cofCata ⋘ attributeAna" >> prop { (i: Int) =>
         i.coelgot(eval.generalizeElgot[(Int, ?)], extractFactors) must equal(
           i.attributeAna(extractFactors).cofCata(eval.generalizeElgot[(Int, ?)]))
       }
     }
 
     "elgot" >> {
-      "behave like interpCata ⋘ freeAna" ! prop { (i: Int) =>
+      "behave like interpCata ⋘ freeAna" >> prop { (i: Int) =>
         i.elgot(eval, extractFactors.generalizeElgot[Int \/ ?]) must equal(
           i.freeAna(extractFactors.generalizeElgot[Int \/ ?]).interpretCata(eval))
       }
     }
 
     "generalizeElgot" >> {
-      "behave like cata on an algebra" ! prop { (i: Int) =>
+      "behave like cata on an algebra" >> prop { (i: Int) =>
         val x = i.ana[Fix, Exp](extractFactors).cata(eval)
         i.coelgot(eval.generalizeElgot[(Int, ?)], extractFactors) must equal(x)
       }
 
-      "behave like ana on an coalgebra" ! prop { (i: Int) =>
+      "behave like ana on an coalgebra" >> prop { (i: Int) =>
         val x = i.ana[Fix, Exp](extractFactors).cata(eval)
         i.elgot(eval, extractFactors.generalizeElgot[Int \/ ?]) must equal(x)
       }
@@ -440,7 +440,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       else Num(x)
 
     "generalizeCoalgebra" >> {
-      "behave like ana" ! prop { (i: Int) =>
+      "behave like ana" >> prop { (i: Int) =>
         i.apo(extractFactors.generalize[Fix[Exp] \/ ?]) must
           equal(i.ana[Fix, Exp](extractFactors))
       }
@@ -622,7 +622,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
             10.apoM(extract2sNot5[Fix]) must beNone
           }
         }
-        "apo should be an optimization over apoM and be semantically equivalent" ! prop { i: Int =>
+        "apo should be an optimization over apoM and be semantically equivalent" >> prop { i: Int =>
           if (i == 0) ok
           else i.apoM[Fix, Id, Exp](extract2s) must equal(i.apo[Fix, Exp](extract2s))
         }
@@ -663,7 +663,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
               })
           }
         }
-        "ana should be an optimization over anaM and be semantically equivalent" ! prop { i: Int =>
+        "ana should be an optimization over anaM and be semantically equivalent" >> prop { i: Int =>
           testCorec(
             i,
             new CorecRunner[Id, Exp, Int] {
@@ -676,7 +676,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "distAna" >> {
-      "behave like ana in gana" ! prop { (i: Int) =>
+      "behave like ana in gana" >> prop { (i: Int) =>
         testCorec(
           i,
           new CorecRunner[Id, Exp, Int] {
@@ -686,7 +686,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
           })
       }
 
-      "behave like ana in elgotAna" ! prop { (i: Int) =>
+      "behave like ana in elgotAna" >> prop { (i: Int) =>
         testCorec(
           i,
           new CorecRunner[Id, Exp, Int] {
@@ -698,7 +698,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "distApo" >> {
-      "behave like apo in gana" ! prop { (i: Int) =>
+      "behave like apo in gana" >> prop { (i: Int) =>
         (i.gana[Fix, Fix[Exp] \/ ?, Exp](distApo, extract2s) must
           equal(i.apo[Fix, Exp](extract2s))).toResult and
         (i.gana[Mu, Mu[Exp] \/ ?, Exp](distApo, extract2s) must
@@ -707,7 +707,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
           equal(i.apo[Nu, Exp](extract2s))).toResult
       }
 
-      "behave like elgotApo in elgotAna" ! prop { (i: Int) =>
+      "behave like elgotApo in elgotAna" >> prop { (i: Int) =>
         (i.elgotAna[Fix, Fix[Exp] \/ ?, Exp](distApo, extract2sAnd5[Fix]) must
           equal(i.elgotApo[Fix, Exp](extract2sAnd5[Fix]))).toResult and
         (i.elgotAna[Mu, Mu[Exp] \/ ?, Exp](distApo, extract2sAnd5[Mu]) must
@@ -718,18 +718,18 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "hylo" >> {
-      "factor and then evaluate" ! prop { (i: Int) =>
+      "factor and then evaluate" >> prop { (i: Int) =>
         i.hylo(eval, extractFactors) must equal(i)
       }
     }
 
     "ghylo" >> {
-      "behave like hylo with distCata/distAna" ! prop { (i: Int) =>
+      "behave like hylo with distCata/distAna" >> prop { (i: Int) =>
         i.ghylo[Id, Id, Exp, Int](distCata, distAna, eval, extractFactors) must
           equal(i.hylo(eval, extractFactors))
       }
 
-      "behave like chrono with distHisto/distFutu" ! prop { i: Int =>
+      "behave like chrono with distHisto/distFutu" >> prop { i: Int =>
         i.ghylo[Cofree[Exp, ?], Free[Exp, ?], Exp, Fix[Exp]](
           distHisto, distFutu, partialEval[Fix], extract2and3) must
           equal(i.chrono(partialEval[Fix], extract2and3))
@@ -901,7 +901,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "chrono" >> {
-      "factor and partially eval" ! prop { (i: Int) =>
+      "factor and partially eval" >> prop { (i: Int) =>
         i.chrono(partialEval[Fix], extract2and3) must equal(num(i))
         i.chrono(partialEval[Mu], extract2and3) must equal(num(i).convertTo[Mu])
         i.chrono(partialEval[Nu], extract2and3) must equal(num(i).convertTo[Nu])
@@ -960,7 +960,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
 
   "Attr" >> {
     "attrSelf" >> {
-      "annotate all" ! Prop.forAll(expGen) { exp =>
+      "annotate all" >> Prop.forAll(expGen) { exp =>
         // NB: This would look like
         //     >   exp.cata(attrSelf).universe must
         //     >     equal(exp.universe.map(_.cata(attrSelf)))
@@ -971,7 +971,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "convert" >> {
-      "forget unit" ! Prop.forAll(expGen) { exp =>
+      "forget unit" >> Prop.forAll(expGen) { exp =>
         // NB: This would look like
         //     >   exp.cata(attrK(())).convertTo[Fix] must equal(exp)
         //     if scalac could find the implicit
@@ -981,12 +981,12 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "foldMap" >> {
-      "zeros" ! Prop.forAll(expGen) { exp =>
+      "zeros" >> Prop.forAll(expGen) { exp =>
         Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrK(0)))(_ :: Nil) must
           equal(exp.universe.map(Function.const(0)))
       }
 
-      "selves" ! Prop.forAll(expGen) { exp =>
+      "selves" >> Prop.forAll(expGen) { exp =>
         Foldable[Cofree[Exp, ?]].foldMap(exp.cata[Cofree[Exp, Mu[Exp]]](attrSelf))(_ :: Nil) must
           equal(exp.universe)
       }

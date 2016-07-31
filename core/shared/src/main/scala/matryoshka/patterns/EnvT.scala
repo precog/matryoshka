@@ -35,7 +35,16 @@ final case class EnvT[E, W[_], A](run: (E, W[A])) { self =>
     envT((run._1, run._2.map(f)))
 }
 
-object EnvT extends EnvTInstances with EnvTFunctions
+object EnvT extends EnvTInstances with EnvTFunctions {
+  def hmap[F[_], G[_], E, A](f: F ~> G): EnvT[E, F, ?] ~> EnvT[E, G, ?] =
+    new (EnvT[E, F, ?] ~> EnvT[E, G, ?]) {
+      def apply[A](env: EnvT[E, F, A]) = EnvT((env.ask, f(env.lower)))
+    }
+
+  def lower[F[_], E]: EnvT[E, F, ?] ~> F = new (EnvT[E, F, ?] ~> F) {
+    def apply[A](fa: EnvT[E, F, A]): F[A] = fa.lower
+  }
+}
 
 sealed abstract class EnvTInstances1 {
   implicit def envTFunctor[E, W[_]](implicit W0: Functor[W]):
@@ -63,6 +72,14 @@ sealed abstract class EnvTInstances extends EnvTInstances0 {
     new Delay[Equal, EnvT[E, W, ?]] {
       def apply[A](eq: Equal[A]) =
         Equal.equal((a, b) => a.ask ≟ b.ask && W(eq).equal(a.lower, b.lower))
+    }
+
+  implicit def envtShow[E: Show, F[_]](implicit F: Delay[Show, F]):
+      Delay[Show, EnvT[E, F, ?]] =
+    new Delay[Show, EnvT[E, F, ?]] {
+      def apply[A](sh: Show[A]) =
+        Show.show(envt =>
+          Cord("EnvT(") ++ envt.ask.show ++ Cord(", ") ++ F(sh).show(envt.lower) ++ Cord(")"))
     }
 }
 
@@ -98,5 +115,4 @@ private trait EnvTComonad[E, W[_]] extends Comonad[EnvT[E, W, ?]] with EnvTCobin
   implicit def W: Comonad[W]
 
   def copoint[A](p: EnvT[E, W, A]): A = p.lower.copoint
-
 }
