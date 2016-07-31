@@ -40,4 +40,27 @@ package object patterns {
               Same[T, F, DiffT[T, F]](l)
             else Similar(merged)).embed
         }))
+
+  /** Algebra transformation that allows a standard algebra to be used on a
+    * CoEnv structure (given a function that converts the leaves to the result
+    * type).
+    */
+  def interpret[F[_], A, B](f: A => B, φ: Algebra[F, B]):
+      Algebra[CoEnv[A, F, ?], B] =
+    interpretM[Id, F, A, B](f, φ)
+
+  def interpretM[M[_], F[_], A, B](f: A => M[B], φ: AlgebraM[M, F, B]):
+      AlgebraM[M, CoEnv[A, F, ?], B] =
+    ginterpretM[Id, M, F, A, B](f, φ)
+
+  def ginterpretM[W[_], M[_], F[_], A, B](f: A => M[B], φ: GAlgebraM[W, M, F, B]):
+      GAlgebraM[W, M, CoEnv[A, F, ?], B] =
+    _.run.fold(f, φ)
+
+  /** A specialization of `interpret` where the leaves are of the result type.
+    * This folds a Free that you may think of as “already partially-folded”.
+    * It’s also the fold of a decomposed `elgot`.
+    */
+  def recover[F[_], A](φ: Algebra[F, A]): Algebra[CoEnv[A, F, ?], A] =
+    interpret(x => x, φ)
 }
