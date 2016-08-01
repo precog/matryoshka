@@ -47,10 +47,13 @@ class CoEnvSpec extends Specification with CheckAll {
   "CoEnv should satisfy relevant laws" in {
     checkAll(equal.laws[CoEnv[String, Exp, Int]])
     checkAll(bitraverse.laws[CoEnv[?, Exp, ?]])
+    checkAll(traverse.laws[CoEnv[Int, Exp, ?]])
     // NB: This is to test the low-prio Bi-functor/-foldable instances, so if
     //     Exp2 gets a Traverse instance, this needs to change.
     checkAll(bifunctor.laws[CoEnv[?, Exp2, ?]])
+    checkAll(functor.laws[CoEnv[Int, Exp2, ?]])
     checkAll(bifoldable.laws[CoEnv[?, Exp2, ?]])
+    checkAll(foldable.laws[CoEnv[Int, Exp2, ?]])
     // FIXME: These instances don’t fulfill the laws
     // checkAll(monad.laws[CoEnv[String, Option, ?]])
     // checkAll(monad.laws[CoEnv[String, NonEmptyList, ?]])

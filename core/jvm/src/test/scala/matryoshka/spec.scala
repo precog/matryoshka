@@ -132,6 +132,12 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       case _ => t.map(_.head).embed
     }
 
+  val eval: Algebra[Exp, Int] = {
+    case Num(x) => x
+    case Mul(x, y) => x*y
+    case _ => Predef.???
+  }
+
   checkAlgebraIsoLaws(recCorecIso[Mu, Exp])
   checkAlgebraIsoLaws(lambekIso[Mu, Exp])
 
@@ -346,12 +352,6 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       "fold stuff" in {
         mul(num(0), num(1)).foldMap(_ :: Nil) must equal(mul(num(0), num(1)) :: num(0) :: num(1) :: Nil)
       }
-    }
-
-    val eval: Algebra[Exp, Int] = {
-      case Num(x) => x
-      case Mul(x, y) => x*y
-      case _ => Predef.???
     }
 
     val findConstants: Exp[List[Int]] => List[Int] = {
@@ -990,6 +990,44 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         Foldable[Cofree[Exp, ?]].foldMap(exp.cata[Cofree[Exp, Mu[Exp]]](attrSelf))(_ :: Nil) must
           equal(exp.universe)
       }
+    }
+  }
+
+  "substitute" should {
+    "replace equivalent forms" in {
+      val exp = mul(mul(num(12), mul(num(12), num(8))), mul(num(12), num(8)))
+      val res = mul(mul(num(12), num(92)), num(92))
+      exp.transApoT(substitute(mul(num(12), num(8)), num(92))) must equal(res)
+    }
+
+    "replace equivalent forms without re-replacing created forms" in {
+      val exp = mul(mul(num(12), mul(num(12), num(8))), mul(num(12), num(8)))
+      val res = mul(mul(num(12), num(8)), num(8))
+      exp.transApoT(substitute(mul(num(12), num(8)), num(8))) must equal(res)
+    }
+
+    "replace equivalent forms without re-replacing inserted forms" in {
+      val exp = mul(mul(num(12), num(8)), num(8))
+      val res = mul(mul(num(12), mul(num(12), num(8))), mul(num(12), num(8)))
+      exp.transApoT(substitute(num(8), mul(num(12), num(8)))) must equal(res)
+    }
+  }
+
+  "recover" should {
+    import matryoshka.patterns._
+
+    "handle “partially-folded” values" in {
+      val exp =
+        CoEnv[Int, Exp, Fix[CoEnv[Int, Exp, ?]]](\/-(Mul(
+          CoEnv[Int, Exp, Fix[CoEnv[Int, Exp, ?]]](\/-(Mul(
+            CoEnv(2.left[Exp[Fix[CoEnv[Int, Exp, ?]]]]).embed,
+            CoEnv[Int, Exp, Fix[CoEnv[Int, Exp, ?]]](\/-(Mul(
+              CoEnv[Int, Exp, Fix[CoEnv[Int, Exp, ?]]](Num(3).right[Int]).embed,
+              CoEnv(4.left[Exp[Fix[CoEnv[Int, Exp, ?]]]]).embed))).embed))).embed,
+          CoEnv[Int, Exp, Fix[CoEnv[Int, Exp, ?]]](\/-(Mul(
+            CoEnv[Int, Exp, Fix[CoEnv[Int, Exp, ?]]](Num(5).right[Int]).embed,
+            CoEnv(6.left[Exp[Fix[CoEnv[Int, Exp, ?]]]]).embed))).embed))).embed
+      exp.cata(recover(eval)) must equal(720)
     }
   }
 

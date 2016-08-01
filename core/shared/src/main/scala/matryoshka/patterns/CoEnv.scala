@@ -53,7 +53,8 @@ sealed abstract class CoEnvInstances extends CoEnvInstances0 {
         fab.run.bitraverse(f, _.traverse(g)).map(CoEnv(_))
     }
 
-  implicit def traverse[F[_]: Traverse] = bitraverse[F].rightTraverse
+  implicit def traverse[F[_]: Traverse, E]: Traverse[CoEnv[E, F, ?]] =
+    bitraverse[F].rightTraverse
 
   // TODO: write a test to ensure the two monad instances are identical
   // implicit def monadCo[F[_]: Applicative: Comonad, A]: Monad[CoEnv[A, F, ?]] =
@@ -71,7 +72,8 @@ sealed abstract class CoEnvInstances0 {
         CoEnv(fab.run.bimap(f, _.map(g)))
     }
 
-  implicit def functor[F[_]: Functor] = bifunctor[F].rightFunctor
+  implicit def functor[F[_]: Functor, E]: Functor[CoEnv[E, F, ?]] =
+    bifunctor[F].rightFunctor
 
   implicit def bifoldable[F[_]: Foldable]: Bifoldable[CoEnv[?, F, ?]] =
     new Bifoldable[CoEnv[?, F, ?]] {
@@ -85,7 +87,8 @@ sealed abstract class CoEnvInstances0 {
         fa.run.fold(f(_, z), _.foldRight(z)(g))
     }
 
-  implicit def foldable[F[_]: Foldable] = bifoldable[F].rightFoldable
+  implicit def foldable[F[_]: Foldable, E]: Foldable[CoEnv[E, F, ?]] =
+    bifoldable[F].rightFoldable
 
   // implicit def monad[F[_]: Monad: Traverse, A]: Monad[CoEnv[A, F, ?]] =
   //   new Monad[CoEnv[A, F, ?]] {
