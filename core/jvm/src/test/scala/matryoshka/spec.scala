@@ -16,7 +16,7 @@
 
 package matryoshka
 
-import Recursive.ops._, FunctorT.ops._
+import Recursive.ops._, FunctorT.ops._, TraverseT.nonInheritedOps._
 import matryoshka.exp._
 import matryoshka.exp2._
 import matryoshka.helpers._
@@ -27,7 +27,7 @@ import java.lang.String
 import scala.{Boolean, Function, Int, None, Option, Predef, Symbol, Unit}
 import scala.collection.immutable.{List, Map, Nil, ::}
 
-import monocle.law.discipline._
+// import monocle.law.discipline._
 import org.scalacheck._
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
@@ -138,11 +138,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     case _ => Predef.???
   }
 
-  checkAlgebraIsoLaws(recCorecIso[Mu, Exp])
-  checkAlgebraIsoLaws(lambekIso[Mu, Exp])
-
-  // TODO: add checks for the prism versions
-  checkAll("fold Iso", IsoTests(foldIso[Mu, Exp, Mu[Exp]](lambekIso)))
+  checkAlgebraIsoLaws("recCorec", recCorecIso[Mu, Exp])
+  checkAlgebraIsoLaws("lambek", lambekIso[Mu, Exp])
 
   "Recursive" >> {
     "isLeaf" >> {
@@ -990,6 +987,27 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         Foldable[Cofree[Exp, ?]].foldMap(exp.cata[Cofree[Exp, Mu[Exp]]](attrSelf))(_ :: Nil) must
           equal(exp.universe)
       }
+    }
+  }
+
+  "count" should {
+    "return the number of instances in the structure" in {
+      val exp = mul(mul(num(12), mul(num(12), num(8))), mul(num(12), num(8)))
+      exp.para(count(num(12))) must equal(3)
+    }
+  }
+
+  "size" should {
+    "return the number of nodes in the structure" in {
+      val exp = mul(mul(num(12), mul(num(12), num(8))), mul(num(12), num(8)))
+      exp.cata(matryoshka.size) must equal(9)
+    }
+  }
+
+  "height" should {
+    "return the longest path from root to leaf" in {
+      val exp = mul(mul(num(12), mul(num(12), num(8))), mul(num(12), num(8)))
+      exp.cata(height) must equal(3)
     }
   }
 

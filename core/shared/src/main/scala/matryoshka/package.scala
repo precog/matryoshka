@@ -418,7 +418,19 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     */
   def distGApo[F[_]: Functor, B](g: B => F[B]) =
     new DistributiveLaw[B \/ ?, F] {
-      def apply[α](m: B \/ F[α]) = m.fold(g(_) ∘ (_.left), _ ∘ (_.right))
+      def apply[α](m: B \/ F[α]) = m.bitraverse(g(_), x => x)
+    }
+
+  /** Allows for more complex unfolds, like
+    * `futuGApo(φ0: B => F[B], φ: A => F[EitherT[Free[F, ?], B, A]])`
+    *
+    * @group dist
+    */
+  def distGApoT[F[_]: Functor, M[_]: Functor, B](
+    g: B => F[B], k: DistributiveLaw[M, F]) =
+    new DistributiveLaw[EitherT[M, B, ?], F] {
+      def apply[α](m: EitherT[M, B, F[α]]) =
+        k(m.run.map(distGApo(g).apply(_))).map(EitherT(_))
     }
 
   /**

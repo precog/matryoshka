@@ -26,7 +26,7 @@ import org.specs2.scalaz.ScalazMatchers
 import scalaz._, Scalaz._
 
 class NatSpec extends Specification with ScalazMatchers {
-  checkCoalgebraPrismLaws(Nat.intPrism)
+  checkCoalgebraPrismLaws("Nat ⇔ Int", Nat.intPrism)
 
   "+" should {
     "sum values" >> prop { (a: Nat, b: Nat) =>

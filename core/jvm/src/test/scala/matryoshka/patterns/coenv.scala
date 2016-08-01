@@ -25,25 +25,11 @@ import matryoshka.specs2.scalacheck._
 import java.lang.{String}
 import scala.{Int}
 
-import org.scalacheck._
 import org.specs2.mutable._
 import scalaz._, Scalaz._
-import scalaz.scalacheck.ScalaCheckBinding.{GenMonad => _, _}
 import scalaz.scalacheck.ScalazProperties._
 
 class CoEnvSpec extends Specification with CheckAll {
-  implicit def coEnvArbitrary[E: Arbitrary, F[_]](
-    implicit F: Delay[Arbitrary, F]):
-      Delay[Arbitrary, CoEnv[E, F, ?]] =
-    new Delay[Arbitrary, CoEnv[E, F, ?]] {
-      def apply[α](arb: Arbitrary[α]) =
-        // NB: Not sure why this version doesn’t work.
-        // Arbitrary.arbitrary[E \/ F[α]] ∘ (CoEnv(_))
-        Arbitrary(Gen.oneOf(
-          Arbitrary.arbitrary[E].map(_.left),
-          F(arb).arbitrary.map(_.right))) ∘ (CoEnv(_))
-    }
-
   "CoEnv should satisfy relevant laws" in {
     checkAll(equal.laws[CoEnv[String, Exp, Int]])
     checkAll(bitraverse.laws[CoEnv[?, Exp, ?]])
@@ -59,5 +45,5 @@ class CoEnvSpec extends Specification with CheckAll {
     // checkAll(monad.laws[CoEnv[String, NonEmptyList, ?]])
   }
 
-  checkAlgebraIsoLaws(CoEnv.freeIso[Int, Exp])
+  checkAlgebraIsoLaws("CoEnv ⇔ Free", CoEnv.freeIso[Int, Exp])
 }

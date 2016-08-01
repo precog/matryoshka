@@ -74,7 +74,7 @@ sealed abstract class EnvTInstances extends EnvTInstances0 {
         Equal.equal((a, b) => a.ask ≟ b.ask && W(eq).equal(a.lower, b.lower))
     }
 
-  implicit def envtShow[E: Show, F[_]](implicit F: Delay[Show, F]):
+  implicit def show[E: Show, F[_]](implicit F: Delay[Show, F]):
       Delay[Show, EnvT[E, F, ?]] =
     new Delay[Show, EnvT[E, F, ?]] {
       def apply[A](sh: Show[A]) =
