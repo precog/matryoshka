@@ -18,17 +18,16 @@ package matryoshka
 
 import matryoshka.exp.Exp
 import matryoshka.helpers._
-import matryoshka.instances.fixedpoint.Nat
 import matryoshka.patterns.CoEnv
 import matryoshka.specs2.scalacheck._
 
-import scala.{Int, Option}
+import scala.Int
 
 import org.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
-class FixSpec extends Specification with CheckAll {
+class FixSpec extends Specification with CheckAll with AlgebraChecks {
   "Fix" should {
     "satisfy relevant laws" in {
       checkAll(equal.laws[Fix[Exp]])
@@ -36,5 +35,4 @@ class FixSpec extends Specification with CheckAll {
   }
 
   checkFoldIsoLaws[Fix, CoEnv[Int, Exp, ?], Free[Exp, Int]]("Fix", CoEnv.freeIso)
-  checkUnfoldPrismLaws[Fix, Option, Int]("Fix", Nat.intPrism)
 }

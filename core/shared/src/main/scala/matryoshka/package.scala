@@ -17,7 +17,7 @@
 import matryoshka.Recursive.ops._
 import matryoshka.patterns.EnvT
 
-import scala.{Function, Int, None, Option, Unit}
+import scala.{Boolean, Function, Int, None, Option, Unit}
 import scala.collection.immutable.{List, ::}
 
 import monocle._
@@ -667,14 +667,18 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   def toTree[F[_]: Functor: Foldable]: Algebra[F, Tree[F[Unit]]] =
     x => Tree.Node(x.void, x.toStream)
 
+  /** Returns (on the left) the first element that passes `f`.
+    */
+  def find[T[_[_]], F[_]](f: T[F] => Boolean): T[F] => T[F] \/ T[F] =
+    tf => if (f(tf)) tf.left else tf.right
+
   /** Replaces all instances of `original` in the structure with `replacement`.
     *
     * @group algebras
     */
   def substitute[T[_[_]], F[_]](original: T[F], replacement: T[F])(implicit T: Equal[T[F]]):
       T[F] => T[F] \/ T[F] =
-   tf => if (tf ≟ original) replacement.left else tf.right
-
+    find[T, F](_ ≟ original)(_).leftMap(_ => replacement)
 
   sealed abstract class ∘[F[_], G[_]] { type λ[A] = F[G[A]] }
 

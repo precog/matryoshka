@@ -54,7 +54,7 @@ class Exp2Spec extends Specification with CheckAll {
   }
 }
 
-class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers with Discipline {
+class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers with Discipline with AlgebraChecks {
   val example1ƒ: Exp[Option[Int]] => Option[Int] = {
     case Num(v)           => v.some
     case Mul(left, right) => (left ⊛ right)(_ * _)
@@ -1008,6 +1008,24 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     "return the longest path from root to leaf" in {
       val exp = mul(mul(num(12), mul(num(12), num(8))), mul(num(12), num(8)))
       exp.cata(height) must equal(3)
+    }
+  }
+
+  "find" should {
+    val exp = mul(mul(num(10), mul(num(11), num(7))), mul(num(12), num(8)))
+
+    "return root-most instance that passes" in {
+      exp.transAnaTM(matryoshka.find[Fix, Exp] {
+        case Embed(Mul(Embed(Num(_)), _)) => true
+        case _                            => false
+      }) must equal(mul(num(10), mul(num(11), num(7))).left)
+    }
+
+    "return leaf-most instance that passes" in {
+      exp.transCataTM(matryoshka.find[Fix, Exp] {
+        case Embed(Mul(Embed(Num(_)), _)) => true
+        case _                            => false
+      }) must equal(mul(num(11), num(7)).left)
     }
   }
 

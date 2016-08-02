@@ -18,17 +18,15 @@ package matryoshka
 
 import matryoshka.patterns.CoEnv
 
-import java.lang.String
 import scala.{None, Option, Some}
 
-import monocle.law.discipline._
 import org.scalacheck._
 import org.specs2.mutable._
 import org.typelevel.discipline.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalaCheckBinding.{GenMonad => _, _}
 
-package object helpers extends Specification with Discipline {
+package object helpers extends SpecificationLike with Discipline {
   implicit def delayArbitrary[F[_], A](
     implicit A: Arbitrary[A], F: Delay[Arbitrary, F]):
       Arbitrary[F[A]] =
@@ -120,35 +118,4 @@ package object helpers extends Specification with Discipline {
     new Delay[Equal, NonEmptyList] {
       def apply[A](eq: Equal[A]) = NonEmptyList.nonEmptyListEqual(eq)
     }
-
-
-  def checkFoldIsoLaws[T[_[_]]: Recursive: Corecursive: EqualT, F[_]: Functor, A](
-    name: String, iso: AlgebraIso[F, A])(
-    implicit FA: Delay[Arbitrary, F], AA: Arbitrary[A], FE: Delay[Equal, F], AE: Equal[A]) =
-    checkAll(name + " Iso", IsoTests(foldIso[T, F, A](iso)))
-
-  def checkFoldPrismLaws[T[_[_]]: Recursive: Corecursive: EqualT, F[_]: Traverse, A](
-    name: String, prism: AlgebraPrism[F, A])(
-    implicit FA: Delay[Arbitrary, F], AA: Arbitrary[A], FE: Delay[Equal, F], AE: Equal[A]) =
-    checkAll(name + " Prism", PrismTests(foldPrism(prism)))
-
-  def checkUnfoldPrismLaws[T[_[_]]: Recursive: Corecursive: EqualT, F[_]: Traverse, A](
-    name: String, prism: CoalgebraPrism[F, A])(
-    implicit FA: Delay[Arbitrary, F], AA: Arbitrary[A], FE: Delay[Equal, F], AE: Equal[A]) =
-    checkAll(name + " Prism", PrismTests(unfoldPrism(prism)))
-
-  def checkAlgebraIsoLaws[F[_], A](
-    name: String, iso: AlgebraIso[F, A])(
-    implicit FA: Delay[Arbitrary, F], AA: Arbitrary[A], FE: Delay[Equal, F], AE: Equal[A]) =
-    checkAll(name + " Iso", IsoTests(iso))
-
-  def checkAlgebraPrismLaws[F[_], A](
-    name: String, prism: AlgebraPrism[F, A])(
-    implicit FA: Delay[Arbitrary, F], AA: Arbitrary[A], FE: Delay[Equal, F], AE: Equal[A]) =
-    checkAll(name + " Prism", PrismTests(prism))
-
-  def checkCoalgebraPrismLaws[F[_], A](
-    name: String, prism: CoalgebraPrism[F, A])(
-    implicit FA: Delay[Arbitrary, F], AA: Arbitrary[A], FE: Delay[Equal, F], AE: Equal[A]) =
-    checkAll(name + " Prism", PrismTests(prism))
 }

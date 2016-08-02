@@ -29,7 +29,7 @@ import org.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
-class CoEnvSpec extends Specification with CheckAll {
+class CoEnvSpec extends Specification with CheckAll with AlgebraChecks {
   "CoEnv should satisfy relevant laws" in {
     checkAll(equal.laws[CoEnv[String, Exp, Int]])
     checkAll(bitraverse.laws[CoEnv[?, Exp, ?]])

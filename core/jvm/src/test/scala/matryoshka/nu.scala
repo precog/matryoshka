@@ -18,17 +18,16 @@ package matryoshka
 
 import matryoshka.exp.Exp
 import matryoshka.helpers._
-import matryoshka.instances.fixedpoint.Nat
 import matryoshka.patterns.CoEnv
 import matryoshka.specs2.scalacheck._
 
-import scala.{Int, Option}
+import scala.Int
 
 import org.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
-class NuSpec extends Specification with CheckAll {
+class NuSpec extends Specification with CheckAll with AlgebraChecks {
   "Nu" should {
     "satisfy relevant laws" in {
       checkAll(equal.laws[Nu[Exp]])
@@ -36,5 +35,4 @@ class NuSpec extends Specification with CheckAll {
   }
 
   checkFoldIsoLaws[Nu, CoEnv[Int, Exp, ?], Free[Exp, Int]]("Nu", CoEnv.freeIso)
-  checkUnfoldPrismLaws[Nu, Option, Int]("Nu", Nat.intPrism)
 }
