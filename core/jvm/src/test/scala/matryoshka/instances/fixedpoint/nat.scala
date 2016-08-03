@@ -21,29 +21,32 @@ import matryoshka.helpers._
 
 import scala.Option
 
+// import monocle.law.discipline._
 import org.specs2.mutable._
 import org.specs2.scalaz.ScalazMatchers
+import org.typelevel.discipline.specs2.mutable._
 import scalaz._, Scalaz._
 
-class NatSpec extends Specification with ScalazMatchers {
-  checkCoalgebraPrismLaws(Nat.intPrism)
+class NatSpec extends Specification with ScalazMatchers with Discipline {
+  // FIXME: Need to restrict this to smaller numbers
+  // checkAll("Nat ⇔ Int Prism", PrismTests(Nat.intPrism))
 
   "+" should {
-    "sum values" ! prop { (a: Nat, b: Nat) =>
+    "sum values" >> prop { (a: Nat, b: Nat) =>
       val (ai, bi) = (a.cata(height), b.cata(height))
       (a + b).some must equal((ai + bi).anaM[Mu, Option, Option](Nat.fromInt))
     }
   }
 
   "min" should {
-    "pick smaller value" ! prop { (a: Nat, b: Nat) =>
+    "pick smaller value" >> prop { (a: Nat, b: Nat) =>
       val (ai, bi) = (a.cata(height), b.cata(height))
       (a min b).some must equal((ai min bi).anaM[Mu, Option, Option](Nat.fromInt))
     }
   }
 
   "max" should {
-    "pick larger value" ! prop { (a: Nat, b: Nat) =>
+    "pick larger value" >> prop { (a: Nat, b: Nat) =>
       val (ai, bi) = (a.cata(height), b.cata(height))
       (a max b).some must equal((ai max bi).anaM[Mu, Option, Option](Nat.fromInt))
     }

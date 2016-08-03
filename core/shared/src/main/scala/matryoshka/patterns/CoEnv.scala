@@ -45,13 +45,16 @@ sealed abstract class CoEnvInstances extends CoEnvInstances0 {
 
   // TODO: Need to have lower-prio instances of Bifoldable, with
   //       corresponding constraint on F.
-  implicit def bitraverse[F[_]: Traverse, A]: Bitraverse[CoEnv[?, F, ?]] =
+  implicit def bitraverse[F[_]: Traverse]: Bitraverse[CoEnv[?, F, ?]] =
     new Bitraverse[CoEnv[?, F, ?]] {
       def bitraverseImpl[G[_]: Applicative, A, B, C, D](
         fab: CoEnv[A, F, B])(
         f: A ⇒ G[C], g: B ⇒ G[D]) =
         fab.run.bitraverse(f, _.traverse(g)).map(CoEnv(_))
     }
+
+  implicit def traverse[F[_]: Traverse, E]: Traverse[CoEnv[E, F, ?]] =
+    bitraverse[F].rightTraverse
 
   // TODO: write a test to ensure the two monad instances are identical
   // implicit def monadCo[F[_]: Applicative: Comonad, A]: Monad[CoEnv[A, F, ?]] =
@@ -68,6 +71,24 @@ sealed abstract class CoEnvInstances0 {
       def bimap[A, B, C, D](fab: CoEnv[A, F, B])(f: A ⇒ C, g: B ⇒ D) =
         CoEnv(fab.run.bimap(f, _.map(g)))
     }
+
+  implicit def functor[F[_]: Functor, E]: Functor[CoEnv[E, F, ?]] =
+    bifunctor[F].rightFunctor
+
+  implicit def bifoldable[F[_]: Foldable]: Bifoldable[CoEnv[?, F, ?]] =
+    new Bifoldable[CoEnv[?, F, ?]] {
+      def bifoldMap[A, B, M: Monoid](fa: CoEnv[A, F, B])(f: (A) ⇒ M)(g: (B) ⇒ M) =
+        fa.run.fold(f, _.foldMap(g))
+
+      def bifoldRight[A, B, C](
+        fa: CoEnv[A, F, B], z: ⇒ C)(
+        f: (A, ⇒ C) ⇒ C)(
+        g: (B, ⇒ C) ⇒ C) =
+        fa.run.fold(f(_, z), _.foldRight(z)(g))
+    }
+
+  implicit def foldable[F[_]: Foldable, E]: Foldable[CoEnv[E, F, ?]] =
+    bifoldable[F].rightFoldable
 
   // implicit def monad[F[_]: Monad: Traverse, A]: Monad[CoEnv[A, F, ?]] =
   //   new Monad[CoEnv[A, F, ?]] {

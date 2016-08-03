@@ -17,7 +17,7 @@
 import matryoshka.Recursive.ops._
 import matryoshka.patterns.EnvT
 
-import scala.{Function, Int, None, Option, Unit}
+import scala.{Boolean, Function, Int, None, Option, Unit}
 import scala.collection.immutable.{List, ::}
 
 import monocle._
@@ -293,6 +293,16 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     h(a)
   }
 
+  /** `cataM ⋘ elgotGApoM`
+    *
+    * @group refolds
+    */
+  def elgotM[M[_]: Monad, F[_]: Traverse, A, B](a: A)(φ: F[B] => M[B], ψ: A => M[B \/ F[A]]):
+      M[B] = {
+    def h(a: A): M[B] = ψ(a) >>= (_.traverse(_.traverse(h) >>= φ).map(_.merge))
+    h(a)
+  }
+
   /** `elgotZygo ⋘ ana`
     *
     * @group refolds
@@ -408,7 +418,19 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     */
   def distGApo[F[_]: Functor, B](g: B => F[B]) =
     new DistributiveLaw[B \/ ?, F] {
-      def apply[α](m: B \/ F[α]) = m.fold(g(_) ∘ (_.left), _ ∘ (_.right))
+      def apply[α](m: B \/ F[α]) = m.bitraverse(g(_), x => x)
+    }
+
+  /** Allows for more complex unfolds, like
+    * `futuGApo(φ0: B => F[B], φ: A => F[EitherT[Free[F, ?], B, A]])`
+    *
+    * @group dist
+    */
+  def distGApoT[F[_]: Functor, M[_]: Functor, B](
+    g: B => F[B], k: DistributiveLaw[M, F]) =
+    new DistributiveLaw[EitherT[M, B, ?], F] {
+      def apply[α](m: EitherT[M, B, F[α]]) =
+        k(m.run.map(distGApo(g).apply(_))).map(EitherT(_))
     }
 
   /**
@@ -645,6 +667,19 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   def toTree[F[_]: Functor: Foldable]: Algebra[F, Tree[F[Unit]]] =
     x => Tree.Node(x.void, x.toStream)
 
+  /** Returns (on the left) the first element that passes `f`.
+    */
+  def find[T[_[_]], F[_]](f: T[F] => Boolean): T[F] => T[F] \/ T[F] =
+    tf => if (f(tf)) tf.left else tf.right
+
+  /** Replaces all instances of `original` in the structure with `replacement`.
+    *
+    * @group algebras
+    */
+  def substitute[T[_[_]], F[_]](original: T[F], replacement: T[F])(implicit T: Equal[T[F]]):
+      T[F] => T[F] \/ T[F] =
+    find[T, F](_ ≟ original)(_).leftMap(_ => replacement)
+
   sealed abstract class ∘[F[_], G[_]] { type λ[A] = F[G[A]] }
 
   /** To avoid diverging implicits with fixed-point types, we need to defer the
@@ -686,4 +721,12 @@ package object matryoshka extends CofreeInstances with FreeInstances {
 
   implicit def toFreeOps[F[_], A](a: Free[F, A]): FreeOps[F, A] =
     new FreeOps[F, A](a)
+
+  implicit def equalTEqual[T[_[_]], F[_]: Functor](implicit T: EqualT[T], F: Delay[Equal, F]):
+      Equal[T[F]] =
+    T.equalT[F](F)
+
+  implicit def showTShow[T[_[_]], F[_]: Functor](implicit T: ShowT[T], F: Delay[Show, F]):
+      Show[T[F]] =
+    T.showT[F](F)
 }

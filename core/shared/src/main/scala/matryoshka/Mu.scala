@@ -37,9 +37,7 @@ object Mu {
       })
   }
 
-  implicit def equal[F[_]: Functor](implicit F: Delay[Equal, F]): Equal[Mu[F]] =
-    Recursive.equal[Mu, F]
+  implicit val equalT: EqualT[Mu] = Recursive.equalT[Mu]
 
-  implicit def show[F[_]: Functor](implicit F: Delay[Show, F]): Show[Mu[F]] =
-    Recursive.show[Mu, F]
+  implicit val showT: ShowT[Mu] = Recursive.showT[Mu]
 }

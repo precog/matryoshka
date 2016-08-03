@@ -25,35 +25,25 @@ import matryoshka.specs2.scalacheck._
 import java.lang.{String}
 import scala.{Int}
 
-import org.scalacheck._
 import org.specs2.mutable._
 import scalaz._, Scalaz._
-import scalaz.scalacheck.ScalaCheckBinding.{GenMonad => _, _}
 import scalaz.scalacheck.ScalazProperties._
 
-class CoEnvSpec extends Specification with CheckAll {
-  implicit def coEnvArbitrary[E: Arbitrary, F[_]](
-    implicit F: Delay[Arbitrary, F]):
-      Delay[Arbitrary, CoEnv[E, F, ?]] =
-    new Delay[Arbitrary, CoEnv[E, F, ?]] {
-      def apply[α](arb: Arbitrary[α]) =
-        // NB: Not sure why this version doesn’t work.
-        // Arbitrary.arbitrary[E \/ F[α]] ∘ (CoEnv(_))
-        Arbitrary(Gen.oneOf(
-          Arbitrary.arbitrary[E].map(_.left),
-          F(arb).arbitrary.map(_.right))) ∘ (CoEnv(_))
-    }
-
+class CoEnvSpec extends Specification with CheckAll with AlgebraChecks {
   "CoEnv should satisfy relevant laws" in {
     checkAll(equal.laws[CoEnv[String, Exp, Int]])
     checkAll(bitraverse.laws[CoEnv[?, Exp, ?]])
-    // NB: This is to test the low-prio Bifunctor, so if Exp2 gets a Traverse
-    //     instance, this needs to change.
+    checkAll(traverse.laws[CoEnv[Int, Exp, ?]])
+    // NB: This is to test the low-prio Bi-functor/-foldable instances, so if
+    //     Exp2 gets a Traverse instance, this needs to change.
     checkAll(bifunctor.laws[CoEnv[?, Exp2, ?]])
+    checkAll(functor.laws[CoEnv[Int, Exp2, ?]])
+    checkAll(bifoldable.laws[CoEnv[?, Exp2, ?]])
+    checkAll(foldable.laws[CoEnv[Int, Exp2, ?]])
     // FIXME: These instances don’t fulfill the laws
     // checkAll(monad.laws[CoEnv[String, Option, ?]])
     // checkAll(monad.laws[CoEnv[String, NonEmptyList, ?]])
   }
 
-  checkAlgebraIsoLaws(CoEnv.freeIso[Int, Exp])
+  checkAlgebraIsoLaws("CoEnv ⇔ Free", CoEnv.freeIso[Int, Exp])
 }

@@ -62,7 +62,7 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck with
       Partial.later(Partial.now(7)).runFor(300000) must beLeftDisjunction(7)
     }
 
-    "return after multiple runs" ! prop { (a: Conat, b: Conat) =>
+    "return after multiple runs" >> prop { (a: Conat, b: Conat) =>
       val (ai, bi) = (a.cata(height), b.cata(height))
       bi > 0 ==> {
         val first = (a + b).transAna(Partial.delay(27)).runFor(ai)
@@ -71,7 +71,7 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck with
       }
     }
 
-    "still pending one short" ! prop { (a: Conat) =>
+    "still pending one short" >> prop { (a: Conat) =>
       val ai = a.cata(height)
       ai > 0 ==> {
         val first = a.transAna(Partial.delay(27)).runFor(ai - 1)
@@ -80,7 +80,7 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck with
       }
     }
 
-    "return exactly at the end" ! prop { (i: Conat) =>
+    "return exactly at the end" >> prop { (i: Conat) =>
       i.transAna(Partial.delay(4)).runFor(i.cata(height)) must
         beLeftDisjunction(4)
     }
@@ -97,7 +97,7 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck with
     }
 
     // TODO: Should work with any Int, but stack overflows on big negatives.
-    "always terminate with mc91" ! prop { (n: Int) =>
+    "always terminate with mc91" >> prop { (n: Int) =>
       n > -3000 ==>
         (mc91(n).unsafePerformSync must equal(if (n <= 100) 91 else n - 10))
     }

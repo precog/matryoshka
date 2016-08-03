@@ -16,7 +16,7 @@
 
 package matryoshka
 
-import Recursive.ops._, FunctorT.ops._
+import Recursive.ops._, FunctorT.ops._, TraverseT.nonInheritedOps._
 import matryoshka.exp._
 import matryoshka.exp2._
 import matryoshka.helpers._
@@ -27,7 +27,7 @@ import java.lang.String
 import scala.{Boolean, Function, Int, None, Option, Predef, Symbol, Unit}
 import scala.collection.immutable.{List, Map, Nil, ::}
 
-import monocle.law.discipline._
+// import monocle.law.discipline._
 import org.scalacheck._
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
@@ -54,7 +54,7 @@ class Exp2Spec extends Specification with CheckAll {
   }
 }
 
-class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers with Discipline {
+class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers with Discipline with AlgebraChecks {
   val example1ƒ: Exp[Option[Int]] => Option[Int] = {
     case Num(v)           => v.some
     case Mul(left, right) => (left ⊛ right)(_ * _)
@@ -132,11 +132,14 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       case _ => t.map(_.head).embed
     }
 
-  checkAlgebraIsoLaws(recCorecIso[Mu, Exp])
-  checkAlgebraIsoLaws(lambekIso[Mu, Exp])
+  val eval: Algebra[Exp, Int] = {
+    case Num(x) => x
+    case Mul(x, y) => x*y
+    case _ => Predef.???
+  }
 
-  // TODO: add checks for the prism versions
-  checkAll("fold Iso", IsoTests(foldIso[Mu, Exp, Mu[Exp]](lambekIso)))
+  checkAlgebraIsoLaws("recCorec", recCorecIso[Mu, Exp])
+  checkAlgebraIsoLaws("lambek", lambekIso[Mu, Exp])
 
   "Recursive" >> {
     "isLeaf" >> {
@@ -348,12 +351,6 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    val eval: Algebra[Exp, Int] = {
-      case Num(x) => x
-      case Mul(x, y) => x*y
-      case _ => Predef.???
-    }
-
     val findConstants: Exp[List[Int]] => List[Int] = {
       case Num(x) => x :: Nil
       case t      => t.fold
@@ -410,26 +407,26 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "coelgot" >> {
-      "behave like cofCata ⋘ attributeAna" ! prop { (i: Int) =>
+      "behave like cofCata ⋘ attributeAna" >> prop { (i: Int) =>
         i.coelgot(eval.generalizeElgot[(Int, ?)], extractFactors) must equal(
           i.attributeAna(extractFactors).cofCata(eval.generalizeElgot[(Int, ?)]))
       }
     }
 
     "elgot" >> {
-      "behave like interpCata ⋘ freeAna" ! prop { (i: Int) =>
+      "behave like interpCata ⋘ freeAna" >> prop { (i: Int) =>
         i.elgot(eval, extractFactors.generalizeElgot[Int \/ ?]) must equal(
           i.freeAna(extractFactors.generalizeElgot[Int \/ ?]).interpretCata(eval))
       }
     }
 
     "generalizeElgot" >> {
-      "behave like cata on an algebra" ! prop { (i: Int) =>
+      "behave like cata on an algebra" >> prop { (i: Int) =>
         val x = i.ana[Fix, Exp](extractFactors).cata(eval)
         i.coelgot(eval.generalizeElgot[(Int, ?)], extractFactors) must equal(x)
       }
 
-      "behave like ana on an coalgebra" ! prop { (i: Int) =>
+      "behave like ana on an coalgebra" >> prop { (i: Int) =>
         val x = i.ana[Fix, Exp](extractFactors).cata(eval)
         i.elgot(eval, extractFactors.generalizeElgot[Int \/ ?]) must equal(x)
       }
@@ -440,7 +437,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       else Num(x)
 
     "generalizeCoalgebra" >> {
-      "behave like ana" ! prop { (i: Int) =>
+      "behave like ana" >> prop { (i: Int) =>
         i.apo(extractFactors.generalize[Fix[Exp] \/ ?]) must
           equal(i.ana[Fix, Exp](extractFactors))
       }
@@ -622,7 +619,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
             10.apoM(extract2sNot5[Fix]) must beNone
           }
         }
-        "apo should be an optimization over apoM and be semantically equivalent" ! prop { i: Int =>
+        "apo should be an optimization over apoM and be semantically equivalent" >> prop { i: Int =>
           if (i == 0) ok
           else i.apoM[Fix, Id, Exp](extract2s) must equal(i.apo[Fix, Exp](extract2s))
         }
@@ -663,7 +660,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
               })
           }
         }
-        "ana should be an optimization over anaM and be semantically equivalent" ! prop { i: Int =>
+        "ana should be an optimization over anaM and be semantically equivalent" >> prop { i: Int =>
           testCorec(
             i,
             new CorecRunner[Id, Exp, Int] {
@@ -676,7 +673,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "distAna" >> {
-      "behave like ana in gana" ! prop { (i: Int) =>
+      "behave like ana in gana" >> prop { (i: Int) =>
         testCorec(
           i,
           new CorecRunner[Id, Exp, Int] {
@@ -686,7 +683,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
           })
       }
 
-      "behave like ana in elgotAna" ! prop { (i: Int) =>
+      "behave like ana in elgotAna" >> prop { (i: Int) =>
         testCorec(
           i,
           new CorecRunner[Id, Exp, Int] {
@@ -698,7 +695,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "distApo" >> {
-      "behave like apo in gana" ! prop { (i: Int) =>
+      "behave like apo in gana" >> prop { (i: Int) =>
         (i.gana[Fix, Fix[Exp] \/ ?, Exp](distApo, extract2s) must
           equal(i.apo[Fix, Exp](extract2s))).toResult and
         (i.gana[Mu, Mu[Exp] \/ ?, Exp](distApo, extract2s) must
@@ -707,7 +704,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
           equal(i.apo[Nu, Exp](extract2s))).toResult
       }
 
-      "behave like elgotApo in elgotAna" ! prop { (i: Int) =>
+      "behave like elgotApo in elgotAna" >> prop { (i: Int) =>
         (i.elgotAna[Fix, Fix[Exp] \/ ?, Exp](distApo, extract2sAnd5[Fix]) must
           equal(i.elgotApo[Fix, Exp](extract2sAnd5[Fix]))).toResult and
         (i.elgotAna[Mu, Mu[Exp] \/ ?, Exp](distApo, extract2sAnd5[Mu]) must
@@ -718,18 +715,18 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "hylo" >> {
-      "factor and then evaluate" ! prop { (i: Int) =>
+      "factor and then evaluate" >> prop { (i: Int) =>
         i.hylo(eval, extractFactors) must equal(i)
       }
     }
 
     "ghylo" >> {
-      "behave like hylo with distCata/distAna" ! prop { (i: Int) =>
+      "behave like hylo with distCata/distAna" >> prop { (i: Int) =>
         i.ghylo[Id, Id, Exp, Int](distCata, distAna, eval, extractFactors) must
           equal(i.hylo(eval, extractFactors))
       }
 
-      "behave like chrono with distHisto/distFutu" ! prop { i: Int =>
+      "behave like chrono with distHisto/distFutu" >> prop { i: Int =>
         i.ghylo[Cofree[Exp, ?], Free[Exp, ?], Exp, Fix[Exp]](
           distHisto, distFutu, partialEval[Fix], extract2and3) must
           equal(i.chrono(partialEval[Fix], extract2and3))
@@ -901,7 +898,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "chrono" >> {
-      "factor and partially eval" ! prop { (i: Int) =>
+      "factor and partially eval" >> prop { (i: Int) =>
         i.chrono(partialEval[Fix], extract2and3) must equal(num(i))
         i.chrono(partialEval[Mu], extract2and3) must equal(num(i).convertTo[Mu])
         i.chrono(partialEval[Nu], extract2and3) must equal(num(i).convertTo[Nu])
@@ -960,7 +957,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
 
   "Attr" >> {
     "attrSelf" >> {
-      "annotate all" ! Prop.forAll(expGen) { exp =>
+      "annotate all" >> Prop.forAll(expGen) { exp =>
         // NB: This would look like
         //     >   exp.cata(attrSelf).universe must
         //     >     equal(exp.universe.map(_.cata(attrSelf)))
@@ -971,7 +968,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "convert" >> {
-      "forget unit" ! Prop.forAll(expGen) { exp =>
+      "forget unit" >> Prop.forAll(expGen) { exp =>
         // NB: This would look like
         //     >   exp.cata(attrK(())).convertTo[Fix] must equal(exp)
         //     if scalac could find the implicit
@@ -981,15 +978,92 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "foldMap" >> {
-      "zeros" ! Prop.forAll(expGen) { exp =>
+      "zeros" >> Prop.forAll(expGen) { exp =>
         Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrK(0)))(_ :: Nil) must
           equal(exp.universe.map(Function.const(0)))
       }
 
-      "selves" ! Prop.forAll(expGen) { exp =>
+      "selves" >> Prop.forAll(expGen) { exp =>
         Foldable[Cofree[Exp, ?]].foldMap(exp.cata[Cofree[Exp, Mu[Exp]]](attrSelf))(_ :: Nil) must
           equal(exp.universe)
       }
+    }
+  }
+
+  "count" should {
+    "return the number of instances in the structure" in {
+      val exp = mul(mul(num(12), mul(num(12), num(8))), mul(num(12), num(8)))
+      exp.para(count(num(12))) must equal(3)
+    }
+  }
+
+  "size" should {
+    "return the number of nodes in the structure" in {
+      val exp = mul(mul(num(12), mul(num(12), num(8))), mul(num(12), num(8)))
+      exp.cata(matryoshka.size) must equal(9)
+    }
+  }
+
+  "height" should {
+    "return the longest path from root to leaf" in {
+      val exp = mul(mul(num(12), mul(num(12), num(8))), mul(num(12), num(8)))
+      exp.cata(height) must equal(3)
+    }
+  }
+
+  "find" should {
+    val exp = mul(mul(num(10), mul(num(11), num(7))), mul(num(12), num(8)))
+
+    "return root-most instance that passes" in {
+      exp.transAnaTM(matryoshka.find[Fix, Exp] {
+        case Embed(Mul(Embed(Num(_)), _)) => true
+        case _                            => false
+      }) must equal(mul(num(10), mul(num(11), num(7))).left)
+    }
+
+    "return leaf-most instance that passes" in {
+      exp.transCataTM(matryoshka.find[Fix, Exp] {
+        case Embed(Mul(Embed(Num(_)), _)) => true
+        case _                            => false
+      }) must equal(mul(num(11), num(7)).left)
+    }
+  }
+
+  "substitute" should {
+    "replace equivalent forms" in {
+      val exp = mul(mul(num(12), mul(num(12), num(8))), mul(num(12), num(8)))
+      val res = mul(mul(num(12), num(92)), num(92))
+      exp.transApoT(substitute(mul(num(12), num(8)), num(92))) must equal(res)
+    }
+
+    "replace equivalent forms without re-replacing created forms" in {
+      val exp = mul(mul(num(12), mul(num(12), num(8))), mul(num(12), num(8)))
+      val res = mul(mul(num(12), num(8)), num(8))
+      exp.transApoT(substitute(mul(num(12), num(8)), num(8))) must equal(res)
+    }
+
+    "replace equivalent forms without re-replacing inserted forms" in {
+      val exp = mul(mul(num(12), num(8)), num(8))
+      val res = mul(mul(num(12), mul(num(12), num(8))), mul(num(12), num(8)))
+      exp.transApoT(substitute(num(8), mul(num(12), num(8)))) must equal(res)
+    }
+  }
+
+  "recover" should {
+    import matryoshka.patterns._
+
+    "handle “partially-folded” values" in {
+      val exp =
+        CoEnv[Int, Exp, Fix[CoEnv[Int, Exp, ?]]](\/-(Mul(
+          CoEnv[Int, Exp, Fix[CoEnv[Int, Exp, ?]]](\/-(Mul(
+            CoEnv(2.left[Exp[Fix[CoEnv[Int, Exp, ?]]]]).embed,
+            CoEnv[Int, Exp, Fix[CoEnv[Int, Exp, ?]]](\/-(Mul(
+              CoEnv[Int, Exp, Fix[CoEnv[Int, Exp, ?]]](Num(3).right[Int]).embed,
+              CoEnv(4.left[Exp[Fix[CoEnv[Int, Exp, ?]]]]).embed))).embed))).embed,
+          CoEnv[Int, Exp, Fix[CoEnv[Int, Exp, ?]]](\/-(Mul(
+            CoEnv[Int, Exp, Fix[CoEnv[Int, Exp, ?]]](Num(5).right[Int]).embed,
+            CoEnv(6.left[Exp[Fix[CoEnv[Int, Exp, ?]]]]).embed))).embed))).embed
+      exp.cata(recover(eval)) must equal(720)
     }
   }
 

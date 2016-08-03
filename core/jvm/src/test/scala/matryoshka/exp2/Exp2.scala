@@ -37,13 +37,22 @@ object Exp2 {
         arb.arbitrary.map(Single(_))))
   }
 
-  implicit val functor: Functor[Exp2] = new Functor[Exp2] {
-    def map[A, B](fa: Exp2[A])(f: A => B): Exp2[B] = fa match {
-      case Const()   => Const[B]()
-      case Num2(v)   => Num2[B](v)
-      case Single(a) => Single(f(a))
-    }
+  // NB: This isn’t implicit in order to allow us to test our low-priority
+  //     instances for CoEnv.
+  val traverse: Traverse[Exp2] = new Traverse[Exp2] {
+    def traverseImpl[G[_], A, B](
+      fa: Exp2[A])(
+      f: (A) ⇒ G[B])(
+      implicit G: Applicative[G]) =
+      fa match {
+        case Const()   => G.point(Const[B]())
+        case Num2(v)   => G.point(Num2[B](v))
+        case Single(a) => f(a) ∘ (Single(_))
+      }
   }
+
+  implicit val functor: Functor[Exp2] = traverse
+  implicit val foldable: Foldable[Exp2] = traverse
 
   implicit val show: Delay[Show, Exp2] = new Delay[Show, Exp2] {
     def apply[α](show: Show[α]) =

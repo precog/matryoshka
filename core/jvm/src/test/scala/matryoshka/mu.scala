@@ -14,38 +14,25 @@
  * limitations under the License.
  */
 
-package matryoshka.patterns
+package matryoshka
 
-import matryoshka._
-import matryoshka.exp._
+import matryoshka.exp.Exp
 import matryoshka.helpers._
+import matryoshka.patterns.CoEnv
 import matryoshka.specs2.scalacheck._
 
-import java.lang.{String}
-import scala.{Int}
+import scala.Int
 
-import org.scalacheck._
 import org.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
-class EnvTSpec extends Specification with CheckAll with AlgebraChecks {
-  implicit def envTArbitrary[E: Arbitrary, F[_]](
-    implicit F: Delay[Arbitrary, F]):
-      Delay[Arbitrary, EnvT[E, F, ?]] =
-    new Delay[Arbitrary, EnvT[E, F, ?]] {
-      def apply[A](arb: Arbitrary[A]) =
-        Arbitrary(
-          (Arbitrary.arbitrary[E] ⊛ F(arb).arbitrary)((e, f) => EnvT((e, f))))
-    }
-
-  "EnvT" should {
+class MuSpec extends Specification with CheckAll with AlgebraChecks {
+  "Mu" should {
     "satisfy relevant laws" in {
-      checkAll(equal.laws[EnvT[String, Exp, Int]])
-      checkAll(comonad.laws[EnvT[String, NonEmptyList, ?]])
+      checkAll(equal.laws[Mu[Exp]])
     }
   }
 
-  // FIXME: enable this
-  // checkAlgebraIsoLaws("EnvT ⇔ Cofree", EnvT.cofreeIso[Int, Exp])
+  checkFoldIsoLaws[Mu, CoEnv[Int, Exp, ?], Free[Exp, Int]]("Mu", CoEnv.freeIso)
 }

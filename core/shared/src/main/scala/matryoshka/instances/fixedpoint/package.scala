@@ -19,6 +19,7 @@ package matryoshka.instances
 import matryoshka._, Recursive.ops._
 import matryoshka.patterns._
 
+import monocle.Prism
 import scala.{Boolean, Int, None, Option, Some}
 import scala.annotation.{tailrec}
 
@@ -33,7 +34,9 @@ package object fixedpoint {
     def fromInt: CoalgebraM[Option, Option, Int] =
       x => if (x < 0) None else Some(if (x > 0) (x - 1).some else None)
 
-    def intPrism = CoalgebraPrism[Option, Int](fromInt)(height)
+    // NB: This isn’t defined via `AlgebraPrism` because it only holds across a
+    //     recursive structure.
+    def intPrism = Prism[Int, Fix[Option]](_.anaM(fromInt))(_.cata(height))
   }
 
   implicit class NatOps[T[_[_]]: Recursive: Corecursive](self: T[Option]) {

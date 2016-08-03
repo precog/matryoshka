@@ -35,14 +35,14 @@ class ListSpec extends Specification with ScalaCheck with ScalazMatchers {
   }
 
   "fill" should {
-    "be equivalent to scala.List.fill" ! prop { (v: Int) =>
+    "be equivalent to scala.List.fill" >> prop { (v: Int) =>
       List.fill(100)(v).cata(ListF.listIso.get) must
         equal(scala.List.fill(100)(v))
     }
   }
 
   "length" should {
-    "count the number of elements" ! prop { (v: Int) =>
+    "count the number of elements" >> prop { (v: Int) =>
       List.fill(30)(v).length must equal(30)
     }
   }

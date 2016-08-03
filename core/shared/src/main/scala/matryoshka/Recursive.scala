@@ -235,12 +235,15 @@ import simulacrum.typeclass
 }
 
 object Recursive {
-  def equal[T[_[_]], F[_]: Functor](
-    implicit T: Recursive[T], F: Delay[Equal, F]):
-      Equal[T[F]] =
-    Equal.equal((a, b) => F(equal(Functor[F], T, F)).equal(T.project(a), T.project(b)))
+  def equalT[T[_[_]]](implicit T: Recursive[T]): EqualT[T] =
+    new EqualT[T] {
+      def equal[F[_]: Functor](tf1: T[F], tf2: T[F])(implicit del: Delay[Equal, F]) =
+        del(equalT[F](del)).equal(T.project(tf1), T.project(tf2))
+    }
 
-  def show[T[_[_]]: Recursive, F[_]: Functor](implicit F: Delay[Show, F]):
-      Show[T[F]] =
-    Show.show(Recursive[T].cata(_)(F(Cord.CordShow).show))
+  def showT[T[_[_]]](implicit T: Recursive[T]): ShowT[T] =
+    new ShowT[T] {
+      override def show[F[_]: Functor](tf: T[F])(implicit del: Delay[Show, F]): Cord =
+        T.cata(tf)(del(Cord.CordShow).show)
+    }
 }
