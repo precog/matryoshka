@@ -19,6 +19,6 @@ package matryoshka
 import scalaz._
 
 sealed class FreeOps[F[_], A](self: Free[F, A]) {
-  def interpretCata(φ: F[A] => A)(implicit F: Functor[F]): A =
+  def interpretCata(φ: Algebra[F, A])(implicit F: Functor[F]): A =
     matryoshka.interpretCata(self)(φ)
 }
