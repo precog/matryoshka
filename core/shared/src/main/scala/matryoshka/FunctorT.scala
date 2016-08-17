@@ -60,23 +60,23 @@ import simulacrum.{typeclass}
   def transApoT[F[_]: Functor](t: T[F])(f: T[F] => T[F] \/ T[F]): T[F] =
     f(t).fold(Predef.identity, map(_)(_.map(transApoT(_)(f))))
 
-  def transCata[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[G]] => G[T[G]]): T[G] =
+  def transCata[F[_]: Functor, G[_]: Functor](t: T[F])(f: AlgebraicTransform[T, F, G]): T[G] =
     map(t)(ft => f(ft.map(transCata(_)(f))))
 
-  def transAna[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[F]]): T[G] =
+  def transAna[F[_]: Functor, G[_]: Functor](t: T[F])(f: CoalgebraicTransform[T, F, G]): T[G] =
     map(t)(f(_).map(transAna(_)(f)))
 
-  def transPrepro[F[_]: Functor, G[_]: Functor](t: T[F])(e: F ~> F, f: F[T[G]] => G[T[G]]): T[G] =
+  def transPrepro[F[_]: Functor, G[_]: Functor](t: T[F])(e: F ~> F, f: AlgebraicTransform[T, F, G]): T[G] =
     map(t)(ft => f(ft ∘ (x => transPrepro(transCata[F, F](x)(e(_)))(e, f))))
 
-  def transPostpro[F[_]: Functor, G[_]: Functor](t: T[F])(e: G ~> G, f: F[T[F]] => G[T[F]]): T[G] =
+  def transPostpro[F[_]: Functor, G[_]: Functor](t: T[F])(e: G ~> G, f: CoalgebraicTransform[T, F, G]): T[G] =
     map(t)(f(_) ∘ (x => transAna(transPostpro(x)(e, f))(e)))
 
-  def transPara[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[(T[F], T[G])] => G[T[G]]):
+  def transPara[F[_]: Functor, G[_]: Functor](t: T[F])(f: GAlgebraicTransform[T, (T[F], ?), F, G]):
       T[G] =
     map(t)(ft => f(ft.map(tf => (tf, transPara(tf)(f)))))
 
-  def transApo[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[G] \/ T[F]]):
+  def transApo[F[_]: Functor, G[_]: Functor](t: T[F])(f: GCoalgebraicTransform[T, (T[G] \/ ?), F, G]):
       T[G] =
     map(t)(f(_).map(_.fold(Predef.identity, transApo(_)(f))))
 

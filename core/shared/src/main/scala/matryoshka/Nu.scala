@@ -24,10 +24,10 @@ import scalaz._, Scalaz._
 sealed abstract class Nu[F[_]] {
   type A
   val a: A
-  val unNu: A => F[A]
+  val unNu: Coalgebra[F, A]
 }
 object Nu {
-  def apply[F[_], B](f: B => F[B], b: B): Nu[F] =
+  def apply[F[_], B](f: Coalgebra[F, B], b: B): Nu[F] =
     new Nu[F] {
       type A = B
       val a = b
@@ -40,7 +40,7 @@ object Nu {
 
   implicit val corecursive: Corecursive[Nu] = new Corecursive[Nu] {
     def embed[F[_]: Functor](t: F[Nu[F]]) = colambek(t)
-    override def ana[F[_]: Functor, A](a: A)(f: A => F[A]) = Nu(f, a)
+    override def ana[F[_]: Functor, A](a: A)(f: Coalgebra[F, A]) = Nu(f, a)
   }
 
   implicit val equalT: EqualT[Nu] = Recursive.equalT[Nu]

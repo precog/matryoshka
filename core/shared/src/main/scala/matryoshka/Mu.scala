@@ -23,17 +23,17 @@ import scalaz._, Scalaz._
 /** This is for inductive (finite) recursive structures, models the concept of
   * “data”, aka, the “least fixed point”.
   */
-final case class Mu[F[_]](unMu: λ[A => (F[A] => A)] ~> Id)
+final case class Mu[F[_]](unMu: λ[A => Algebra[F, A]] ~> Id)
 object Mu {
   implicit val recursive: Recursive[Mu] = new Recursive[Mu] {
     def project[F[_]: Functor](t: Mu[F]) = lambek(t)
-    override def cata[F[_]: Functor, A](t: Mu[F])(f: F[A] => A) = t.unMu(f)
+    override def cata[F[_]: Functor, A](t: Mu[F])(f: Algebra[F, A]) = t.unMu(f)
   }
 
   implicit val corecursive: Corecursive[Mu] = new Corecursive[Mu] {
     def embed[F[_]: Functor](t: F[Mu[F]]) =
-      Mu(new (λ[A => (F[A] => A)] ~> Id) {
-        def apply[A](fa: F[A] => A): A = fa(t.map(_.cata(fa)))
+      Mu(new (λ[A => Algebra[F, A]] ~> Id) {
+        def apply[A](fa: Algebra[F, A]): A = fa(t.map(_.cata(fa)))
       })
   }
 

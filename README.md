@@ -70,7 +70,7 @@ This diagram covers the major classes of transformations. The most basic ones ar
 Here is a very simple example of an algebra (`eval`) and how to apply it to a recursive structure.
 
 ```scala
-val eval: Expr[Long] => Long = {
+val eval: Algebra[Expr, Long] = { // i.e. Expr[Long] => Long
   case Num(x)    => x
   case Mul(x, y) => x * y
 }
