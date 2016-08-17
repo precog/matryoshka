@@ -36,6 +36,109 @@ import scalaz._, Scalaz._
   */
 package object matryoshka extends CofreeInstances with FreeInstances {
 
+  /** Fold a structure `F` containing values in `W`, to a value `A`, 
+    * accumulating effects in the monad `M`.
+    * @group algebras 
+    */
+  type GAlgebraM[W[_], M[_], F[_], A] = F[W[A]] => M[A]
+  /** Fold a structure `F` containing values in `W`, to a value `A`.
+    * @group algebras 
+    */
+  type GAlgebra[W[_], F[_], A]        = F[W[A]] => A    // GAlgebraM[W, Id, F, A]
+  /** Fold a structure `F` to a value `A`, accumulating effects in the monad `M`.
+    * @group algebras 
+    */
+  type AlgebraM[M[_], F[_], A]        = F[A]    => M[A] // GAlgebraM[Id, M, F, A]
+  /** Fold a structure `F` to a value `A`.
+    * @group algebras 
+    */
+  type Algebra[F[_], A]               = F[A] => A       // GAlgebra[Id, F, A]
+  /** Fold a structure `F` (usually a `Functor`) contained in `W` (usually a 
+    * `Comonad`), to a value `A`, accumulating effects in the monad `M`.
+    * @group algebras 
+    */
+  type ElgotAlgebraM[W[_], M[_], F[_], A] =                        W[F[A]] => M[A]
+  /** Fold a structure `F` (usually a `Functor`) contained in `W` (usually a 
+    * `Comonad`), to a value `A`.
+    * @group algebras 
+    */
+  type ElgotAlgebra[W[_], F[_], A] = ElgotAlgebraM[W, Id, F, A] // W[F[A]] => A
+
+  /** Unfold a value `A` to a structure `F` containing values in `N`, 
+    * accumulating effects in the monad `M`.
+    * @group algebras 
+    */
+  type GCoalgebraM[N[_], M[_], F[_], A] = A => M[F[N[A]]]
+  /** Unfold a value `A` to a structure `F` containing values in `N`.
+    * @group algebras 
+    */
+  type GCoalgebra[N[_], F[_], A]        = A => F[N[A]] // GCoalgebraM[N, Id, F, A]
+  /** Unfold a value `A` to a structure `F`, accumulating effects in the monad 
+    * `M`.
+    * @group algebras 
+    */
+  type CoalgebraM[M[_], F[_], A]        = A => M[F[A]] // GCoalgebraM[Id, M, F, A]
+  /** Unfold a value `A` to a structure `F`.
+    * @group algebras 
+    */
+  type Coalgebra[F[_], A]               = A => F[A]    // GCoalgebra[Id, F, A]
+  /** Unfold a value `A` to a structure `F` (usually a `Functor`), contained in 
+    * `E`, accumulating effects in the monad `M`.
+    * @group algebras 
+    */
+  type ElgotCoalgebraM[E[_], M[_], F[_], A] = A => M[E[F[A]]]
+  /** Unfold a value `A` to a structure `F` (usually a `Functor`), contained in 
+    * `E`.
+    * @group algebras 
+    */
+  type ElgotCoalgebra[E[_], F[_], A]        = A => E[F[A]] // ElgotCoalgebraM[E, Id, F, A]
+
+  /** Transform a structure `F` containing values in `W`, to a structure `G`, 
+    * in bottom-up fashion, accumulating effects in the monad `M`.
+    * @group algebras 
+    */
+  type GAlgebraicTransformM[T[_[_]], W[_], M[_], F[_], G[_]] = F[W[T[G]]] => M[G[T[G]]]
+  /** Transform a structure `F`, to a structure `G`, in bottom-up fashion, 
+    * accumulating effects in the monad `M`.
+    * @group algebras 
+    */
+  type AlgebraicTransformM[T[_[_]], M[_], F[_], G[_]]        = F[T[G]] => M[G[T[G]]] // GAlgebraicTransformM[T, Id, M, F, G]
+  /** Transform a structure `F` containing values in `W`, to a structure `G`, 
+    * in bottom-up fashion.
+    * @group algebras 
+    */
+  type GAlgebraicTransform[T[_[_]], W[_], F[_], G[_]]        = F[W[T[G]]] => G[T[G]] // GAlgebraicTransformM[T, W, Id, F, G]
+  /** Transform a structure `F` to a structure `G`, in bottom-up fashion.
+    * @group algebras 
+    */
+  type AlgebraicTransform[T[_[_]], F[_], G[_]]               = F[T[G]] => G[T[G]]    // GAlgebraicTransformM[T, Id, Id, F, G]
+
+  /** Transform a structure `F` to a structure `G` containing values in `N`, 
+    * in top-down fashion, accumulating effects in the monad `M`.
+    * @group algebras 
+    */
+  type GCoalgebraicTransformM[T[_[_]], N[_], M[_], F[_], G[_]] = F[T[F]] => M[G[N[T[F]]]]
+  /** Transform a structure `F` to a structure `G`, in top-down fashion, 
+    * accumulating effects in the monad `M`.
+    * @group algebras 
+    */
+  type CoalgebraicTransformM[T[_[_]], M[_], F[_], G[_]]        = F[T[F]] => M[G[T[F]]] // GCoalgebraicTransformM[T, Id, M, F, G]
+  /** Transform a structure `F` to a structure `G` containing values in `N`, 
+    * in top-down fashion.
+    * @group algebras 
+    */
+  type GCoalgebraicTransform[T[_[_]], N[_], F[_], G[_]]        = F[T[F]] => G[N[T[F]]] // GCoalgebraicTransformM[T, N, Id, F, G]
+  /** Transform a structure `F` to a structure `G`, in top-down fashion.
+    * @group algebras 
+    */
+  type CoalgebraicTransform[T[_[_]], F[_], G[_]]               = F[T[F]] => G[T[F]]    // GCoalgebraicTransformM[T, Id, Id, F, G]
+
+  /** @group algtrans */
+  def transformToAlgebra[T[_[_]]: Corecursive, W[_], M[_]: Functor, F[_], G[_]: Functor](
+    self: GAlgebraicTransformM[T, W, M, F, G]):
+      GAlgebraM[W, M, F, T[G]] =
+    self(_) ∘ (_.embed)
+
   def lambek[T[_[_]]: Corecursive: Recursive, F[_]: Functor](tf: T[F]):
       F[T[F]] =
     tf.cata[F[T[F]]](_ ∘ (_.embed))
@@ -43,59 +146,6 @@ package object matryoshka extends CofreeInstances with FreeInstances {
   def colambek[T[_[_]]: Corecursive: Recursive, F[_]: Functor](ft: F[T[F]]):
       T[F] =
     ft.ana(_ ∘ (_.project))
-
-  /** @group algebras */
-  type GAlgebraM[W[_], M[_], F[_], A] =                    F[W[A]] => M[A]
-  /** @group algebras */
-  type GAlgebra[W[_], F[_], A] = GAlgebraM[W, Id, F, A] // F[W[A]] => A
-  /** @group algebras */
-  type AlgebraM[M[_], F[_], A] = GAlgebraM[Id, M, F, A] // F[A]    => M[A]
-  /** @group algebras */
-  type Algebra[F[_], A]        = F[A] => A              // GAlgebra[Id, F, A], but defining it directly avoids a "cyclic aliasing" error
-  /** @group algebras */
-  type ElgotAlgebraM[W[_], M[_], F[_], A] =                        W[F[A]] => M[A]
-  /** @group algebras */
-  type ElgotAlgebra[W[_], F[_], A] = ElgotAlgebraM[W, Id, F, A] // W[F[A]] => A
-
-  /** @group algebras */
-  type GCoalgebraM[N[_], M[_], F[_], A] =                      A => M[F[N[A]]]
-  /** @group algebras */
-  type GCoalgebra[N[_], F[_], A] = A => F[N[A]]             // GCoalgebraM[N, Id, F, A], but defining it avoids some type ascriptions
-  /** @group algebras */
-  type CoalgebraM[M[_], F[_], A] = GCoalgebraM[Id, M, F, A] // A => M[F[A]]
-  /** @group algebras */
-  type Coalgebra[F[_], A]        = A => F[A]                // GCoalgebra[Id, F, A], but defining it avoids some type ascriptions
-  /** @group algebras */
-  type ElgotCoalgebraM[E[_], M[_], F[_], A] =                          A => M[E[F[A]]]
-  /** @group algebras */
-  type ElgotCoalgebra[E[_], F[_], A] = ElgotCoalgebraM[E, Id, F, A] // A => E[F[A]]
-
-  /** @group algebras */
-  type GAlgebraicTransformM[T[_[_]], W[_], M[_], F[_], G[_]] = F[W[T[G]]] => M[G[T[G]]]
-  /** @group algebras */
-  type AlgebraicTransformM[T[_[_]], M[_], F[_], G[_]] = GAlgebraicTransformM[T, Id, M, F, G]
-  /** @group algebras */
-  type GAlgebraicTransform[T[_[_]], W[_], F[_], G[_]] = GAlgebraicTransformM[T, W, Id, F, G]
-  /** @group algebras */
-  type AlgebraicTransform[T[_[_]], F[_], G[_]] = GAlgebraicTransformM[T, Id, Id, F, G]
-
-  /** @group algebras */
-  type GCoalgebraicTransformM[T[_[_]], M[_], N[_], F[_], G[_]] = F[T[F]] => N[G[M[T[F]]]]
-  /** @group algebras */
-  type CoalgebraicTransformM[T[_[_]], N[_], F[_], G[_]] = GCoalgebraicTransformM[T, Id, N, F, G]
-  /** @group algebras */
-  type GCoalgebraicTransform[T[_[_]], M[_], F[_], G[_]] = GCoalgebraicTransformM[T, M, Id, F, G]
-  /** @group algebras */
-  type CoalgebraicTransform[T[_[_]], F[_], G[_]] = GCoalgebraicTransformM[T, Id, Id, F, G]
-
-  /**
-    *
-    * @group algtrans
-    */
-  def transformToAlgebra[T[_[_]]: Corecursive, W[_], M[_]: Functor, F[_], G[_]: Functor](
-    self: GAlgebraicTransformM[T, W, M, F, G]):
-      GAlgebraM[W, M, F, T[G]] =
-    self(_) ∘ (_.embed)
 
   /** An algebra and its dual form an isomorphism.
     */
