@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-package matryoshka
+package matryoshka.data
 
-import Recursive.ops._
+import matryoshka._, Recursive.ops._
 
 import scalaz._, Scalaz._
 

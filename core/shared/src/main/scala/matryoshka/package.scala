@@ -34,7 +34,7 @@ import scalaz._, Scalaz._
   * @groupname dist Distributive Laws
   * @groupdesc dist Natural transformations required for generalized folds and unfolds.
   */
-package object matryoshka extends CofreeInstances with FreeInstances {
+package object matryoshka {
 
   /** Fold a structure `F` containing values in `W`, to a value `A`, 
     * accumulating effects in the monad `M`.
@@ -241,12 +241,6 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     ψ(a).fold(
       _.point[Free[F, ?]],
       fb => Free.liftF(fb ∘ (freeAna(_)(ψ))).join)
-
-  def cofParaM[M[_]] = new CofParaMPartiallyApplied[M]
-  final class CofParaMPartiallyApplied[M[_]] { self =>
-    def apply[T[_[_]]: Corecursive, S[_]: Traverse, A, B](t: Cofree[S, A])(f: (A, S[(T[S], B)]) => M[B])(implicit M: Monad[M]): M[B] =
-      t.tail.traverse(cs => self(cs)(f) ∘ ((Recursive[Cofree[?[_], A]].convertTo[S, T](cs), _))) >>= (f(t.head, _))
-  }
 
   /** Composition of an anamorphism and a catamorphism that avoids building the
     * intermediate recursive data structure.
@@ -572,15 +566,6 @@ package object matryoshka extends CofreeInstances with FreeInstances {
     */
   def attrSelf[T[_[_]]: Corecursive, F[_]: Functor] =
     attributeAlgebra[F, T[F]](_.embed)
-
-  /** NB: Since Cofree carries the functor, the resulting algebra is a cata, not
-    *     a para.
-    *
-    * @group algtrans
-    */
-  def attributePara[T[_[_]]: Corecursive, F[_]: Functor, A](f: GAlgebra[(T[F], ?), F, A]):
-      Algebra[F, Cofree[F, A]] =
-    fa => Cofree(f(fa ∘ (x => (Recursive[Cofree[?[_], A]].convertTo[F, T](x), x.head))), fa)
 
   /** A function to be called like `attributeElgotM[M](myElgotAlgebraM)`.
     *

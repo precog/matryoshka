@@ -17,6 +17,7 @@
 package matryoshka.instances
 
 import matryoshka._, Recursive.ops._
+import matryoshka.data._
 import matryoshka.patterns._
 
 import monocle.Prism

@@ -17,6 +17,7 @@
 package matryoshka
 
 import Recursive.ops._, FunctorT.ops._, TraverseT.nonInheritedOps._
+import matryoshka.data._
 import matryoshka.exp._
 import matryoshka.exp2._
 import matryoshka.helpers._

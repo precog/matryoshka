@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package matryoshka
+package matryoshka.data
 
 import matryoshka.exp.Exp
 import matryoshka.helpers._

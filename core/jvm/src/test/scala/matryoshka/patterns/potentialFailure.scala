@@ -17,6 +17,7 @@
 package matryoshka.patterns
 
 import matryoshka._
+import matryoshka.data.Fix
 import matryoshka.exp._
 import matryoshka.helpers._
 import matryoshka.specs2.scalacheck.CheckAll

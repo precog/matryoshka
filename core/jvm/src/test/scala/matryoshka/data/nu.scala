@@ -14,23 +14,25 @@
  * limitations under the License.
  */
 
-package matryoshka
+package matryoshka.data
 
-import scalaz._
+import matryoshka.exp.Exp
+import matryoshka.helpers._
+import matryoshka.patterns.CoEnv
+import matryoshka.specs2.scalacheck._
 
-/** This is the simplest fixpoint type, implemented with general recursion.
-  */
-final case class Fix[F[_]](unFix: F[Fix[F]])
-object Fix {
-  implicit val recursive: Recursive[Fix] = new Recursive[Fix] {
-    def project[F[_]: Functor](t: Fix[F]) = t.unFix
+import scala.Int
+
+import org.specs2.mutable._
+import scalaz._, Scalaz._
+import scalaz.scalacheck.ScalazProperties._
+
+class NuSpec extends Specification with CheckAll with AlgebraChecks {
+  "Nu" should {
+    "satisfy relevant laws" in {
+      checkAll(equal.laws[Nu[Exp]])
+    }
   }
 
-  implicit val corecursive: Corecursive[Fix] = new Corecursive[Fix] {
-    def embed[F[_]: Functor](t: F[Fix[F]]) = Fix(t)
-  }
-
-  implicit val equalT: EqualT[Fix] = Recursive.equalT[Fix]
-
-  implicit val showT: ShowT[Fix] = Recursive.showT[Fix]
+  checkFoldIsoLaws[Nu, CoEnv[Int, Exp, ?], Free[Exp, Int]]("Nu", CoEnv.freeIso)
 }

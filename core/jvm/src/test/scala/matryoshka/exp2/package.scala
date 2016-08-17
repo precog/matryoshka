@@ -16,6 +16,8 @@
 
 package matryoshka
 
+import matryoshka.data.Fix
+
 import scala.Int
 
 package object exp2 {

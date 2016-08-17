@@ -17,6 +17,7 @@
 package matryoshka
 
 import Recursive.ops._
+import matryoshka.data._
 
 import scala.Unit
 import scala.Predef.implicitly

@@ -17,6 +17,7 @@
 package matryoshka.instances.fixedpoint
 
 import matryoshka._
+import matryoshka.data.Nu
 
 import scala.Int
 
