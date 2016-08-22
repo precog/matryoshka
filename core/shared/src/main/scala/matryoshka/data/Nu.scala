@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
-package matryoshka
+package matryoshka.data
+
+import matryoshka._
 
 import scalaz._, Scalaz._
 

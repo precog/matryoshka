@@ -17,6 +17,7 @@
 package matryoshka.patterns
 
 import matryoshka._
+import matryoshka.data._
 import matryoshka.exp.Exp
 import matryoshka.exp2.Exp2
 import matryoshka.helpers._

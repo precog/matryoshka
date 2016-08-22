@@ -16,6 +16,8 @@
 
 package matryoshka
 
+import matryoshka.data.Fix
+
 import scala.{Int, Symbol}
 
 package object exp {
