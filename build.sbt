@@ -7,11 +7,11 @@ import org.scalajs.sbtplugin.cross.CrossProject
 
 lazy val checkHeaders = taskKey[Unit]("Fail the build if createHeaders is not up-to-date")
 
-val monocleVersion = "1.2.1"
-val scalazVersion = "7.2.1"
+val monocleVersion = "1.2.2"
+val scalazVersion = "7.2.5"
 // Latest version built against scalacheck 1.12.5
 // doesn't support scala.js yet, until then tests are JVM-only
-val specs2Version = "3.7"
+val specs2Version = "3.8.4"
 
 val testDependencies = libraryDependencies ++= Seq(
   "org.typelevel"  %% "discipline"                % "0.4"          % "test",
@@ -44,7 +44,7 @@ lazy val standardSettings = Seq(
     "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/",
     "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
     "bintray/non" at "http://dl.bintray.com/non/maven"),
-  addCompilerPlugin("org.spire-math" %% "kind-projector"   % "0.7.1"),
+  addCompilerPlugin("org.spire-math" %% "kind-projector"   % "0.8.0"),
   addCompilerPlugin("org.scalamacros" % "paradise"         % "2.1.0" cross CrossVersion.full),
   addCompilerPlugin("com.milessabin"  % "si2712fix-plugin" % "1.2.0" cross CrossVersion.full),
   ScoverageKeys.coverageHighlighting := true,
