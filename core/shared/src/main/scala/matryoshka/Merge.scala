@@ -16,7 +16,7 @@
 
 package matryoshka
 
-import scala.{inline, None, Option, Unit}
+import scala.{None, Option, Unit}
 
 import simulacrum.typeclass
 import scalaz._, Scalaz._

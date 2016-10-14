@@ -16,8 +16,7 @@
 
 package matryoshka
 
-import scala.{Boolean, inline}
-
+import scala.Boolean
 import scalaz._
 import simulacrum.typeclass
 

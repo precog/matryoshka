@@ -18,7 +18,7 @@ package matryoshka.patterns
 
 import matryoshka._
 
-import scala.{inline, Option}
+import scala.Option
 
 import scalaz._, Scalaz._
 import simulacrum.typeclass

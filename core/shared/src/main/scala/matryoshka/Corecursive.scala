@@ -18,8 +18,7 @@ package matryoshka
 
 import Recursive.ops._
 
-import scala.{inline, Predef}
-
+import scala.Predef.identity
 import scalaz._, Scalaz._
 import simulacrum.typeclass
 
@@ -69,12 +68,12 @@ import simulacrum.typeclass
   def apo[F[_]: Functor, A](a: A)(f: GCoalgebra[T[F] \/ ?, F, A]): T[F] =
     // NB: This is not implemented with [[matryoshka.distApo]] because that
     //     would add a [[matryoshka.Recursive]] constraint.
-    embed(f(a) ∘ (_.fold(Predef.identity, apo(_)(f))))
+    embed(f(a) ∘ (_.fold(identity, apo(_)(f))))
 
   def elgotApo[F[_]: Functor, A](a: A)(f: CoalgebraM[T[F] \/ ?, F, A]): T[F] =
     // NB: This is not implemented with [[matryoshka.distApo]] because that
     //     would add a [[matryoshka.Recursive]] constraint.
-    f(a).fold(Predef.identity, fa => embed(fa ∘ (elgotApo(_)(f))))
+    f(a).fold(identity, fa => embed(fa ∘ (elgotApo(_)(f))))
 
   /** An unfold that can handle sections with a secondary unfold.
     */

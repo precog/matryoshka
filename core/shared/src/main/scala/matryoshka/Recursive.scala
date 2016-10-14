@@ -19,7 +19,7 @@ package matryoshka
 import Merge.ops._
 import matryoshka.patterns.EnvT
 
-import scala.{Boolean, inline, Option, PartialFunction}
+import scala.{Boolean, Option, PartialFunction}
 import scala.collection.immutable.{List, Nil}
 
 import scalaz._, Scalaz._

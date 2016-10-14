@@ -16,10 +16,9 @@
 
 package matryoshka
 
-import scala.{inline, Predef}
-
+import scala.Predef.identity
 import scalaz._, Scalaz._
-import simulacrum.{typeclass}
+import simulacrum.{typeclass, op}
 
 /** The operations here are very similar to those in Recursive and Corecursive.
   * The usual names (`cata`, `ana`, etc.) are prefixed with `trans` and behave
@@ -58,7 +57,7 @@ import simulacrum.{typeclass}
     map(f(t))(_.map(transAnaT(_)(f)))
 
   def transApoT[F[_]: Functor](t: T[F])(f: T[F] => T[F] \/ T[F]): T[F] =
-    f(t).fold(Predef.identity, map(_)(_.map(transApoT(_)(f))))
+    f(t).fold(identity, map(_)(_.map(transApoT(_)(f))))
 
   def transCata[F[_]: Functor, G[_]: Functor](t: T[F])(f: AlgebraicTransform[T, F, G]): T[G] =
     map(t)(ft => f(ft.map(transCata(_)(f))))
@@ -78,7 +77,7 @@ import simulacrum.{typeclass}
 
   def transApo[F[_]: Functor, G[_]: Functor](t: T[F])(f: GCoalgebraicTransform[T, (T[G] \/ ?), F, G]):
       T[G] =
-    map(t)(f(_).map(_.fold(Predef.identity, transApo(_)(f))))
+    map(t)(f(_).map(_.fold(identity, transApo(_)(f))))
 
   def topDownCata[F[_]: Functor, A](t: T[F], a: A)(f: (A, T[F]) => (A, T[F])):
       T[F] = {

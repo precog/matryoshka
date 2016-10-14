@@ -7,29 +7,46 @@ import org.scalajs.sbtplugin.cross.CrossProject
 
 lazy val checkHeaders = taskKey[Unit]("Fail the build if createHeaders is not up-to-date")
 
-val monocleVersion = "1.2.1"
-val scalazVersion = "7.2.1"
-// Latest version built against scalacheck 1.12.5
+// monocle-law 1.2.2 -> { scalajs 0.6.8, discipline 0.4 } -> { specs 3.6, scalacheck 1.12.4 }
+// 3.7 is the last specs2 built against scalacheck 1.12.x (3.7.1 is binary incompatible)
 // doesn't support scala.js yet, until then tests are JVM-only
-val specs2Version = "3.7"
+val monocleVersion    = "1.2.2"
+val scalazVersion     = "7.2.6"
+val specs2Version     = "3.7"
+val scalacheckVersion = "1.12.5"
 
 val testDependencies = libraryDependencies ++= Seq(
-  "org.typelevel"  %% "discipline"                % "0.4"          % "test",
-  "com.github.julien-truffaut" %% "monocle-law"   % monocleVersion % "test",
-  "org.scalaz"     %% "scalaz-scalacheck-binding" % scalazVersion  % "test",
-  "org.typelevel"  %% "scalaz-specs2"             % "0.4.0"        % "test",
-  "org.specs2"     %% "specs2-core"               % specs2Version  % "test" force(),
-  "org.specs2"     %% "specs2-scalacheck"         % specs2Version  % "test" force(),
-  // `scalaz-scalack-binding` is built with `scalacheck` 1.12.5 so we are stuck
-  // with that version
-  "org.scalacheck" %% "scalacheck"                % "1.12.5"       % "test" force()
+  "org.typelevel"              %% "discipline"                % "0.7"             % "test",
+  "com.github.julien-truffaut" %% "monocle-law"               % monocleVersion    % "test",
+  "org.scalaz"                 %% "scalaz-scalacheck-binding" % scalazVersion     % "test",
+  "org.typelevel"              %% "scalaz-specs2"             % "0.4.0"           % "test",
+  "org.specs2"                 %% "specs2-core"               % specs2Version     % "test" force(),
+  "org.specs2"                 %% "specs2-scalacheck"         % specs2Version     % "test" force(),
+  "org.scalacheck"             %% "scalacheck"                % scalacheckVersion % "test" force()
 )
 
-lazy val standardSettings = Seq(
+def universalSettings = Seq(
+  scalaVersion := "2.11.8",
+  organization := "com.slamdata",
+  licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
+  libraryDependencies ++= Seq(
+    "com.github.julien-truffaut" %%% "monocle-core" % monocleVersion % "compile, test",
+    "org.scalaz"                 %%% "scalaz-core"  % scalazVersion  % "compile, test",
+    "com.github.mpilquist"       %%% "simulacrum"   % "0.9.0"        % "compile, test"
+  ),
+  addCompilerPlugin("org.spire-math"  %% "kind-projector"   % "0.9.0"),
+  addCompilerPlugin("org.scalamacros" %  "paradise"         % "2.1.0" cross CrossVersion.full),
+  addCompilerPlugin("com.milessabin"  %  "si2712fix-plugin" % "1.2.0" cross CrossVersion.full),
+  scalacOptions ++= Seq(
+    "-language:existentials",
+    "-language:higherKinds",
+    "-language:implicitConversions"
+  )
+)
+lazy val standardSettings = universalSettings ++ Seq(
   headers := Map(
     "scala" -> Apache2_0("2014–2016", "SlamData Inc."),
     "java"  -> Apache2_0("2014–2016", "SlamData Inc.")),
-  scalaVersion := "2.11.8",
   logBuffered in Compile := false,
   logBuffered in Test := false,
   outputStrategy := Some(StdoutOutput),
@@ -37,25 +54,11 @@ lazy val standardSettings = Seq(
   autoCompilerPlugins := true,
   autoAPIMappings := true,
   exportJars := true,
-  organization := "com.slamdata",
-  resolvers ++= Seq(
-    Resolver.sonatypeRepo("releases"),
-    Resolver.sonatypeRepo("snapshots"),
-    "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/",
-    "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
-    "bintray/non" at "http://dl.bintray.com/non/maven"),
-  addCompilerPlugin("org.spire-math" %% "kind-projector"   % "0.7.1"),
-  addCompilerPlugin("org.scalamacros" % "paradise"         % "2.1.0" cross CrossVersion.full),
-  addCompilerPlugin("com.milessabin"  % "si2712fix-plugin" % "1.2.0" cross CrossVersion.full),
   ScoverageKeys.coverageHighlighting := true,
-
   scalacOptions ++= Seq(
     "-deprecation",
     "-encoding", "UTF-8",
     "-feature",
-    "-language:existentials",
-    "-language:higherKinds",
-    "-language:implicitConversions",
     "-unchecked",
     "-Xfatal-warnings",
     "-Xfuture",
@@ -65,22 +68,15 @@ lazy val standardSettings = Seq(
     "-Ywarn-dead-code", // N.B. doesn't work well with the ??? hole
     "-Ywarn-numeric-widen",
     "-Ywarn-unused-import",
-    "-Ywarn-value-discard"),
+    "-Ywarn-value-discard"
+  ),
   scalacOptions in (Compile,doc) ++= Seq("-groups", "-implicits"),
   scalacOptions in (Test, console) --= Seq(
     "-Yno-imports",
-    "-Ywarn-unused-import"),
+    "-Ywarn-unused-import",
+    "-Ywarn-dead-code"
+  ),
   wartremoverErrors in (Compile, compile) ++= warts, // Warts.all,
-
-  console <<= console in Test, // console alias test:console
-
-  libraryDependencies ++= Seq(
-    "com.github.julien-truffaut" %%% "monocle-core" % monocleVersion % "compile, test",
-    "org.scalaz"                 %%% "scalaz-core"  % scalazVersion  % "compile, test",
-    "com.github.mpilquist"       %%% "simulacrum"   % "0.7.0"        % "compile, test"),
-
-  licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
-
   checkHeaders := {
     if ((createHeaders in Compile).value.nonEmpty) error("headers not all present")
   })
@@ -151,6 +147,7 @@ lazy val root = Project("root", file("."))
     publishLocal := (),
     publishArtifact := false))
   .settings(name := "matryoshka")
+  .settings(console <<= console in repl)
   .aggregate(coreJVM, coreJS)
   .enablePlugins(AutomateHeaderPlugin)
 
@@ -162,3 +159,14 @@ lazy val core = crossProject.in(file("core"))
 
 lazy val coreJVM = core.jvm
 lazy val coreJS = core.js
+
+/** A project just for the console.
+ *  Applies only the settings necessary for that purpose.
+ */
+lazy val repl = project dependsOn (coreJVM % "test->test;compile->compile") settings (universalSettings: _*) settings (
+  console <<= console in Test,
+  initialCommands in console := """
+    import scalaz._, Scalaz._
+    import matryoshka._, data._,Recursive.ops._, FunctorT.ops._
+  """
+)

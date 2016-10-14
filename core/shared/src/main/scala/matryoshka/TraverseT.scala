@@ -16,8 +16,6 @@
 
 package matryoshka
 
-import scala.inline
-
 import scalaz._, Scalaz._
 import simulacrum.typeclass
 
