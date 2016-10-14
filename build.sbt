@@ -14,19 +14,21 @@ val scalazVersion = "7.2.1"
 val specs2Version = "3.7"
 val scalacheckVersion = "1.12.5"
 
-val testDependencies = libraryDependencies ++= Seq(
-  "org.typelevel"  %% "discipline"                % "0.4"          % "test",
-  "com.github.julien-truffaut" %% "monocle-law"   % monocleVersion % "test",
-  "org.scalaz"     %% "scalaz-scalacheck-binding" % scalazVersion  % "test",
-  "org.typelevel"  %% "scalaz-specs2"             % "0.4.0"        % "test",
-  "org.specs2"     %% "specs2-core"               % specs2Version  % "test" force(),
-  "org.specs2"     %% "specs2-scalacheck"         % specs2Version  % "test" force(),
-  // `scalaz-scalack-binding` is built with `scalacheck` 1.12.5 so we are stuck
-  // with that version
-  "org.scalacheck" %% "scalacheck"                % scalacheckVersion % "test" force()
+// `scalaz-scalack-binding` is built with `scalacheck` 1.12.5 so we are stuck
+// with that version
+def scalacheckDependencies = Seq(
+  "org.scalacheck" %% "scalacheck"                % scalacheckVersion,
+  "org.scalaz"     %% "scalaz-scalacheck-binding" % scalazVersion
+)
+def testsDependencies = libraryDependencies ++= scalacheckDependencies ++ Seq(
+  "org.typelevel"              %% "discipline"        % "0.4"          % "test",
+  "com.github.julien-truffaut" %% "monocle-law"       % monocleVersion % "test",
+  "org.typelevel"              %% "scalaz-specs2"     % "0.4.0"        % "test",
+  "org.specs2"                 %% "specs2-core"       % specs2Version  % "test" force(),
+  "org.specs2"                 %% "specs2-scalacheck" % specs2Version  % "test" force()
 )
 
-lazy val standardSettings = Seq(
+lazy val standardSettings = Seq[Setting[_]](
   headers := Map(
     "scala" -> Apache2_0("2014–2016", "SlamData Inc."),
     "java"  -> Apache2_0("2014–2016", "SlamData Inc.")),
@@ -116,7 +118,7 @@ val warts = Seq(
   Wart.TryPartial,
   Wart.Var)
 
-lazy val publishSettings = Seq(
+lazy val publishSettings = Seq[Setting[_]](
   organizationName := "SlamData Inc.",
   organizationHomepage := Some(url("http://slamdata.com")),
   homepage := Some(url("https://github.com/slamdata/matryoshka")),
@@ -151,15 +153,14 @@ def noPublishSettings = Seq(
   publishArtifact := false)
 
 lazy val root = Project("root", file("."))
-  .settings(standardSettings ++ noPublishSettings)
   .settings(name := "matryoshka")
-  .aggregate(coreJVM, coreJS)
+  .settings(standardSettings ++ noPublishSettings: _*)
+  .aggregate(coreJVM, coreJS, scalacheck, tests)
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val core = crossProject.in(file("core"))
-  .settings(standardSettings ++ publishSettings)
   .settings(name := "matryoshka-core")
-  .jvmSettings(testDependencies)
+  .settings(standardSettings ++ publishSettings: _*)
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val coreJVM = core.jvm
@@ -167,17 +168,14 @@ lazy val coreJS = core.js
 
 lazy val scalacheck = project
   .dependsOn(coreJVM)
-  .settings(standardSettings ++ publishSettings)
-  .settings(
-    name := "matryoshka-scalacheck",
-    libraryDependencies ++= Seq(
-      "org.scalacheck" %% "scalacheck"                % scalacheckVersion,
-      "org.scalaz"     %% "scalaz-scalacheck-binding" % scalazVersion))
+  .settings(name := "matryoshka-scalacheck")
+  .settings(standardSettings ++ publishSettings: _*)
+  .settings(libraryDependencies ++= scalacheckDependencies)
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val tests = project
-  .dependsOn(core, scalacheck)
-  .enablePlugins(AutomateHeaderPlugin)
-  .settings(standardSettings ++ noPublishSettings)
-  .settings(noPublishSettings)
   .settings(name := "matryoshka-tests")
+  .dependsOn(coreJVM, scalacheck)
+  .settings(standardSettings ++ noPublishSettings: _*)
+  .settings(testsDependencies)
+  .enablePlugins(AutomateHeaderPlugin)
