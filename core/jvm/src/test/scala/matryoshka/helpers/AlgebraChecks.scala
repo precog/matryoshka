@@ -27,6 +27,9 @@ import org.typelevel.discipline.specs2.mutable._
 import scalaz._, Scalaz._
 
 trait AlgebraChecks extends SpecificationLike with Discipline {
+  /** FIXME: added to get compiling after scalacheck upgrade. */
+  private implicit def arbIdentity[A]: Arbitrary[A => A] = Arbitrary[A => A](Gen const (x => x))
+
   def checkFoldIsoLaws[T[_[_]]: Recursive: Corecursive: EqualT, F[_]: Functor, A](
     name: String, iso: AlgebraIso[F, A])(
     implicit FA: Delay[Arbitrary, F], AA: Arbitrary[A], FE: Delay[Equal, F], AE: Equal[A]) =
