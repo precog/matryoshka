@@ -28,8 +28,12 @@ import org.scalacheck._
 import org.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
+import scalaz.scalacheck.ScalazArbitrary._
 
 class EnvTSpec extends Specification with CheckAll with AlgebraChecks {
+  implicit def envTCogen[E, F[_], A](implicit CA: Cogen[E], CF: Cogen[F[A]]): Cogen[EnvT[E, F, A]] =
+    Cogen((seed, env) => Cogen.perturbPair(seed, env.run))
+
   implicit def envTArbitrary[E: Arbitrary, F[_]](
     implicit F: Delay[Arbitrary, F]):
       Delay[Arbitrary, EnvT[E, F, ?]] =
@@ -42,9 +46,8 @@ class EnvTSpec extends Specification with CheckAll with AlgebraChecks {
   "EnvT" should {
     "satisfy relevant laws" in {
       checkAll(equal.laws[EnvT[String, Exp, Int]])
-      // FIXME: couldn't find arbitrary instances after scalacheck upgrade.
-      // Arbitrary[EnvT[String,scalaz.NonEmptyList,Int] => Int]
-      // checkAll(comonad.laws[EnvT[String, NonEmptyList, ?]])
+      /* TODO */
+      checkAll(comonad.laws[EnvT[String, NonEmptyList, ?]])
     }
   }
 

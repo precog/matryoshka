@@ -15,6 +15,13 @@ object ScalazArbitrary extends ScalazArbitraryPlatform {
   import Arbitrary._
   import Gen._
   import ScalaCheckBinding._
+  import org.scalacheck.Cogen
+
+  /** Cogen instances. Needs lots more.
+   */
+  implicit def nonEmptyListCogen[A: Cogen] : Cogen[NonEmptyList[A]]                        = Cogen[Seq[A]] contramap (_.stream)
+  implicit def comonadCogen[F[_]: Comonad, A](implicit CA: Cogen[A]): Cogen[F[A]]          = CA contramap (_.copoint)
+  implicit def monoidCogen[F[_] : Foldable, A: Monoid](implicit CA: Cogen[A]): Cogen[F[A]] = CA contramap (_.suml)
 
   private def arb[A: Arbitrary]: Arbitrary[A] = implicitly[Arbitrary[A]]
 
