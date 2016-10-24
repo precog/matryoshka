@@ -77,7 +77,7 @@ lazy val standardSettings = Seq(
   libraryDependencies ++= Seq(
     "com.github.julien-truffaut" %%% "monocle-core" % monocleVersion % "compile, test",
     "org.scalaz"                 %%% "scalaz-core"  % scalazVersion  % "compile, test",
-    "com.github.mpilquist"       %%% "simulacrum"   % "0.7.0"        % "compile, test"),
+    "com.github.mpilquist"       %%% "simulacrum"   % "0.10.0"       % "compile, test"),
 
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
 

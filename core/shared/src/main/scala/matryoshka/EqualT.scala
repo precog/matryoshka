@@ -16,10 +16,9 @@
 
 package matryoshka
 
-import scala.{Boolean, inline}
-
+import scala.Boolean
 import scalaz._
-import simulacrum.typeclass
+import simulacrum._
 
 @typeclass trait EqualT[T[_[_]]] {
   def equal[F[_]: Functor](tf1: T[F], tf2: T[F])(implicit del: Delay[Equal, F]):

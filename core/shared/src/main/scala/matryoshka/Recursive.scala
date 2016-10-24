@@ -19,11 +19,11 @@ package matryoshka
 import Merge.ops._
 import matryoshka.patterns.EnvT
 
-import scala.{Boolean, inline, Option, PartialFunction}
+import scala.{Boolean, Option, PartialFunction}
 import scala.collection.immutable.{List, Nil}
 
 import scalaz._, Scalaz._
-import simulacrum.typeclass
+import simulacrum._
 
 /** Folds for recursive data types. */
 @typeclass trait Recursive[T[_[_]]] {
