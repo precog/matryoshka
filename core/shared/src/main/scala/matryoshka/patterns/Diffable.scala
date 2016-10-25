@@ -18,10 +18,9 @@ package matryoshka.patterns
 
 import matryoshka._
 
-import scala.{inline, Option}
-
+import scala.Option
 import scalaz._, Scalaz._
-import simulacrum.typeclass
+import simulacrum._
 
 @typeclass trait Diffable[F[_]] { self =>
   def diffImpl[T[_[_]]: Recursive: Corecursive](l: T[F], r: T[F]):
