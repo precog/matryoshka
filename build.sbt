@@ -14,6 +14,10 @@ val scalacheckVersion       = "1.13.3"
 val scalazScalacheckVersion = "7.2.7-scalacheck-1.13"
 val disciplineVersion       = "0.7.1"
 
+def scalacheckDependencies = Seq(
+  "org.specs2" %% "specs2-scalacheck"         % specs2Version,
+  "org.scalaz" %% "scalaz-scalacheck-binding" % scalazScalacheckVersion
+)
 def monocleVersion(sv: String) = sv match {
   case "2.11" => "1.3.1"
   case _      => "1.4.0-SNAPSHOT"
@@ -28,10 +32,10 @@ def versionOpts(sv: String): Seq[String] = sv match {
 }
 
 def universalSettings = Seq(
-  scalaVersion := "2.11.8",
-  crossScalaVersions := Seq(scalaVersion.value, "2.12.0"),
-  organization := "com.slamdata",
-  licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
+         scalaVersion :=  "2.11.8",
+   crossScalaVersions :=  Seq(scalaVersion.value, "2.12.0"),
+         organization :=  "com.slamdata",
+             licenses +=  ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
   libraryDependencies ++= Seq(
     "com.github.julien-truffaut" %%% "monocle-core" % monocleVersion(scalaBinaryVersion.value),
     "org.scalaz"                 %%% "scalaz-core"  % scalazVersion,
@@ -46,7 +50,7 @@ def universalSettings = Seq(
     "-language:implicitConversions"
   )
 )
-lazy val standardSettings = universalSettings ++ Seq(
+lazy val standardSettings = universalSettings ++ Seq[Setting[_]](
   headers := Map(
     "scala" -> Apache2_0("2014–2016", "SlamData Inc."),
     "java"  -> Apache2_0("2014–2016", "SlamData Inc.")),
@@ -56,7 +60,6 @@ lazy val standardSettings = universalSettings ++ Seq(
   updateOptions := updateOptions.value.withCachedResolution(true),
   autoCompilerPlugins := true,
   autoAPIMappings := true,
-  exportJars := true,
   ScoverageKeys.coverageHighlighting := true,
   scalacOptions ++= versionOpts(scalaBinaryVersion.value),
   scalacOptions ++= Seq(
@@ -117,7 +120,7 @@ val warts = Seq(
   Wart.TryPartial,
   Wart.Var)
 
-lazy val publishSettings = Seq(
+lazy val publishSettings = Seq[Setting[_]](
   organizationName := "SlamData Inc.",
   organizationHomepage := Some(url("http://slamdata.com")),
   homepage := Some(url("https://github.com/slamdata/matryoshka")),
@@ -146,44 +149,55 @@ lazy val publishSettings = Seq(
       email = "contact@slamdata.com",
       url = new URL("http://slamdata.com"))))
 
-def noArtifacts = Seq(
+def noPublishSettings = Seq(
           publish := (),
      publishLocal := (),
   publishArtifact := false
 )
+
 lazy val root = Project("root", file("."))
-  .settings(standardSettings ++ publishSettings ++ noArtifacts: _*)
   .settings(name := "matryoshka")
+  .settings(standardSettings ++ noPublishSettings: _*)
   .settings(console := (console in repl).value)
-  .aggregate(coreJVM, coreJS, `internal-test-glue`, repl)
+  .aggregate(coreJVM, coreJS, scalacheck, repl, tests)
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val core = crossProject.in(file("core"))
-  .settings(standardSettings ++ publishSettings: _*)
   .settings(name := "matryoshka-core")
+  .settings(standardSettings ++ publishSettings: _*)
   .enablePlugins(AutomateHeaderPlugin)
 
-lazy val `internal-test-glue` = project settings universalSettings settings (
-  libraryDependencies ++= Seq(
-    "com.github.julien-truffaut" %% "monocle-law"               % monocleVersion(scalaBinaryVersion.value),
-    "org.specs2"                 %% "specs2-core"               % specs2Version,
-    "org.specs2"                 %% "specs2-scalacheck"         % specs2Version,
-    "org.scalaz"                 %% "scalaz-scalacheck-binding" % scalazScalacheckVersion,
-    "org.scalacheck"             %% "scalacheck"                % scalacheckVersion,
-    "org.typelevel"              %% "discipline"                % disciplineVersion
-  )
-)
-
-lazy val coreJVM = core.jvm dependsOn (`internal-test-glue` % "test->compile")
+lazy val coreJVM = core.jvm
 lazy val coreJS  = core.js
+lazy val scalacheck = project
+  .dependsOn(coreJVM)
+  .settings(name := "matryoshka-scalacheck")
+  .settings(standardSettings ++ publishSettings: _*)
+  .settings(libraryDependencies ++= scalacheckDependencies)
+  .enablePlugins(AutomateHeaderPlugin)
+
+lazy val tests = project
+  .settings(name := "matryoshka-tests")
+  .dependsOn(coreJVM, scalacheck)
+  .settings(universalSettings ++ noPublishSettings: _*)
+  .settings(libraryDependencies ++= scalacheckDependencies ++
+    Seq(
+      "com.github.julien-truffaut" %% "monocle-law" % monocleVersion(scalaBinaryVersion.value) % Test,
+      "org.specs2"                 %% "specs2-core" % specs2Version % Test,
+      "org.scalacheck"             %% "scalacheck"  % scalacheckVersion % Test,
+      "org.typelevel"              %% "discipline"  % disciplineVersion % Test
+    )
+  )
+  .enablePlugins(AutomateHeaderPlugin)
 
 /** A project just for the console.
  *  Applies only the settings necessary for that purpose.
  */
-lazy val repl = project dependsOn (coreJVM % "test->test;compile->compile") settings (universalSettings: _*) settings (
+lazy val repl = project dependsOn (coreJVM % "test->test;compile->compile") settings universalSettings settings (
   console := (console in Test).value,
   initialCommands in console := """
+    import matryoshka._, data._, Recursive.ops._, Corecursive.ops._, FunctorT.ops._
     import scalaz._, Scalaz._
-    import matryoshka._, data._,Recursive.ops._, FunctorT.ops._
   """
 )
+
