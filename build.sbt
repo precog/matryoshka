@@ -47,7 +47,7 @@ lazy val standardSettings = Seq[Setting[_]](
     "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/",
     "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
     "bintray/non" at "http://dl.bintray.com/non/maven"),
-  addCompilerPlugin("org.spire-math" %% "kind-projector"   % "0.7.1"),
+  addCompilerPlugin("org.spire-math" %% "kind-projector"   % "0.9.2"),
   addCompilerPlugin("org.scalamacros" % "paradise"         % "2.1.0" cross CrossVersion.full),
   addCompilerPlugin("com.milessabin"  % "si2712fix-plugin" % "1.2.0" cross CrossVersion.full),
   ScoverageKeys.coverageHighlighting := true,
@@ -80,7 +80,7 @@ lazy val standardSettings = Seq[Setting[_]](
   libraryDependencies ++= Seq(
     "com.github.julien-truffaut" %%% "monocle-core" % monocleVersion % "compile, test",
     "org.scalaz"                 %%% "scalaz-core"  % scalazVersion  % "compile, test",
-    "com.github.mpilquist"       %%% "simulacrum"   % "0.7.0"        % "compile, test"),
+    "com.github.mpilquist"       %%% "simulacrum"   % "0.10.0"       % "compile, test"),
 
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
 
