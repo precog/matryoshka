@@ -8,13 +8,14 @@ import org.scalajs.sbtplugin.cross.CrossProject
 lazy val checkHeaders = taskKey[Unit]("Fail the build if createHeaders is not up-to-date")
 
 // (monocle) doesn't support scala.js yet, until then tests are JVM-only
-val scalazVersion     = "7.2.6"
-val specs2Version     = "3.8.5.1"
-val scalacheckVersion = "1.13.3"
-val disciplineVersion = "0.7.1"
+val scalazVersion           = "7.2.7"
+val specs2Version           = "3.8.5.1"
+val scalacheckVersion       = "1.13.3"
+val scalazScalacheckVersion = "7.2.7-scalacheck-1.13"
+val disciplineVersion       = "0.7.1"
 
 def monocleVersion(sv: String) = sv match {
-  case "2.11" => "1.3.0"
+  case "2.11" => "1.3.1"
   case _      => "1.4.0-SNAPSHOT"
 }
 def versionDeps(sv: String): Seq[ModuleID] = sv match {
@@ -28,7 +29,7 @@ def versionOpts(sv: String): Seq[String] = sv match {
 
 def universalSettings = Seq(
   scalaVersion := "2.11.8",
-  crossScalaVersions := Seq(scalaVersion.value, "2.12.0-RC2"),
+  crossScalaVersions := Seq(scalaVersion.value, "2.12.0"),
   organization := "com.slamdata",
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
   libraryDependencies ++= Seq(
@@ -36,7 +37,7 @@ def universalSettings = Seq(
     "org.scalaz"                 %%% "scalaz-core"  % scalazVersion,
     "com.github.mpilquist"       %%% "simulacrum"   % "0.10.0"
   ),
-  addCompilerPlugin("org.spire-math"  %% "kind-projector"   % "0.9.2"),
+  addCompilerPlugin("org.spire-math"  %% "kind-projector"   % "0.9.3"),
   addCompilerPlugin("org.scalamacros" %  "paradise"         % "2.1.0" cross CrossVersion.full),
   libraryDependencies ++= versionDeps(scalaBinaryVersion.value),
   scalacOptions ++= Seq(
@@ -164,11 +165,12 @@ lazy val core = crossProject.in(file("core"))
 
 lazy val `internal-test-glue` = project settings universalSettings settings (
   libraryDependencies ++= Seq(
-    "com.github.julien-truffaut" %% "monocle-law"       % monocleVersion(scalaBinaryVersion.value),
-    "org.specs2"                 %% "specs2-core"       % specs2Version,
-    "org.specs2"                 %% "specs2-scalacheck" % specs2Version,
-    "org.scalacheck"             %% "scalacheck"        % scalacheckVersion,
-    "org.typelevel"              %% "discipline"        % disciplineVersion
+    "com.github.julien-truffaut" %% "monocle-law"               % monocleVersion(scalaBinaryVersion.value),
+    "org.specs2"                 %% "specs2-core"               % specs2Version,
+    "org.specs2"                 %% "specs2-scalacheck"         % specs2Version,
+    "org.scalaz"                 %% "scalaz-scalacheck-binding" % scalazScalacheckVersion,
+    "org.scalacheck"             %% "scalacheck"                % scalacheckVersion,
+    "org.typelevel"              %% "discipline"                % disciplineVersion
   )
 )
 
