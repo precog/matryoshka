@@ -17,10 +17,9 @@
 package matryoshka
 
 import Recursive.ops._
-
 import scala.Predef.identity
 import scalaz._, Scalaz._
-import simulacrum.typeclass
+import simulacrum._
 
 /** Unfolds for corecursive data types. */
 @typeclass trait Corecursive[T[_[_]]] {

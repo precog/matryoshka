@@ -17,8 +17,7 @@
 package matryoshka
 
 import scala.{None, Option, Unit}
-
-import simulacrum.typeclass
+import simulacrum._
 import scalaz._, Scalaz._
 
 /** Like `Zip`, but it can fail to merge, so it’s much more general.

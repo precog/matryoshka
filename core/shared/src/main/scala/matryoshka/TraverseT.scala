@@ -17,7 +17,7 @@
 package matryoshka
 
 import scalaz._, Scalaz._
-import simulacrum.typeclass
+import simulacrum._
 
 @typeclass trait TraverseT[T[_[_]]] extends FunctorT[T] {
   def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => M[G[T[G]]]):

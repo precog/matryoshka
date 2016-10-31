@@ -18,7 +18,7 @@ package matryoshka
 
 import scala.Predef.identity
 import scalaz._, Scalaz._
-import simulacrum.{typeclass, op}
+import simulacrum._
 
 /** The operations here are very similar to those in Recursive and Corecursive.
   * The usual names (`cata`, `ana`, etc.) are prefixed with `trans` and behave

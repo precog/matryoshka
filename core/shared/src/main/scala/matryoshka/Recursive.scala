@@ -23,7 +23,7 @@ import scala.{Boolean, Option, PartialFunction}
 import scala.collection.immutable.{List, Nil}
 
 import scalaz._, Scalaz._
-import simulacrum.typeclass
+import simulacrum._
 
 /** Folds for recursive data types. */
 @typeclass trait Recursive[T[_[_]]] {

@@ -18,7 +18,7 @@ package matryoshka
 
 import java.lang.String
 import scalaz._
-import simulacrum.typeclass
+import simulacrum._
 
 @typeclass trait ShowT[T[_[_]]] {
   def show[F[_]: Functor](tf: T[F])(implicit del: Delay[Show, F]): Cord =
