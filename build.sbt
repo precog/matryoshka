@@ -7,58 +7,65 @@ import org.scalajs.sbtplugin.cross.CrossProject
 
 lazy val checkHeaders = taskKey[Unit]("Fail the build if createHeaders is not up-to-date")
 
-val monocleVersion = "1.2.1"
-val scalazVersion = "7.2.1"
-// Latest version built against scalacheck 1.12.5
-// doesn't support scala.js yet, until then tests are JVM-only
-val specs2Version = "3.7"
-val scalacheckVersion = "1.12.5"
+// (monocle) doesn't support scala.js yet, until then tests are JVM-only
+val scalazVersion           = "7.2.7"
+val specs2Version           = "3.8.5.1"
+val scalacheckVersion       = "1.13.3"
+val scalazScalacheckVersion = "7.2.7-scalacheck-1.13"
+val disciplineVersion       = "0.7.1"
 
-// `scalaz-scalack-binding` is built with `scalacheck` 1.12.5 so we are stuck
-// with that version
 def scalacheckDependencies = Seq(
-  "org.scalacheck" %% "scalacheck"                % scalacheckVersion,
-  "org.scalaz"     %% "scalaz-scalacheck-binding" % scalazVersion
+  "org.specs2" %% "specs2-scalacheck"         % specs2Version,
+  "org.scalaz" %% "scalaz-scalacheck-binding" % scalazScalacheckVersion
 )
-def testsDependencies = libraryDependencies ++= scalacheckDependencies ++ Seq(
-  "org.typelevel"              %% "discipline"        % "0.4"          % "test",
-  "com.github.julien-truffaut" %% "monocle-law"       % monocleVersion % "test",
-  "org.typelevel"              %% "scalaz-specs2"     % "0.4.0"        % "test",
-  "org.specs2"                 %% "specs2-core"       % specs2Version  % "test" force(),
-  "org.specs2"                 %% "specs2-scalacheck" % specs2Version  % "test" force()
-)
+def monocleVersion(sv: String) = sv match {
+  case "2.11" => "1.3.1"
+  case _      => "1.4.0-SNAPSHOT"
+}
+def versionDeps(sv: String): Seq[ModuleID] = sv match {
+  case "2.11" => Seq(compilerPlugin("com.milessabin" % "si2712fix-plugin" % "1.2.0" cross CrossVersion.full))
+  case _      => Seq()
+}
+def versionOpts(sv: String): Seq[String] = sv match {
+  case "2.11" => Seq()
+  case _      => Seq("-Ypartial-unification")
+}
 
-lazy val standardSettings = Seq[Setting[_]](
+def universalSettings = Seq(
+         scalaVersion :=  "2.11.8",
+   crossScalaVersions :=  Seq(scalaVersion.value, "2.12.0"),
+         organization :=  "com.slamdata",
+             licenses +=  ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
+  libraryDependencies ++= Seq(
+    "com.github.julien-truffaut" %%% "monocle-core" % monocleVersion(scalaBinaryVersion.value),
+    "org.scalaz"                 %%% "scalaz-core"  % scalazVersion,
+    "com.github.mpilquist"       %%% "simulacrum"   % "0.10.0"
+  ),
+  addCompilerPlugin("org.spire-math"  %% "kind-projector"   % "0.9.3"),
+  addCompilerPlugin("org.scalamacros" %  "paradise"         % "2.1.0" cross CrossVersion.full),
+  libraryDependencies ++= versionDeps(scalaBinaryVersion.value),
+  scalacOptions ++= Seq(
+    "-language:existentials",
+    "-language:higherKinds",
+    "-language:implicitConversions"
+  )
+)
+lazy val standardSettings = universalSettings ++ Seq[Setting[_]](
   headers := Map(
     "scala" -> Apache2_0("2014–2016", "SlamData Inc."),
     "java"  -> Apache2_0("2014–2016", "SlamData Inc.")),
-  scalaVersion := "2.11.8",
   logBuffered in Compile := false,
   logBuffered in Test := false,
   outputStrategy := Some(StdoutOutput),
   updateOptions := updateOptions.value.withCachedResolution(true),
   autoCompilerPlugins := true,
   autoAPIMappings := true,
-  exportJars := true,
-  organization := "com.slamdata",
-  resolvers ++= Seq(
-    Resolver.sonatypeRepo("releases"),
-    Resolver.sonatypeRepo("snapshots"),
-    "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/",
-    "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
-    "bintray/non" at "http://dl.bintray.com/non/maven"),
-  addCompilerPlugin("org.spire-math" %% "kind-projector"   % "0.9.2"),
-  addCompilerPlugin("org.scalamacros" % "paradise"         % "2.1.0" cross CrossVersion.full),
-  addCompilerPlugin("com.milessabin"  % "si2712fix-plugin" % "1.2.0" cross CrossVersion.full),
   ScoverageKeys.coverageHighlighting := true,
-
+  scalacOptions ++= versionOpts(scalaBinaryVersion.value),
   scalacOptions ++= Seq(
     "-deprecation",
     "-encoding", "UTF-8",
     "-feature",
-    "-language:existentials",
-    "-language:higherKinds",
-    "-language:implicitConversions",
     "-unchecked",
     "-Xfatal-warnings",
     "-Xfuture",
@@ -68,24 +75,17 @@ lazy val standardSettings = Seq[Setting[_]](
     "-Ywarn-dead-code", // N.B. doesn't work well with the ??? hole
     "-Ywarn-numeric-widen",
     "-Ywarn-unused-import",
-    "-Ywarn-value-discard"),
+    "-Ywarn-value-discard"
+  ),
   scalacOptions in (Compile,doc) ++= Seq("-groups", "-implicits"),
   scalacOptions in (Test, console) --= Seq(
     "-Yno-imports",
-    "-Ywarn-unused-import"),
+    "-Ywarn-unused-import",
+    "-Ywarn-dead-code"
+  ),
   wartremoverErrors in (Compile, compile) ++= warts, // Warts.all,
-
-  console <<= console in Test, // console alias test:console
-
-  libraryDependencies ++= Seq(
-    "com.github.julien-truffaut" %%% "monocle-core" % monocleVersion % "compile, test",
-    "org.scalaz"                 %%% "scalaz-core"  % scalazVersion  % "compile, test",
-    "com.github.mpilquist"       %%% "simulacrum"   % "0.10.0"       % "compile, test"),
-
-  licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
-
   checkHeaders := {
-    if ((createHeaders in Compile).value.nonEmpty) error("headers not all present")
+    if ((createHeaders in Compile).value.nonEmpty) sys.error("headers not all present")
   })
 
 // Using a Seq of desired warts instead of Warts.allBut due to an incremental compilation issue.
@@ -95,6 +95,9 @@ lazy val standardSettings = Seq[Setting[_]](
 //   Wart.ExplicitImplicitTypes - see mpilquist/simulacrum#35
 //   Wart.Nothing
 //   Wart.Throw
+//   Wart.NoNeedForMonad - crashes with a match error after dependency version upgrades
+//     scala.MatchError: (_1: A, _2: T[F])(A, T[F])((a @ _), (tf @ _)) (of class scala.reflect.internal.Trees$Apply)
+//       at org.wartremover.warts.NoNeedForMonad$$anonfun$1$$anonfun$apply$1.apply(NoNeedForMonad.scala:18)
 val warts = Seq(
   Wart.Any2StringAdd,
   Wart.AsInstanceOf,
@@ -106,7 +109,6 @@ val warts = Seq(
   Wart.JavaConversions,
   Wart.ListOps,
   Wart.MutableDataStructures,
-  Wart.NoNeedForMonad,
   Wart.NonUnitStatements,
   Wart.Null,
   Wart.Option2Iterable,
@@ -148,14 +150,16 @@ lazy val publishSettings = Seq[Setting[_]](
       url = new URL("http://slamdata.com"))))
 
 def noPublishSettings = Seq(
-  publish := (),
-  publishLocal := (),
-  publishArtifact := false)
+          publish := (),
+     publishLocal := (),
+  publishArtifact := false
+)
 
 lazy val root = Project("root", file("."))
   .settings(name := "matryoshka")
   .settings(standardSettings ++ noPublishSettings: _*)
-  .aggregate(coreJVM, coreJS, scalacheck, tests)
+  .settings(console := (console in repl).value)
+  .aggregate(coreJVM, coreJS, scalacheck, repl, tests)
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val core = crossProject.in(file("core"))
@@ -164,8 +168,7 @@ lazy val core = crossProject.in(file("core"))
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val coreJVM = core.jvm
-lazy val coreJS = core.js
-
+lazy val coreJS  = core.js
 lazy val scalacheck = project
   .dependsOn(coreJVM)
   .settings(name := "matryoshka-scalacheck")
@@ -176,6 +179,25 @@ lazy val scalacheck = project
 lazy val tests = project
   .settings(name := "matryoshka-tests")
   .dependsOn(coreJVM, scalacheck)
-  .settings(standardSettings ++ noPublishSettings: _*)
-  .settings(testsDependencies)
+  .settings(universalSettings ++ noPublishSettings: _*)
+  .settings(libraryDependencies ++= scalacheckDependencies ++
+    Seq(
+      "com.github.julien-truffaut" %% "monocle-law" % monocleVersion(scalaBinaryVersion.value) % Test,
+      "org.specs2"                 %% "specs2-core" % specs2Version % Test,
+      "org.scalacheck"             %% "scalacheck"  % scalacheckVersion % Test,
+      "org.typelevel"              %% "discipline"  % disciplineVersion % Test
+    )
+  )
   .enablePlugins(AutomateHeaderPlugin)
+
+/** A project just for the console.
+ *  Applies only the settings necessary for that purpose.
+ */
+lazy val repl = project dependsOn (coreJVM % "test->test;compile->compile") settings universalSettings settings (
+  console := (console in Test).value,
+  initialCommands in console := """
+    import matryoshka._, data._, Recursive.ops._, Corecursive.ops._, FunctorT.ops._
+    import scalaz._, Scalaz._
+  """
+)
+

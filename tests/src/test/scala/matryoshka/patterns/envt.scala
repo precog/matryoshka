@@ -24,12 +24,16 @@ import matryoshka.specs2.scalacheck._
 import java.lang.{String}
 import scala.{Int}
 
-import org.scalacheck._
+import org.scalacheck._, rng.Seed
 import org.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
+import scalaz.scalacheck.ScalazArbitrary._
 
 class EnvTSpec extends Specification with CheckAll with AlgebraChecks {
+  implicit def envTCogen[E: Cogen, F[_], A](implicit FA: Cogen[F[A]]): Cogen[EnvT[E, F, A]] =
+    Cogen[(E, F[A])] contramap (_.run)
+
   implicit def envTArbitrary[E: Arbitrary, F[_]](
     implicit F: Delay[Arbitrary, F]):
       Delay[Arbitrary, EnvT[E, F, ?]] =
@@ -42,6 +46,7 @@ class EnvTSpec extends Specification with CheckAll with AlgebraChecks {
   "EnvT" should {
     "satisfy relevant laws" in {
       checkAll(equal.laws[EnvT[String, Exp, Int]])
+      /* TODO */
       checkAll(comonad.laws[EnvT[String, NonEmptyList, ?]])
     }
   }

@@ -20,7 +20,6 @@ import matryoshka._, Recursive.ops._, FunctorT.ops._
 import matryoshka.helpers._
 import matryoshka.specs2.scalacheck.CheckAll
 
-import scala.Predef.{implicitly}
 import scala.{Int}
 
 import org.scalacheck._
@@ -37,8 +36,9 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck with
 
   "Partial" should {
     "satisfy relevant laws" in {
-      checkAll(Props.equal.laws[Partial[Int]](Partial.equal, implicitly))
-      checkAll(Props.monad.laws[Partial](implicitly, implicitly, implicitly, implicitly, Partial.equal))
+      implicit def peq: Equal[Partial[Int]] = Partial.equal
+      checkAll(Props.equal.laws[Partial[Int]])
+      checkAll(Props.monad.laws[Partial])
     }
   }
 

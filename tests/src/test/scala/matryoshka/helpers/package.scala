@@ -17,6 +17,7 @@
 package matryoshka
 
 import matryoshka.patterns.CoEnv
+import data._
 
 import scala.{None, Option, Some}
 
@@ -27,6 +28,21 @@ import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalaCheckBinding.{GenMonad => _, _}
 
 package object helpers extends SpecificationLike with Discipline {
+  implicit def cogenFree[F[_]: Traverse, A: Monoid : Cogen]: Cogen[Free[F, A]] =
+    Cogen[A] contramap (_.suml)
+
+  implicit def cogenFunctor: Contravariant[Cogen] = new Contravariant[Cogen] {
+    def contramap[A, B](fa: Cogen[A])(f: B => A): Cogen[B] = fa contramap f
+  }
+  implicit def cogenFoldable[F[_]: Foldable]: Delay[Cogen, F] = new Delay[Cogen, F] {
+    def apply[A](cog: Cogen[A]): Cogen[F[A]] = Cogen((seed, value) => value.foldLeft(seed)(cog.perturb))
+  }
+
+  implicit def delayCogen[F[_], A](implicit A: Cogen[A], F: Delay[Cogen, F]): Cogen[F[A]] = F(A)
+
+  /** FIXME **/
+  implicit def cogenMu[F[_]] : Cogen[Mu[F]] = Cogen((seed, value) => seed)
+
   implicit def delayArbitrary[F[_], A](
     implicit A: Arbitrary[A], F: Delay[Arbitrary, F]):
       Arbitrary[F[A]] =
