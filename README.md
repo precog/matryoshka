@@ -15,6 +15,16 @@ Generalized folds, unfolds, and traversals for fixed point data structures in Sc
 - [Efficient Nanopass Compilers using Cats and Matryoshka](https://github.com/sellout/recursion-scheme-talk/blob/master/nanopass-compiler-talk.org) – Greg Pfeil’s talk on this library (and some other things)
 - [Fix Haskell (by eliminating recursion)](https://github.com/sellout/recursion-scheme-talk/blob/master/recursion-scheme-talk.org) – Greg Pfeil’s talk on recursion schemes in Haskell
 
+## Usage
+
+To use Matryoshka, the following import should bring in pretty much everything:
+
+```scala
+import matryoshka._, Recursive.ops._, TraverseT.ops._
+```
+
+Also, there are a number of implicits that scalac has trouble finding. Adding @milessabin’s [SI-2712 fix compiler plugin](https://github.com/milessabin/si2712fix-plugin) will simplify a ton of Matryoshka-related code.
+
 ## Introduction
 
 This library is predicated on the idea of rewriting your recursive data structures, replacing the recursive type reference with a fresh type parameter.
@@ -60,26 +70,83 @@ This diagram covers the major classes of transformations. The most basic ones ar
 Here is a very simple example of an algebra (`eval`) and how to apply it to a recursive structure.
 
 ```scala
-val eval: Expr[Long] => Long = {
+val eval: Algebra[Expr, Long] = { // i.e. Expr[Long] => Long
   case Num(x)    => x
   case Mul(x, y) => x * y
 }
 
 def someExpr[T[_[_]]: Corecursive]: T[Expr] =
-  Mul(Num(2).embed, Mul(Num(3).embed, Num(4).embed).embed).embed
+  Mul(Num[T[Expr]](2).embed, Mul(Num[T[Expr]](3).embed,
+      Num[T[Expr]](4).embed).embed).embed
 
 someExpr[Mu].cata(eval) // ⇒ 24
 ```
 
 The `.embed` calls in `someExpr` wrap the nodes in the fixed point type. `embed` is generic, and we abstract `someExpr` over the fixed point type (only requiring that it has an instance of `Corecursive`), so we can postpone the choice of the fixed point as long as possible.
  
-### Folds
-
-Those algebras can be applied recursively to your structures using many different folds. `cata` in the example above is the simplest fold. It traverses the structure bottom-up, applying the algebra to each node. That is the general behavior of a fold, but more complex ones allow for various comonads and monads to affect the result.
+### Recursion Schemes
 
 Here is a cheat-sheet (also available [in PDF](resources/recursion-schemes.pdf)) for some of them.
 
 ![folds and unfolds](resources/recursion-schemes.png)
+
+#### Folds
+
+Those algebras can be applied recursively to your structures using many different folds. `cata` in the example above is the simplest fold. It traverses the structure bottom-up, applying the algebra to each node. That is the general behavior of a fold, but more complex ones allow for various comonads and monads to affect the result.
+
+#### Unfolds
+
+These are the dual of folds – using coalgebras to deconstruct values into parts, top-down. They are defined in the `Corecursive` type class.
+
+#### Refolds
+
+Refolds compose an unfold with a fold, never actually constructing the intermediate fixed-point structure. Therefore, they are available on any value, and are not part of a type class.
+
+#### Transformations
+
+The structure of these type classes is similar to `Recursive` and `Corecursive`, but rather than separating them between bottom-up and top-down traversals, `FunctorT` has both bottom-up and top-down traversals (and refold), while `TraverseT` has all the Kleisli variants (paralleling how `Traverse` extends `Functor`). A fixed-point type that has both `Recursive` and `Corecursive` instances has an implied `TraverseT` instance.
+
+The benefits of these classes is that it is possible to define the required `map` and `traverse` operations on fixed-point types that lack either a `project` or an `embed` (e.g., `Cofree[?[_], A]` lacks `embed` unless `A` has a `Monoid` instance, but can easily be `map`ped over).
+
+The tradeoff is that these operations can only transform between one fixed-point functor and another (or, in some cases, need to maintain the same functor).
+
+The names of these operations are the same as those in `Recursive` and `Corecursive`, but prefixed with `trans`.
+
+There is an additional (restricted) set of operations that also have a `T` suffix (e.g., `transCataT`). These only generalize in “the Elgot position” and require you to maintain the same functor. However, it can be the most natural way to write certain transformations, like `matryoshka.algebras.substitute`.
+
+### Generalization
+
+There are generalized forms of most recursion schemes. From the basic `cata` (and its dual, `ana`), we can generalize in a few ways. We name them using either a prefix or suffix, depending on how they’re generalized.
+
+#### G…
+
+Most well known (in fact, even referred to as “generalized recursion schemes”) is generalizing over a `Comonad` (or `Monad`), converting an algebra like `F[A] => A` to `F[W[A]] => A`. Many of the other named folds are instances of this –
+
+- when `W[A] = (T[F], A)`, it’s `para`,
+- when `W[A] = (B, A)`, it’s `zygo`, and
+- when `W[A] = Cofree[F, A]`, it’s `histo`.
+
+These specializations can give rise to other generalizations. `zygoT` uses `EnvT[B, ?[_], A]` and `ghisto` uses `Cofree[?[_], A]`.
+
+#### …M
+
+Less unique to recursion schemes, there are Kleisli variants that return the result in any monad.
+
+#### Elgot…
+
+This generalization, stolen from the “Elgot algebra”, is similar to standard generalization, except it uses `W[F[A]] => A` rather than `F[W[A]] => A`, with the `Comonad` outside the functor. Not all of the forms seem to be as useful as the `G` variants, but in some cases, like `elgotZygo`, it offers benefits of its own.
+
+#### GElgot…M
+
+Any of these generalizations can be combined, so you can have an algebra that is generalized along two or three dimensions. A fold like `cofPara` takes an algebra that’s generalized like `zygo` (`(B, ?)`) in the “Elgot” dimension and like `para` (`(T[F], ?)`) in the “G” dimension, which looks like `(B, F[(T[F], A)]) => A`. It’s honestly useful. I swear.
+
+### Implementation
+
+Since we can actually derive almost everything from a fairly small number of operations, why don’t we? Well, there are a few reasons, enumerated here in descending order of how valid I think they are:
+
+1. Reducing constraints. In the case of `para`, using `gcata(distPara, …)` would introduce a `Corecursive` constraint, and all of the Kleisli variants require `Traverse` for the functor, not just `Functor`.
+2. Improving performance. `cata` implemented directly (presumably) performs better than `gcata[Id, …]`. We should have some benchmarks added eventually to actually determine when this is worth doing.
+3. Helping inference. While we are (planning to) use kinda-curried type parameters to help with this, it’s still the case that `gcata` generally requires all the type parameters to be specified, while, say, `zygo` doesn’t. You can notice these instances because their definition actually is just to call the generalized version, rather than being implemented directly.
 
 ## Contributing
 

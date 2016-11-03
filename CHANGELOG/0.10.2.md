@@ -1,0 +1,3 @@
+- add type aliases for various types (like `Free` and `Cofree`) in a new package to show the equivalences, and start moving toward fixed-point alternatives
+- add `AlgebraIso` to make isomorphic algebras explicit.
+- a few new pattern functors (in their own package) – `CoEnv`, `ListF`, `Diff`, and `PotentialFailure`.

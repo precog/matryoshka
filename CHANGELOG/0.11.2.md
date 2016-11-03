@@ -1,0 +1,7 @@
+- add `transApoT` to `FunctorT`
+- add `elgotM` refold
+- add `Bifoldable` and `Foldable` instances to `CoEnv`
+- fix `Functor` and `Traverse` instances for `CoEnv`
+- enrich EnvT with `hmap` `lower` and `Show`
+- add `EqualT` and `ShowT` type classes
+- add generic algebras, `substitute`, `interpret`, and variations

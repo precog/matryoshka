@@ -1,11 +1,34 @@
 import de.heikoseeberger.sbtheader.HeaderPlugin
 import de.heikoseeberger.sbtheader.license.Apache2_0
 import scoverage._
-import sbt._, Keys._
+import sbt._
+import Keys._
+import org.scalajs.sbtplugin.cross.CrossProject
 
 lazy val checkHeaders = taskKey[Unit]("Fail the build if createHeaders is not up-to-date")
 
-lazy val standardSettings = Seq(
+val monocleVersion = "1.2.1"
+val scalazVersion = "7.2.1"
+// Latest version built against scalacheck 1.12.5
+// doesn't support scala.js yet, until then tests are JVM-only
+val specs2Version = "3.7"
+val scalacheckVersion = "1.12.5"
+
+// `scalaz-scalack-binding` is built with `scalacheck` 1.12.5 so we are stuck
+// with that version
+def scalacheckDependencies = Seq(
+  "org.scalacheck" %% "scalacheck"                % scalacheckVersion,
+  "org.scalaz"     %% "scalaz-scalacheck-binding" % scalazVersion
+)
+def testsDependencies = libraryDependencies ++= scalacheckDependencies ++ Seq(
+  "org.typelevel"              %% "discipline"        % "0.4"          % "test",
+  "com.github.julien-truffaut" %% "monocle-law"       % monocleVersion % "test",
+  "org.typelevel"              %% "scalaz-specs2"     % "0.4.0"        % "test",
+  "org.specs2"                 %% "specs2-core"       % specs2Version  % "test" force(),
+  "org.specs2"                 %% "specs2-scalacheck" % specs2Version  % "test" force()
+)
+
+lazy val standardSettings = Seq[Setting[_]](
   headers := Map(
     "scala" -> Apache2_0("2014–2016", "SlamData Inc."),
     "java"  -> Apache2_0("2014–2016", "SlamData Inc.")),
@@ -24,9 +47,9 @@ lazy val standardSettings = Seq(
     "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/",
     "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
     "bintray/non" at "http://dl.bintray.com/non/maven"),
-  addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.7.1"),
-  addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full),
-
+  addCompilerPlugin("org.spire-math" %% "kind-projector"   % "0.9.2"),
+  addCompilerPlugin("org.scalamacros" % "paradise"         % "2.1.0" cross CrossVersion.full),
+  addCompilerPlugin("com.milessabin"  % "si2712fix-plugin" % "1.2.0" cross CrossVersion.full),
   ScoverageKeys.coverageHighlighting := true,
 
   scalacOptions ++= Seq(
@@ -46,27 +69,18 @@ lazy val standardSettings = Seq(
     "-Ywarn-numeric-widen",
     "-Ywarn-unused-import",
     "-Ywarn-value-discard"),
+  scalacOptions in (Compile,doc) ++= Seq("-groups", "-implicits"),
   scalacOptions in (Test, console) --= Seq(
     "-Yno-imports",
-    "-Ywarn-unused-import"
-  ),
+    "-Ywarn-unused-import"),
   wartremoverErrors in (Compile, compile) ++= warts, // Warts.all,
 
   console <<= console in Test, // console alias test:console
 
-  libraryDependencies ++= {
-    val scalazVersion = "7.2.1"
-    // Latest version built against scalacheck 1.12.5
-    val specs2Version = "3.7"
-    Seq(
-      "com.github.mpilquist" %% "simulacrum"             % "0.7.0"       % "compile, test",
-      "org.scalaz"        %% "scalaz-core"               % scalazVersion % "compile, test",
-      "org.scalaz"        %% "scalaz-scalacheck-binding" % scalazVersion % "test",
-      "org.specs2"        %% "specs2-core"               % specs2Version % "test" force(),
-      "org.specs2"        %% "specs2-scalacheck"         % specs2Version % "test" force(),
-      // `scalaz-scalacheck-binding` is built with `scalacheck` 1.12.5 so we are stuck with that version
-      "org.scalacheck"    %% "scalacheck"                % "1.12.5"      % "test" force())
-  },
+  libraryDependencies ++= Seq(
+    "com.github.julien-truffaut" %%% "monocle-core" % monocleVersion % "compile, test",
+    "org.scalaz"                 %%% "scalaz-core"  % scalazVersion  % "compile, test",
+    "com.github.mpilquist"       %%% "simulacrum"   % "0.10.0"       % "compile, test"),
 
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
 
@@ -104,7 +118,7 @@ val warts = Seq(
   Wart.TryPartial,
   Wart.Var)
 
-lazy val publishSettings = Seq(
+lazy val publishSettings = Seq[Setting[_]](
   organizationName := "SlamData Inc.",
   organizationHomepage := Some(url("http://slamdata.com")),
   homepage := Some(url("https://github.com/slamdata/matryoshka")),
@@ -133,17 +147,35 @@ lazy val publishSettings = Seq(
       email = "contact@slamdata.com",
       url = new URL("http://slamdata.com"))))
 
+def noPublishSettings = Seq(
+  publish := (),
+  publishLocal := (),
+  publishArtifact := false)
+
 lazy val root = Project("root", file("."))
-  .settings(standardSettings ++ publishSettings: _*)
-  .settings(Seq(
-    publish := (),
-    publishLocal := (),
-    publishArtifact := false))
   .settings(name := "matryoshka")
-  .aggregate(core)
+  .settings(standardSettings ++ noPublishSettings: _*)
+  .aggregate(coreJVM, coreJS, scalacheck, tests)
   .enablePlugins(AutomateHeaderPlugin)
 
-lazy val core = (project in file("core"))
-  .settings(standardSettings ++ publishSettings: _*)
+lazy val core = crossProject.in(file("core"))
   .settings(name := "matryoshka-core")
+  .settings(standardSettings ++ publishSettings: _*)
+  .enablePlugins(AutomateHeaderPlugin)
+
+lazy val coreJVM = core.jvm
+lazy val coreJS = core.js
+
+lazy val scalacheck = project
+  .dependsOn(coreJVM)
+  .settings(name := "matryoshka-scalacheck")
+  .settings(standardSettings ++ publishSettings: _*)
+  .settings(libraryDependencies ++= scalacheckDependencies)
+  .enablePlugins(AutomateHeaderPlugin)
+
+lazy val tests = project
+  .settings(name := "matryoshka-tests")
+  .dependsOn(coreJVM, scalacheck)
+  .settings(standardSettings ++ noPublishSettings: _*)
+  .settings(testsDependencies)
   .enablePlugins(AutomateHeaderPlugin)

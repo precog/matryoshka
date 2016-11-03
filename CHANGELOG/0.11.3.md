@@ -1,0 +1,1 @@
+- use "algebra" and "transform" type aliases in all signatures
