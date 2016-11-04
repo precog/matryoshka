@@ -16,12 +16,13 @@
 
 package matryoshka
 
-import Recursive.ops._, FunctorT.ops._, TraverseT.nonInheritedOps._
+import Recursive.ops._, RecursiveT.ops._, FunctorT.ops._, TraverseT.nonInheritedOps._
 import matryoshka.data._
 import matryoshka.exp._
 import matryoshka.exp2._
 import matryoshka.helpers._
 import matryoshka.runners._
+import matryoshka.scalacheck.arbitrary._
 import matryoshka.specs2.scalacheck.CheckAll
 
 import java.lang.String
@@ -89,8 +90,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
   def addOneExp2Expƒ[T[_[_]]]: Exp2[T[Exp2]] => Exp[T[Exp2]] =
     orDefault[Exp2[T[Exp2]], Exp[T[Exp2]]](Num(0))(addOneOptExp2Expƒ)
 
-  def simplifyƒ[T[_[_]]: Recursive]: Exp[T[Exp]] => Option[Exp[T[Exp]]] = {
-    case Mul(a, b) => (a.project, b.project) match {
+  def simplifyƒ[T[_[_]]: RecursiveT]: Exp[T[Exp]] => Option[Exp[T[Exp]]] = {
+    case Mul(a, b) => (a.projectT, b.projectT) match {
       case (Num(0), Num(_)) => Num(0).some
       case (Num(1), Num(n)) => Num(n).some
       case (Num(_), Num(0)) => Num(0).some
@@ -100,14 +101,14 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     case _         => None
   }
 
-  def addOneOrSimplifyƒ[T[_[_]]: Recursive]: Exp[T[Exp]] => Exp[T[Exp]] = {
+  def addOneOrSimplifyƒ[T[_[_]]: RecursiveT]: Exp[T[Exp]] => Exp[T[Exp]] = {
     case t @ Num(_)    => addOneƒ(t)
     case t @ Mul(_, _) => repeatedly(simplifyƒ[T]).apply(t)
     case t             => t
   }
 
-  def extractLambdaƒ[T[_[_]]: Recursive]: Exp[(T[Exp], T[Exp2])] => Exp2[T[Exp2]] = {
-    case Lambda(_, (exp, exp2)) => exp.project match {
+  def extractLambdaƒ[T[_[_]]: RecursiveT]: Exp[(T[Exp], T[Exp2])] => Exp2[T[Exp2]] = {
+    case Lambda(_, (exp, exp2)) => exp.projectT match {
       case Num(a) => Num2(a)
       case _      => Single(exp2)
     }
@@ -123,72 +124,74 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
   // NB: This is better done with cata, but we fake it here
-  def partialEval[T[_[_]]: Corecursive: Recursive](t: Exp[Cofree[Exp, T[Exp]]]):
-      T[Exp] =
+  def partialEval[T]
+    (t: Exp[Cofree[Exp, T]])
+    (implicit TR: Recursive.Aux[T, Exp], TC: Corecursive.Aux[T, Exp])
+      : T =
     t match {
       case Mul(x, y) => (x.head.project, y.head.project) match {
-        case (Num(a), Num(b)) => Num[T[Exp]](a * b).embed
+        case (Num(a), Num(b)) => Num[T](a * b).embed
         case _                => t.map(_.head).embed
       }
       case _ => t.map(_.head).embed
     }
 
   val eval: Algebra[Exp, Int] = {
-    case Num(x) => x
-    case Mul(x, y) => x*y
-    case _ => Predef.???
+    case Num(x)    => x
+    case Mul(x, y) => x * y
+    case _         => Predef.???
   }
 
-  checkAlgebraIsoLaws("recCorec", recCorecIso[Mu, Exp])
-  checkAlgebraIsoLaws("lambek", lambekIso[Mu, Exp])
+  checkAlgebraIsoLaws("recCorec", birecursiveIso[Mu[Exp], Exp])
+  checkAlgebraIsoLaws("lambek", bilambekIso[Mu[Exp], Exp])
 
   "Recursive" >> {
     "isLeaf" >> {
       "be true for simple literal" in {
         num(1).isLeaf must beTrue
-        num(1).convertTo[Mu].isLeaf must beTrue
-        num(1).convertTo[Nu].isLeaf must beTrue
+        num(1).convertTo[Mu[Exp]].isLeaf must beTrue
+        num(1).convertTo[Nu[Exp]].isLeaf must beTrue
       }
 
       "be false for expression" in {
         mul(num(1), num(2)).isLeaf must beFalse
-        mul(num(1), num(2)).convertTo[Mu].isLeaf must beFalse
-        mul(num(1), num(2)).convertTo[Nu].isLeaf must beFalse
+        mul(num(1), num(2)).convertTo[Mu[Exp]].isLeaf must beFalse
+        mul(num(1), num(2)).convertTo[Nu[Exp]].isLeaf must beFalse
       }
     }
 
     "children" >> {
       "be empty for simple literal" in {
         num(1).children must be empty;
-        num(1).convertTo[Mu].children must be empty;
-        num(1).convertTo[Nu].children must be empty
+        num(1).convertTo[Mu[Exp]].children must be empty;
+        num(1).convertTo[Nu[Exp]].children must be empty
       }
 
       "contain sub-expressions" in {
         mul(num(1), num(2)).children must equal(List(num(1), num(2)))
-        mul(num(1), num(2)).convertTo[Mu].children must
-          equal(List(num(1), num(2)).map(_.convertTo[Mu]))
-        mul(num(1), num(2)).convertTo[Nu].children must
-          equal(List(num(1), num(2)).map(_.convertTo[Nu]))
+        mul(num(1), num(2)).convertTo[Mu[Exp]].children must
+          equal(List(num(1), num(2)).map(_.convertTo[Mu[Exp]]))
+        mul(num(1), num(2)).convertTo[Nu[Exp]].children must
+          equal(List(num(1), num(2)).map(_.convertTo[Nu[Exp]]))
       }
     }
 
     "universe" >> {
       "be one for simple literal" in {
         num(1).universe must equal(List(num(1)))
-        num(1).convertTo[Mu].universe must
-          equal(List(num(1)).map(_.convertTo[Mu]))
-        num(1).convertTo[Nu].universe must
-          equal(List(num(1)).map(_.convertTo[Nu]))
+        num(1).convertTo[Mu[Exp]].universe must
+          equal(List(num(1)).map(_.convertTo[Mu[Exp]]))
+        num(1).convertTo[Nu[Exp]].universe must
+          equal(List(num(1)).map(_.convertTo[Nu[Exp]]))
       }
 
       "contain root and sub-expressions" in {
         mul(num(1), num(2)).universe must
           equal(List(mul(num(1), num(2)), num(1), num(2)))
-        mul(num(1), num(2)).convertTo[Mu].universe must
-          equal(List(mul(num(1), num(2)), num(1), num(2)).map(_.convertTo[Mu]))
-        mul(num(1), num(2)).convertTo[Nu].universe must
-          equal(List(mul(num(1), num(2)), num(1), num(2)).map(_.convertTo[Nu]))
+        mul(num(1), num(2)).convertTo[Mu[Exp]].universe must
+          equal(List(mul(num(1), num(2)), num(1), num(2)).map(_.convertTo[Mu[Exp]]))
+        mul(num(1), num(2)).convertTo[Nu[Exp]].universe must
+          equal(List(mul(num(1), num(2)), num(1), num(2)).map(_.convertTo[Nu[Exp]]))
       }
     }
 
@@ -197,8 +200,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testFunc(
           num(1),
           new FuncRunner[Exp, Exp] {
-            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
-              _.transCata(addOneƒ) must equal(num(2).convertTo[T])
+            def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[Exp], Exp], Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.transCata(addOneƒ) must equal(num(2).convertTo[T[Exp]])
           })
       }
 
@@ -206,8 +209,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testFunc(
           mul(num(1), num(2)),
           new FuncRunner[Exp, Exp] {
-            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
-              _.transCata(addOneƒ) must equal(mul(num(2), num(3)).convertTo[T])
+            def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[Exp], Exp], Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.transCata(addOneƒ) must equal(mul(num(2), num(3)).convertTo[T[Exp]])
           })
       }
 
@@ -222,8 +225,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testFunc(
           num(1),
           new FuncRunner[Exp, Exp] {
-            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
-              _.transAna(addOneƒ) must equal(num(2).convertTo[T])
+            def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[Exp], Exp], Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.transAna(addOneƒ) must equal(num(2).convertTo[T[Exp]])
           })
       }
 
@@ -231,8 +234,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testFunc(
           mul(num(1), num(2)),
           new FuncRunner[Exp, Exp] {
-            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
-              _.transAna(addOneƒ) must equal(mul(num(2), num(3)).convertTo[T])
+            def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[Exp], Exp], Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+              _.transAna(addOneƒ) must equal(mul(num(2), num(3)).convertTo[T[Exp]])
           })
       }
 
@@ -259,14 +262,14 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       "multiply original with identity ~>" in {
         lam('meh, mul(vari('meh), mul(num(10), num(8))))
           .gprepro[Cofree[Exp, ?], Fix[Exp]](
-            distHisto, NaturalTransformation.refl[Exp], partialEval[Fix]) must
+            distHisto, NaturalTransformation.refl[Exp], partialEval[Fix[Exp]]) must
           equal(lam('meh, mul(vari('meh), num(80))))
       }
 
       "apply ~> repeatedly" in {
         lam('meh, mul(vari('meh), mul(num(13), num(8))))
           .gprepro[Cofree[Exp, ?], Fix[Exp]](
-            distHisto, MinusThree, partialEval[Fix]) must
+            distHisto, MinusThree, partialEval[Fix[Exp]]) must
           equal(lam('meh, mul(vari('meh), num(-4))))
       }
     }
@@ -276,9 +279,9 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testFunc(
           num(1),
           new FuncRunner[Exp, Exp] {
-            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+            def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[Exp], Exp], Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
               _.transPrepro(NaturalTransformation.refl[Exp], addOneƒ) must
-                equal(num(2).convertTo[T])
+                equal(num(2).convertTo[T[Exp]])
           })
       }
 
@@ -286,9 +289,9 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testFunc(
           mul(num(1), mul(num(12), num(8))),
           new FuncRunner[Exp, Exp] {
-            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+            def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[Exp], Exp], Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
               _.transPrepro(MinusThree, addOneƒ) must
-                equal(mul(num(-1), mul(num(7), num(3))).convertTo[T])
+                equal(mul(num(-1), mul(num(7), num(3))).convertTo[T[Exp]])
           })
       }
 
@@ -296,9 +299,9 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testFunc(
           num(1),
           new FuncRunner[Exp, Exp2] {
-            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp2]], S: Show[T[Exp2]]) =
+            def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[Exp], Exp], Eq: Equal[T[Exp2]], S: Show[T[Exp2]]) =
               _.transPrepro(MinusThree, addOneExpExp2ƒ) must
-                equal(num2(2).convertTo[T])
+                equal(num2(2).convertTo[T[Exp]])
           })
       }
     }
@@ -308,9 +311,9 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testFunc(
           num(1),
           new FuncRunner[Exp, Exp] {
-            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+            def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[Exp], Exp], Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
               _.transPostpro(NaturalTransformation.refl[Exp], addOneƒ) must
-                equal(num(2).convertTo[T])
+                equal(num(2).convertTo[T[Exp]])
           })
       }
 
@@ -318,9 +321,9 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testFunc(
           mul(num(1), mul(num(12), num(8))),
           new FuncRunner[Exp, Exp] {
-            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+            def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[Exp], Exp], Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
               _.transPostpro(MinusThree, addOneƒ) must
-                equal(mul(num(-1), mul(num(7), num(3))).convertTo[T])
+                equal(mul(num(-1), mul(num(7), num(3))).convertTo[T[Exp]])
           })
       }
 
@@ -328,9 +331,9 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testFunc(
           num2(1),
           new FuncRunner[Exp2, Exp] {
-            def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+            def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[Exp], Exp], Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
               _.transPostpro(MinusThree, addOneExp2Expƒ) must
-                equal(num(2).convertTo[T])
+                equal(num(2).convertTo[T[Exp]])
           })
       }
     }
@@ -362,7 +365,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testRec(
           mul(num(1), mul(num(2), num(3))),
           new RecRunner[Exp, Int] {
-            def run[T[_[_]]: Recursive] = _.cata(eval) must equal(6)
+            def run[T](implicit T: Recursive.Aux[T, Exp]) =
+              _.cata(eval) must equal(6)
           })
       }
 
@@ -370,7 +374,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testRec(
           mul(num(0), num(1)),
           new RecRunner[Exp, List[Int]] {
-            def run[T[_[_]]: Recursive] =
+            def run[T](implicit T: Recursive.Aux[T, Exp]) =
               _.cata(findConstants) must equal(List(0, 1))
           })
       }
@@ -379,7 +383,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testRec(
           mul(num(5), num(2)),
           new RecRunner[Exp, Option[Int]] {
-            def run[T[_[_]]: Recursive] = _.cata(example1ƒ) must beSome(10)
+            def run[T](implicit T: Recursive.Aux[T, Exp]) =
+              _.cata(example1ƒ) must beSome(10)
           })
       }
     }
@@ -389,7 +394,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testRec(
           mul(num(5), num(2)),
           new RecRunner[Exp, (Int, List[Int])] {
-            def run[T[_[_]]: Recursive] =
+            def run[T](implicit T: Recursive.Aux[T, Exp]) =
               _.cata(AlgebraZip[Exp].zip(eval, findConstants)) must
                 equal((10, List(5, 2)))
           })
@@ -401,8 +406,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testRec(
           mul(num(1), mul(num(2), num(3))),
           new RecRunner[Exp, Int] {
-            def run[T[_[_]]: Recursive] = t =>
-              t.para(eval.generalize[(T[Exp], ?)]) must equal(t.cata(eval))
+            def run[T](implicit T: Recursive.Aux[T, Exp]) = t =>
+              t.para(eval.generalize[(T, ?)]) must equal(t.cata(eval))
           })
       }
     }
@@ -410,25 +415,25 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     "coelgot" >> {
       "behave like cofCata ⋘ attributeAna" >> prop { (i: Int) =>
         i.coelgot(eval.generalizeElgot[(Int, ?)], extractFactors) must equal(
-          i.attributeAna(extractFactors).cofCata(eval.generalizeElgot[(Int, ?)]))
+          i.ana[Free[Exp, Int]](attributeCoalgebra(extractFactors)).cata(eval.generalizeElgot[(Int, ?)]))
       }
     }
 
     "elgot" >> {
       "behave like interpCata ⋘ freeAna" >> prop { (i: Int) =>
         i.elgot(eval, extractFactors.generalizeElgot[Int \/ ?]) must equal(
-          i.freeAna(extractFactors.generalizeElgot[Int \/ ?]).interpretCata(eval))
+          i.ana[Free[Exp, Int]](extractFactors.generalizeElgot[Int \/ ?]).cata(patterns.recover(eval)))
       }
     }
 
     "generalizeElgot" >> {
       "behave like cata on an algebra" ! prop { (i: Int) =>
-        val x = i.ana[Fix](extractFactors).cata(eval)
+        val x = i.ana[Fix[Exp]](extractFactors).cata(eval)
         i.coelgot(eval.generalizeElgot[(Int, ?)], extractFactors) must equal(x)
       }
 
       "behave like ana on an coalgebra" ! prop { (i: Int) =>
-        val x = i.ana[Fix](extractFactors).cata(eval)
+        val x = i.ana[Fix[Exp]](extractFactors).cata(eval)
         i.elgot(eval, extractFactors.generalizeElgot[Int \/ ?]) must equal(x)
       }
     }
@@ -439,18 +444,20 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
 
     "generalizeCoalgebra" >> {
       "behave like ana" ! prop { (i: Int) =>
-        i.apo[Fix](extractFactors.generalize[Fix[Exp] \/ ?]) must
-          equal(i.ana[Fix](extractFactors))
-        i.apo[Mu](extractFactors.generalize[Mu[Exp] \/ ?]) must
-          equal(i.ana[Mu](extractFactors))
-        i.apo[Nu](extractFactors.generalize[Nu[Exp] \/ ?]) must
-          equal(i.ana[Nu](extractFactors))
+        i.apo[Fix[Exp]](extractFactors.generalize[Fix[Exp] \/ ?]) must
+          equal(i.ana[Fix[Exp]](extractFactors))
+        i.apo[Mu[Exp]](extractFactors.generalize[Mu[Exp] \/ ?]) must
+          equal(i.ana[Mu[Exp]](extractFactors))
+        i.apo[Nu[Exp]](extractFactors.generalize[Nu[Exp] \/ ?]) must
+          equal(i.ana[Nu[Exp]](extractFactors))
       }
     }
 
     "topDownCata" >> {
-      def subst[T[_[_]]: Recursive](vars: Map[Symbol, T[Exp]], t: T[Exp]):
-          (Map[Symbol, T[Exp]], T[Exp]) = t.project match {
+      def subst[T]
+        (vars: Map[Symbol, T], t: T)
+        (implicit T: Recursive.Aux[T, Exp])
+          : (Map[Symbol, T], T) = t.project match {
         case Let(sym, value, body) => (vars + ((sym, value)), body)
         case Var(sym)              => (vars, vars.get(sym).getOrElse(t))
         case _                     => (vars, t)
@@ -460,25 +467,26 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         val v = let('x, num(1), mul(num(0), vari('x)))
         v.topDownCata(Map.empty[Symbol, Fix[Exp]])(subst) must
           equal(mul(num(0), num(1)))
-        v.convertTo[Mu].topDownCata(Map.empty[Symbol, Mu[Exp]])(subst) must
-          equal(mul(num(0), num(1)).convertTo[Mu])
-        v.convertTo[Nu].topDownCata(Map.empty[Symbol, Nu[Exp]])(subst) must
-          equal(mul(num(0), num(1)).convertTo[Nu])
+        v.convertTo[Mu[Exp]].topDownCata(Map.empty[Symbol, Mu[Exp]])(subst) must
+          equal(mul(num(0), num(1)).convertTo[Mu[Exp]])
+        v.convertTo[Nu[Exp]].topDownCata(Map.empty[Symbol, Nu[Exp]])(subst) must
+          equal(mul(num(0), num(1)).convertTo[Nu[Exp]])
       }
     }
 
     // Evaluate as usual, but trap 0*0 as a special case
-    def peval[T[_[_]]: Recursive](t: Exp[(T[Exp], Int)]): Int = t match {
-      case Mul((Embed(Num(0)), _), (Embed(Num(0)), _)) => -1
-      case Mul((_,             x), (_,             y)) => x * y
-      case Num(x)                                      => x
-      case _                                           => Predef.???
-    }
+    def peval[T](t: Exp[(T, Int)])(implicit T: Recursive.Aux[T, Exp]): Int =
+      t match {
+        case Mul((Embed(Num(0)), _), (Embed(Num(0)), _)) => -1
+        case Mul((_,             x), (_,             y)) => x * y
+        case Num(x)                                      => x
+        case _                                           => Predef.???
+      }
 
     "attributePara" >> {
       "provide a catamorphism" in {
         val v = mul(num(4), mul(num(2), num(3)))
-        v.cata(attributePara(peval[Fix])) must
+        v.cata(attributePara(peval[Fix[Exp]])) must
           equal(
             Cofree[Exp, Int](24, Mul(
               Cofree(4, Num(4)),
@@ -501,7 +509,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
           Cofree(2, Mul(
             Cofree(3, Num(2)),
             Cofree(3, Num(3))))))
-          .cofCataM(attributeElgotM[(Int, ?), Option](weightedEval)) must
+          .cataM(attributeElgotM[(Int, ?), Option](weightedEval)) must
           equal(
             Cofree[Exp, Int](216, Mul(
               Cofree(2, Num(1)),
@@ -516,7 +524,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testRec(
           mul(num(1), mul(num(2), num(3))),
           new RecRunner[Exp, Int] {
-            def run[T[_[_]]: Recursive] = _.para(peval[T]) must equal(6)
+            def run[T](implicit T: Recursive.Aux[T, Exp]) =
+              _.para(peval[T]) must equal(6)
           })
       }
 
@@ -524,7 +533,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testRec(
           mul(num(0), num(0)),
           new RecRunner[Exp, Int] {
-            def run[T[_[_]]: Recursive] = _.para(peval[T]) must equal(-1)
+            def run[T](implicit T: Recursive.Aux[T, Exp]) =
+              _.para(peval[T]) must equal(-1)
           })
       }
 
@@ -532,7 +542,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testRec(
           mul(num(0), mul(num(0), num(1))),
           new RecRunner[Exp, Int] {
-            def run[T[_[_]]: Recursive] = _.para(peval[T]) must equal(0)
+            def run[T](implicit T: Recursive.Aux[T, Exp]) =
+              _.para(peval[T]) must equal(0)
           })
       }
     }
@@ -577,39 +588,40 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       "behave like cata" in {
         val v = mul(num(0), mul(num(0), num(1)))
         v.gcata[Id, Int](distCata, eval) must equal(v.cata(eval))
-        v.convertTo[Mu].gcata[Id, Int](distCata, eval) must equal(v.cata(eval))
-        v.convertTo[Nu].gcata[Id, Int](distCata, eval) must equal(v.cata(eval))
+        v.convertTo[Mu[Exp]].gcata[Id, Int](distCata, eval) must equal(v.cata(eval))
+        v.convertTo[Nu[Exp]].gcata[Id, Int](distCata, eval) must equal(v.cata(eval))
       }
     }
 
     "distPara" >> {
       "behave like para" in {
         val v = mul(num(0), mul(num(0), num(1)))
-        v.gcata[(Fix[Exp], ?), Int](distPara, peval[Fix]) must equal(v.para(peval[Fix]))
-        v.convertTo[Mu].gcata[(Mu[Exp], ?), Int](distPara, peval[Mu]) must equal(v.convertTo[Mu].para(peval[Mu]))
-        v.convertTo[Nu].gcata[(Nu[Exp], ?), Int](distPara, peval[Nu]) must equal(v.convertTo[Nu].para(peval[Nu]))
+        v.gcata[(Fix[Exp], ?), Int](distPara[Fix[Exp]], peval[Fix[Exp]]) must equal(v.para(peval[Fix[Exp]]))
+        v.convertTo[Mu[Exp]].gcata[(Mu[Exp], ?), Int](distPara, peval[Mu[Exp]]) must equal(v.convertTo[Mu[Exp]].para(peval[Mu[Exp]]))
+        v.convertTo[Nu[Exp]].gcata[(Nu[Exp], ?), Int](distPara, peval[Nu[Exp]]) must equal(v.convertTo[Nu[Exp]].para(peval[Nu[Exp]]))
       }
     }
 
-    def extract2s[T[_[_]]: Corecursive]: Int => Exp[T[Exp] \/ Int] = x =>
+    def extract2s[T](implicit T: Corecursive.Aux[T, Exp])
+        : Int => Exp[T \/ Int] = x =>
       if (x == 0) Num(x)
-      else if (x % 2 == 0) Mul(-\/(Num[T[Exp]](2).embed), \/-(x.toInt / 2))
+      else if (x % 2 == 0) Mul(-\/(Num[T](2).embed), \/-(x.toInt / 2))
       else Num(x)
 
-    def extract2sAnd5[T[_[_]]: Corecursive]:
-        Int => T[Exp] \/ Exp[Int] = x =>
+    def extract2sAnd5[T](implicit T: Corecursive.Aux[T, Exp])
+        : Int => T \/ Exp[Int] = x =>
       if (x <= 2) Num(x).right
       else if (x % 2 == 0) \/-(Mul(2, x / 2))
       else if (x % 5 == 0)
-        Mul(Num[T[Exp]](5).embed, Num[T[Exp]](x / 5).embed).embed.left
+        Mul(Num[T](5).embed, Num[T](x / 5).embed).embed.left
       else Num(x).right
 
-    def extract2sNot5[T[_[_]]: Corecursive](x: Int):
-        Option[Exp[T[Exp] \/ Int]] =
+    def extract2sNot5[T](x: Int)(implicit T: Corecursive.Aux[T, Exp]):
+        Option[Exp[T \/ Int]] =
       if (x == 5) None else extract2s[T].apply(x).some
 
-    def fact[T[_[_]]: Corecursive](x: Int): Exp[T[Exp] \/ Int] =
-      if (x > 1) Mul(-\/(Num[T[Exp]](x).embed), \/-(x - 1))
+    def fact[T](x: Int)(implicit T: Corecursive.Aux[T, Exp]): Exp[T \/ Int] =
+      if (x > 1) Mul(-\/(Num[T](x).embed), \/-(x - 1))
       else Num(x)
 
 
@@ -617,29 +629,29 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       "pull out factors of two" in {
         "apoM" in {
           "should be some" in {
-            12.apoM[Fix](extract2sNot5[Fix]) must
+            12.apoM[Fix[Exp]](extract2sNot5[Fix[Exp]]) must
               beSome(mul(num(2), mul(num(2), num(3))))
           }
           "should be none" in {
-            10.apoM[Fix](extract2sNot5[Fix]) must beNone
+            10.apoM[Fix[Exp]](extract2sNot5[Fix[Exp]]) must beNone
           }
         }
         "apo should be an optimization over apoM and be semantically equivalent" >> prop { i: Int =>
           if (i == 0) ok
           else
-            i.apoM[Fix].apply[Id, Exp](extract2s) must
-              equal(i.apo[Fix](extract2s[Fix]))
+            i.apoM[Fix[Exp]].apply[Id, Exp](extract2s) must
+              equal(i.apo[Fix[Exp]](extract2s[Fix[Exp]]))
         }
       }
       "construct factorial" in {
-        4.apo[Fix](fact[Fix]) must
+        4.apo[Fix[Exp]](fact[Fix[Exp]]) must
           equal(mul(num(4), mul(num(3), mul(num(2), num(1)))))
       }
     }
 
     "elgotApo" >> {
       "pull out factors of two and stop on 5" in {
-        420.elgotApo[Fix](extract2sAnd5[Fix]) must
+        420.elgotApo[Fix[Exp]](extract2sAnd5[Fix[Exp]]) must
           equal(mul(num(2), mul(num(2), mul(num(5), num(21)))))
       }
     }
@@ -653,7 +665,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
             testCorec(
               12,
               new CorecRunner[Option, Exp, Int] {
-                def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+                def run[T](implicit TC: Corecursive.Aux[T, Exp], Eq: Equal[T], S: Show[T]) =
                   _.anaM[T](extractFactorsM) must
                     equal(mul(num(2), mul(num(2), num(3))).convertTo[T].some)
               })
@@ -662,7 +674,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
             testCorec(
               10,
               new CorecRunner[Option, Exp, Int] {
-                def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+                def run[T](implicit TC: Corecursive.Aux[T, Exp], Eq: Equal[T], S: Show[T]) =
                   _.anaM[T](extractFactorsM) must beNone
               })
           }
@@ -671,8 +683,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
           testCorec(
             i,
             new CorecRunner[Id, Exp, Int] {
-              def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
-                _.anaM[T](extractFactors) must
+              def run[T](implicit TC: Corecursive.Aux[T, Exp], Eq: Equal[T], S: Show[T]) =
+                _.anaM[T][Id, Exp](extractFactors) must
                   equal(i.ana[T](extractFactors))
             })
         }
@@ -684,8 +696,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testCorec(
           i,
           new CorecRunner[Id, Exp, Int] {
-            def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
-              _.gana[T, Id, Exp](distAna, extractFactors) must
+            def run[T](implicit TC: Corecursive.Aux[T, Exp], Eq: Equal[T], S: Show[T]) =
+              _.gana[T][Id, Exp](distAna, extractFactors) must
                 equal(i.ana[T](extractFactors))
           })
       }
@@ -694,8 +706,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testCorec(
           i,
           new CorecRunner[Id, Exp, Int] {
-            def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
-              _.elgotAna[T, Id, Exp](distAna, extractFactors) must
+            def run[T](implicit TC: Corecursive.Aux[T, Exp], Eq: Equal[T], S: Show[T]) =
+              _.elgotAna[T][Id, Exp](distAna, extractFactors) must
                 equal(i.ana[T](extractFactors))
           })
       }
@@ -703,21 +715,21 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
 
     "distApo" >> {
       "behave like apo in gana" >> prop { (i: Int) =>
-        (i.gana[Fix, Fix[Exp] \/ ?, Exp](distApo, extract2s) must
-          equal(i.apo[Fix](extract2s[Fix]))).toResult and
-        (i.gana[Mu, Mu[Exp] \/ ?, Exp](distApo, extract2s) must
-          equal(i.apo[Mu](extract2s[Mu]))).toResult and
-        (i.gana[Nu, Nu[Exp] \/ ?, Exp](distApo, extract2s) must
-          equal(i.apo[Nu](extract2s[Nu]))).toResult
+        (i.gana[Fix[Exp]](distApo[Fix[Exp]], extract2s[Fix[Exp]]) must
+          equal(i.apo[Fix[Exp]](extract2s[Fix[Exp]]))).toResult and
+        (i.gana[Mu[Exp]](distApo[Mu[Exp]], extract2s[Mu[Exp]]) must
+          equal(i.apo[Mu[Exp]](extract2s[Mu[Exp]]))).toResult and
+        (i.gana[Nu[Exp]](distApo[Nu[Exp]], extract2s[Nu[Exp]]) must
+          equal(i.apo[Nu[Exp]](extract2s[Nu[Exp]]))).toResult
       }
 
       "behave like elgotApo in elgotAna" >> prop { (i: Int) =>
-        (i.elgotAna[Fix, Fix[Exp] \/ ?, Exp](distApo, extract2sAnd5[Fix]) must
-          equal(i.elgotApo[Fix](extract2sAnd5[Fix]))).toResult and
-        (i.elgotAna[Mu, Mu[Exp] \/ ?, Exp](distApo, extract2sAnd5[Mu]) must
-          equal(i.elgotApo[Mu](extract2sAnd5[Mu]))).toResult and
-        (i.elgotAna[Nu, Nu[Exp] \/ ?, Exp](distApo, extract2sAnd5[Nu]) must
-          equal(i.elgotApo[Nu](extract2sAnd5[Nu]))).toResult
+        (i.elgotAna[Fix[Exp]](distApo[Fix[Exp]], extract2sAnd5[Fix[Exp]]) must
+          equal(i.elgotApo[Fix[Exp]](extract2sAnd5[Fix[Exp]]))).toResult and
+        (i.elgotAna[Mu[Exp]](distApo[Mu[Exp]], extract2sAnd5[Mu[Exp]]) must
+          equal(i.elgotApo[Mu[Exp]](extract2sAnd5[Mu[Exp]]))).toResult and
+        (i.elgotAna[Nu[Exp]](distApo[Nu[Exp]], extract2sAnd5[Nu[Exp]]) must
+          equal(i.elgotApo[Nu[Exp]](extract2sAnd5[Nu[Exp]]))).toResult
       }
     }
 
@@ -735,8 +747,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
 
       "behave like chrono with distHisto/distFutu" ! prop { (i: Int) =>
         i.ghylo[Cofree[Exp, ?], Free[Exp, ?]](
-          distHisto, distFutu, partialEval[Fix], extract2and3) must
-          equal(i.chrono(partialEval[Fix], extract2and3))
+          distHisto, distFutu, partialEval[Fix[Exp]], extract2and3) must
+          equal(i.chrono(partialEval[Fix[Exp]], extract2and3))
       }
     }
 
@@ -752,7 +764,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testRec(
           mul(mul(num(0), num(0)), mul(num(2), num(5))),
           new RecRunner[Exp, String] {
-            def run[T[_[_]]: Recursive] =
+            def run[T](implicit T: Recursive.Aux[T, Exp]) =
               _.zygo(eval, strings) must
                 equal("0 (0), 0 (0) (0), 2 (2), 5 (5) (10)")
           })
@@ -764,7 +776,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testRec(
           mul(mul(num(0), num(0)), mul(num(2), num(5))),
           new RecRunner[Exp, String] {
-            def run[T[_[_]]: Recursive] =
+            def run[T](implicit T: Recursive.Aux[T, Exp]) =
               _.paraZygo(peval[T], strings) must
                 equal("0 (0), 0 (0) (-1), 2 (2), 5 (5) (10)")
           })
@@ -786,9 +798,9 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
 
     "mutu" >> {
-      val toNat: Int => Fix[Nat] = _.ana[Fix]({
-        case 0 => Z()
-        case n => S(n - 1)
+      val toNat: Int => Fix[Nat] = _.ana[Fix[Nat]]({
+        case 0 => Z(): Nat[Int]
+        case n => S(n - 1): Nat[Int]
       })
 
       case class Even(even: Boolean)
@@ -818,18 +830,18 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
 
     "histo" >> {
       "eval simple literal multiplication" in {
-        mul(num(5), num(10)).histo(partialEval[Fix]) must equal(num(50))
-        mul(num(5), num(10)).histo(partialEval[Mu]) must equal(num(50).convertTo[Mu])
-        mul(num(5), num(10)).histo(partialEval[Nu]) must equal(num(50).convertTo[Nu])
+        mul(num(5), num(10)).histo(partialEval[Fix[Exp]]) must equal(num(50))
+        mul(num(5), num(10)).histo(partialEval[Mu[Exp]]) must equal(num(50).convertTo[Mu[Exp]])
+        mul(num(5), num(10)).histo(partialEval[Nu[Exp]]) must equal(num(50).convertTo[Nu[Exp]])
       }
 
       "partially evaluate mul in lambda" in {
-        lam('foo, mul(mul(num(4), num(7)), vari('foo))).histo(partialEval[Fix]) must
+        lam('foo, mul(mul(num(4), num(7)), vari('foo))).histo(partialEval[Fix[Exp]]) must
           equal(lam('foo, mul(num(28), vari('foo))))
-        lam('foo, mul(mul(num(4), num(7)), vari('foo))).histo(partialEval[Mu]) must
-          equal(lam('foo, mul(num(28), vari('foo))).convertTo[Mu])
-        lam('foo, mul(mul(num(4), num(7)), vari('foo))).histo(partialEval[Nu]) must
-          equal(lam('foo, mul(num(28), vari('foo))).convertTo[Nu])
+        lam('foo, mul(mul(num(4), num(7)), vari('foo))).histo(partialEval[Mu[Exp]]) must
+          equal(lam('foo, mul(num(28), vari('foo))).convertTo[Mu[Exp]])
+        lam('foo, mul(mul(num(4), num(7)), vari('foo))).histo(partialEval[Nu[Exp]]) must
+          equal(lam('foo, mul(num(28), vari('foo))).convertTo[Nu[Exp]])
       }
     }
 
@@ -843,32 +855,32 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
 
     "postpro" >> {
       "extract original with identity ~>" in {
-        (72.postpro[Fix](NaturalTransformation.refl[Exp], extractFactors) must
+        (72.postpro[Fix[Exp]](NaturalTransformation.refl[Exp], extractFactors) must
           equal(mul(num(2), mul(num(2), mul(num(2), num(9)))))).toResult and
-        (72.postpro[Mu](NaturalTransformation.refl[Exp], extractFactors) must
-          equal(mul(num(2), mul(num(2), mul(num(2), num(9)))).convertTo[Mu])).toResult and
-        (72.postpro[Nu](NaturalTransformation.refl[Exp], extractFactors) must
-          equal(mul(num(2), mul(num(2), mul(num(2), num(9)))).convertTo[Nu])).toResult
+        (72.postpro[Mu[Exp]](NaturalTransformation.refl[Exp], extractFactors) must
+          equal(mul(num(2), mul(num(2), mul(num(2), num(9)))).convertTo[Mu[Exp]])).toResult and
+        (72.postpro[Nu[Exp]](NaturalTransformation.refl[Exp], extractFactors) must
+          equal(mul(num(2), mul(num(2), mul(num(2), num(9)))).convertTo[Nu[Exp]])).toResult
       }
 
       "apply ~> repeatedly" in {
-        (72.postpro[Fix](MinusThree, extractFactors) must
+        (72.postpro[Fix[Exp]](MinusThree, extractFactors) must
           equal(mul(num(-1), mul(num(-4), mul(num(-7), num(0)))))).toResult and
-        (72.postpro[Mu](MinusThree, extractFactors) must
-          equal(mul(num(-1), mul(num(-4), mul(num(-7), num(0)))).convertTo[Mu])).toResult and
-        (72.postpro[Nu](MinusThree, extractFactors) must
-          equal(mul(num(-1), mul(num(-4), mul(num(-7), num(0)))).convertTo[Nu])).toResult
+        (72.postpro[Mu[Exp]](MinusThree, extractFactors) must
+          equal(mul(num(-1), mul(num(-4), mul(num(-7), num(0)))).convertTo[Mu[Exp]])).toResult and
+        (72.postpro[Nu[Exp]](MinusThree, extractFactors) must
+          equal(mul(num(-1), mul(num(-4), mul(num(-7), num(0)))).convertTo[Nu[Exp]])).toResult
       }
     }
 
     "gpostpro" >> {
       "extract original with identity ~>" in {
-        72.gpostpro[Fix, Free[Exp, ?], Exp](distFutu, NaturalTransformation.refl, extract2and3) must
+        72.gpostpro[Fix[Exp]](distFutu[Exp], NaturalTransformation.refl, extract2and3) must
           equal(mul(num(2), mul(num(2), mul(num(2), mul(num(3), num(3))))))
       }
 
       "apply ~> repeatedly" in {
-        72.gpostpro[Fix, Free[Exp, ?], Exp](distFutu, MinusThree, extract2and3) must
+        72.gpostpro[Fix[Exp]](distFutu[Exp], MinusThree, extract2and3) must
           equal(mul(num(-1), mul(num(-4), mul(num(-7), mul(num(-9), num(-9))))))
       }
     }
@@ -878,7 +890,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testCorec(
           8,
           new CorecRunner[Id, Exp, Int] {
-            def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+            def run[T](implicit TC: Corecursive.Aux[T, Exp], Eq: Equal[T], S: Show[T]) =
               _.futu[T](extract2and3) must equal(mul(num(2), mul(num(2), num(2))).convertTo[T])
           })
       }
@@ -887,7 +899,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testCorec(
           81,
           new CorecRunner[Id, Exp, Int] {
-            def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+            def run[T](implicit TC: Corecursive.Aux[T, Exp], Eq: Equal[T], S: Show[T]) =
               _.futu[T](extract2and3) must
                 equal(mul(num(3), num(27)).convertTo[T])
           })
@@ -897,7 +909,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testCorec(
           324,
           new CorecRunner[Id, Exp, Int] {
-            def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
+            def run[T](implicit TC: Corecursive.Aux[T, Exp], Eq: Equal[T], S: Show[T]) =
               _.futu[T](extract2and3) must
                 equal(mul(num(2), mul(num(2), mul(num(3), num(27)))).convertTo[T])
           })
@@ -906,9 +918,9 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
 
     "chrono" >> {
       "factor and partially eval" >> prop { (i: Int) =>
-        i.chrono(partialEval[Fix], extract2and3) must equal(num(i))
-        i.chrono(partialEval[Mu], extract2and3) must equal(num(i).convertTo[Mu])
-        i.chrono(partialEval[Nu], extract2and3) must equal(num(i).convertTo[Nu])
+        i.chrono(partialEval[Fix[Exp]], extract2and3) must equal(num(i))
+        i.chrono(partialEval[Mu[Exp]], extract2and3) must equal(num(i).convertTo[Mu[Exp]])
+        i.chrono(partialEval[Nu[Exp]], extract2and3) must equal(num(i).convertTo[Nu[Exp]])
       }
     }
   }
@@ -969,18 +981,16 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         //     >   exp.cata(attrSelf).universe must
         //     >     equal(exp.universe.map(_.cata(attrSelf)))
         //     if scalac could find the implicit
-        Recursive[Cofree[?[_], Mu[Exp]]].universe(exp.cata[Cofree[Exp, Mu[Exp]]](attrSelf)) must
-          equal(exp.universe.map(_.cata[Cofree[Exp, Mu[Exp]]](attrSelf)))
+        exp.cata(attrSelf[Mu[Exp]]).universe must
+          equal(exp.universe.map(_.cata(attrSelf[Mu[Exp]])))
+        // Recursive[Cofree[?[_], Mu[Exp]]].universe(exp.cata[Cofree[Exp, Mu[Exp]]](attrSelf)) must
+        //   equal(exp.universe.map(_.cata[Cofree[Exp, Mu[Exp]]](attrSelf)))
       }
     }
 
     "convert" >> {
       "forget unit" >> Prop.forAll(expGen) { exp =>
-        // NB: This would look like
-        //     >   exp.cata(attrK(())).convertTo[Fix] must equal(exp)
-        //     if scalac could find the implicit
-        Recursive[Cofree[?[_], Unit]].convertTo[Fix, Exp](exp.cata(attrK(()))) must
-          equal(exp)
+        exp.cata(attrK(())).cata(deattribute[Exp, Unit, Mu[Exp]](_.embed)) must equal(exp)
       }
     }
 
@@ -991,7 +1001,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
 
       "selves" >> Prop.forAll(expGen) { exp =>
-        Foldable[Cofree[Exp, ?]].foldMap(exp.cata[Cofree[Exp, Mu[Exp]]](attrSelf))(_ :: Nil) must
+        Foldable[Cofree[Exp, ?]].foldMap(exp.cata[Cofree[Exp, Mu[Exp]]](attrSelf[Mu[Exp]]))(_ :: Nil) must
           equal(exp.universe)
       }
     }
@@ -1022,14 +1032,14 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     val exp = mul(mul(num(10), mul(num(11), num(7))), mul(num(12), num(8)))
 
     "return root-most instance that passes" in {
-      exp.transAnaTM(matryoshka.find[Fix, Exp] {
+      exp.transAnaTM(matryoshka.find[Fix[Exp]] {
         case Embed(Mul(Embed(Num(_)), _)) => true
         case _                            => false
       }) must equal(mul(num(10), mul(num(11), num(7))).left)
     }
 
     "return leaf-most instance that passes" in {
-      exp.transCataTM(matryoshka.find[Fix, Exp] {
+      exp.transCataTM(matryoshka.find[Fix[Exp]] {
         case Embed(Mul(Embed(Num(_)), _)) => true
         case _                            => false
       }) must equal(mul(num(11), num(7)).left)
@@ -1074,5 +1084,5 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
   }
 
-  def expGen = Gen.resize(100, corecArbitrary[Mu, Exp].arbitrary)
+  def expGen = Gen.resize(100, corecursiveArbitrary[Mu[Exp], Exp].arbitrary)
 }

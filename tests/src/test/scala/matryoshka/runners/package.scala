@@ -16,73 +16,61 @@
 
 package matryoshka
 
-import Recursive.ops._
+import matryoshka.Recursive.ops._
 import matryoshka.data._
-
-import scala.Unit
-import scala.Predef.implicitly
-
-import scalaz._, Scalaz._
 
 import org.specs2.execute._
 import org.specs2.matcher._
 import org.specs2.mutable.SpecificationLike
+import scalaz._, Scalaz._
 
 package object runners extends SpecificationLike {
 
   abstract class RecRunner[F[_], A] {
     // NB: This is defined as a function to make the many definition sites
     //     slightly shorter.
-    def run[T[_[_]]: Recursive]: T[F] => MatchResult[A]
+    def run[T](implicit T: Recursive.Aux[T, F]): T => MatchResult[A]
   }
   def testRec[F[_], A](t: Fix[F], r: RecRunner[F, A])(implicit F: Functor[F]):
       MatchResult[A] = {
-    r.run[Fix].apply(t) and
-    r.run[Mu].apply(t.convertTo[Mu]) and
-    r.run[Nu].apply(t.convertTo[Nu]) and
-    r.run[Cofree[?[_], Unit]].apply(t.convertTo[Cofree[?[_], Unit]](cofreeCorecursive[Unit], F))
+    r.run[Fix[F]].apply(t) and
+    r.run[Mu[F]].apply(t.convertTo[Mu[F]]) and
+    r.run[Nu[F]].apply(t.convertTo[Nu[F]])
   }
 
   abstract class CorecRunner[M[_], F[_], A] {
-    def run[T[_[_]]: Corecursive](implicit Eq: Equal[T[F]], S: Show[T[F]]):
-        A => MatchResult[M[T[F]]]
+    def run[T](implicit TC: Corecursive.Aux[T, F], Eq: Equal[T], S: Show[T]):
+      A => MatchResult[M[T]]
   }
   def testCorec[M[_], F[_]: Functor, A](
     a: A, r: CorecRunner[M, F, A])(
     implicit Eq0: Delay[Equal, F], S0: Delay[Show, F]):
       Result =
-    r.run[Fix].apply(a).toResult and
-    r.run[Mu].apply(a).toResult and
-    r.run[Nu].apply(a).toResult and
-    r.run[Free[?[_], Unit]](freeCorecursive[Unit], implicitly, implicitly).apply(a).toResult and
-    r.run[Cofree[?[_], Unit]](cofreeCorecursive[Unit], implicitly, implicitly).apply(a).toResult
+    r.run[Fix[F]].apply(a).toResult and
+    r.run[Mu[F]].apply(a).toResult and
+    r.run[Nu[F]].apply(a).toResult
 
   abstract class FuncRunner[F[_], G[_]] {
-    def run[T[_[_]]: FunctorT: Corecursive](implicit Eq: Equal[T[G]], S: Show[T[G]]):
-        T[F] => MatchResult[T[G]]
+    def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[F], F], Eq: Equal[T[G]], S: Show[T[G]]):
+      T[F] => MatchResult[T[G]]
   }
   def testFunc[F[_], G[_]: Functor](
     t: Fix[F], r: FuncRunner[F, G])(
     implicit F: Functor[F], Eq0: Delay[Equal, G], S0: Delay[Show, G]):
       Result =
     r.run[Fix].apply(t).toResult and
-    r.run[Mu].apply(t.convertTo[Mu]).toResult and
-    r.run[Nu].apply(t.convertTo[Nu]).toResult and
-    r.run[Free[?[_], Unit]].apply(t.convertTo[Free[?[_], Unit]](F, freeCorecursive[Unit])).toResult and
-    r.run[Cofree[?[_], Unit]].apply(t.convertTo[Cofree[?[_], Unit]](F, cofreeCorecursive[Unit])).toResult
+    r.run[Mu].apply(t.convertTo[Mu[F]]).toResult and
+    r.run[Nu].apply(t.convertTo[Nu[F]]).toResult
 
   abstract class TravRunner[M[_], F[_], G[_]] {
-    def run[T[_[_]]: TraverseT: Corecursive](implicit Eq: Equal[T[G]], S: Show[T[G]]):
-        T[F] => MatchResult[M[T[G]]]
+    def run[T[_[_]]: TraverseT](implicit TC: Corecursive.Aux[T[F], F], Eq: Equal[T[G]], S: Show[T[G]]):
+      T[F] => MatchResult[M[T[G]]]
   }
   def testTrav[M[_], F[_], G[_]: Functor](
     t: Fix[F], r: TravRunner[M, F, G])(
     implicit F: Functor[F], Eq0: Delay[Equal, G], S0: Delay[Show, G]):
       Result =
     r.run[Fix].apply(t).toResult and
-    r.run[Mu].apply(t.convertTo[Mu]).toResult and
-    r.run[Nu].apply(t.convertTo[Nu]).toResult and
-    r.run[Free[?[_], Unit]].apply(t.convertTo[Free[?[_], Unit]](F, freeCorecursive[Unit])).toResult and
-    r.run[Cofree[?[_], Unit]].apply(t.convertTo[Cofree[?[_], Unit]](F, cofreeCorecursive[Unit])).toResult
-
+    r.run[Mu].apply(t.convertTo[Mu[F]]).toResult and
+    r.run[Nu].apply(t.convertTo[Nu[F]]).toResult
 }

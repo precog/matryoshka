@@ -26,14 +26,21 @@ sealed class IdOps[A](self: A) {
   def hyloM[M[_]: Monad, F[_]: Traverse, B](f: AlgebraM[M, F, B], g: CoalgebraM[M, F, A]):
       M[B] =
     matryoshka.hyloM(self)(f, g)
-    
-  def ghylo[W[_]: Comonad, N[_]: Monad, F[_]: Functor, B](
-    w: DistributiveLaw[F, W],
-    n: DistributiveLaw[N, F],
-    f: GAlgebra[W, F, B],
-    g: GCoalgebra[N, F, A]):
-      B =
-    matryoshka.ghylo(self)(w, n, f, g)
+
+  object ghylo {
+    def apply[W[_], N[_]] = new Aux[W, N]
+
+    final class Aux[W[_], N[_]] {
+      def apply[F[_]: Functor, B]
+        (w: DistributiveLaw[F, W],
+          n: DistributiveLaw[N, F],
+          f: GAlgebra[W, F, B],
+          g: GCoalgebra[N, F, A])
+        (implicit W: Comonad[W], N: Monad[N]) =
+        matryoshka.ghylo(self)(w, n, f, g)
+    }
+  }
+
   def ghyloM[W[_]: Comonad: Traverse, N[_]: Monad: Traverse, M[_]: Monad, F[_]: Traverse, B](
     w: DistributiveLaw[F, W],
     n: DistributiveLaw[N, F],
@@ -56,7 +63,7 @@ sealed class IdOps[A](self: A) {
       B =
     matryoshka.chrono(self)(g, f)
 
-  def elgot[F[_]: Functor, B](φ: Algebra[F, B], ψ: CoalgebraM[B \/ ?, F, A]): B =
+  def elgot[F[_]: Functor, B](φ: Algebra[F, B], ψ: ElgotCoalgebra[B \/ ?, F, A]): B =
     matryoshka.elgot(self)(φ, ψ)
 
   def coelgot[F[_]: Functor, B](φ: ElgotAlgebra[(A, ?), F, B], ψ: Coalgebra[F, A]): B =
@@ -81,8 +88,6 @@ sealed class IdOps[A](self: A) {
         T.ana(self)(f)
     }
   }
-  // def ana[T](f: Coalgebra[T#Base, A])(implicit T: Corecursive[T]): T =
-  //   T.ana(self)(f)
 
   object anaM {
     def apply[T] = new Aux[T]
@@ -94,20 +99,41 @@ sealed class IdOps[A](self: A) {
     }
   }
 
-  def gana[T, N[_]: Monad, F[_]](
-    k: DistributiveLaw[N, F], f: GCoalgebra[N, F, A])(
-    implicit T: Corecursive.Aux[T, F]):
-      T =
-    T.gana(self)(k, f)
+  object gana {
+    def apply[T] = new Aux[T]
 
-  def elgotAna[T, M[_]: Monad, F[_]](
-    k: DistributiveLaw[M, F], f: CoalgebraM[M, F, A])(
-    implicit T: Corecursive.Aux[T, F]):
-      T =
-    T.elgotAna(self)(k, f)
+    final class Aux[T] {
+      def apply[N[_]: Monad, F[_]]
+        (k: DistributiveLaw[N, F], f: GCoalgebra[N, F, A])
+        (implicit T: Corecursive.Aux[T, F])
+          : T =
+        T.gana(self)(k, f)
+    }
+  }
 
-  def apo[T, F[_]](f: GCoalgebra[T \/ ?, F, A])(implicit T: Corecursive.Aux[T, F]): T =
-    T.apo(self)(f)
+  object elgotAna {
+    def apply[T] = new Aux[T]
+
+    final class Aux[T] {
+      def apply[N[_]: Monad, F[_]]
+        (k: DistributiveLaw[N, F], f: ElgotCoalgebra[N, F, A])
+        (implicit T: Corecursive.Aux[T, F])
+          : T =
+        T.elgotAna(self)(k, f)
+    }
+  }
+
+  object apo {
+    def apply[T] = new Aux[T]
+
+    final class Aux[T] {
+      def apply[F[_]]
+        (f: GCoalgebra[T \/ ?, F, A])
+        (implicit T: Corecursive.Aux[T, F])
+          : T =
+        T.apo(self)(f)
+    }
+  }
 
   object apoM {
     def apply[T] = new Aux[T]
@@ -119,25 +145,53 @@ sealed class IdOps[A](self: A) {
     }
   }
 
-  def elgotApo[T, F[_]](f: ElgotCoalgebra[T \/ ?, F, A])(implicit T: Corecursive.Aux[T, F]):
-      T =
-    T.elgotApo(self)(f)
+  object elgotApo {
+    def apply[T] = new Aux[T]
 
-  def postpro[T, F[_]](
-    e: F ~> F, g: Coalgebra[F, A])(
-    implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]):
-      T =
-    TC.postpro(self)(e, g)
+    final class Aux[T] {
+      def apply[F[_]]
+        (f: ElgotCoalgebra[T \/ ?, F, A])
+        (implicit T: Corecursive.Aux[T, F])
+          : T =
+        T.elgotApo(self)(f)
+    }
+  }
 
-  def gpostpro[T, N[_]: Monad, F[_]](
-    k: DistributiveLaw[N, F], e: F ~> F, g: GCoalgebra[N, F, A])(
-    implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]):
-      T =
-    TC.gpostpro(self)(k, e, g)
+  object postpro {
+    def apply[T] = new Aux[T]
 
-  def futu[T, F[_]](f: GCoalgebra[Free[F, ?], F, A])(implicit T: Corecursive.Aux[T, F]):
-      T =
-    T.futu(self)(f)
+    final class Aux[T] {
+      def apply[F[_]]
+        (e: F ~> F, g: Coalgebra[F, A])
+        (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F])
+          : T =
+        TC.postpro(self)(e, g)
+    }
+  }
+
+  object gpostpro {
+    def apply[T] = new Aux[T]
+
+    final class Aux[T] {
+      def apply[N[_]: Monad, F[_]]
+        (k: DistributiveLaw[N, F], e: F ~> F, g: GCoalgebra[N, F, A])
+        (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F])
+          : T =
+        TC.gpostpro(self)(k, e, g)
+    }
+  }
+
+  object futu {
+    def apply[T] = new Aux[T]
+
+    final class Aux[T] {
+      def apply[F[_]]
+        (f: GCoalgebra[Free[F, ?], F, A])
+        (implicit T: Corecursive.Aux[T, F])
+          : T =
+        T.futu(self)(f)
+    }
+  }
 
   def futuM[T, M[_]: Monad, F[_]](f: GCoalgebraM[Free[F, ?], M, F, A])(implicit T: Corecursive.Aux[T, F], FT: Traverse[F]):
       M[T] =

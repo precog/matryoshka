@@ -19,6 +19,7 @@ package matryoshka.data
 import matryoshka.exp.Exp
 import matryoshka.helpers._
 import matryoshka.patterns.CoEnv
+import matryoshka.scalacheck.arbitrary._
 import matryoshka.specs2.scalacheck._
 
 import scala.Int
@@ -34,5 +35,5 @@ class FixSpec extends Specification with CheckAll with AlgebraChecks {
     }
   }
 
-  checkFoldIsoLaws[Fix, CoEnv[Int, Exp, ?], Free[Exp, Int]]("Fix", CoEnv.freeIso)
+  checkFoldIsoLaws[Fix[CoEnv[Int, Exp, ?]], CoEnv[Int, Exp, ?], Free[Exp, Int]]("Fix", CoEnv.freeIso)
 }

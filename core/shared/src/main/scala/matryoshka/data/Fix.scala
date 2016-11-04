@@ -24,26 +24,23 @@ import scalaz._
   */
 final case class Fix[F[_]](unFix: F[Fix[F]])
 object Fix {
-  implicit def recursive[F[_]]: Recursive.Aux[Fix[F], F] =
-    new Recursive[Fix[F]] {
-      type Base[A] = F[A]
+  implicit def recursiveT: RecursiveT[Fix] = new RecursiveT[Fix] {
+    def projectT[F[_]: Functor](t: Fix[F]) = t.unFix
+  }
 
-      def project(t: Fix[F]) = t.unFix
-    }
+  implicit def corecursiveT: CorecursiveT[Fix] = new CorecursiveT[Fix] {
+    def embedT[F[_]: Functor](t: F[Fix[F]]) = Fix(t)
+  }
+
+  implicit def recursive[F[_]]: Recursive.Aux[Fix[F], F] =
+    RecursiveT.recursive[Fix, F]
 
   implicit def corecursive[F[_]]: Corecursive.Aux[Fix[F], F] =
-    new Corecursive[Fix[F]] {
-      type Base[A] = F[A]
+    CorecursiveT.corecursive[Fix, F]
 
-      def embed(t: F[Fix[F]]) = Fix(t)
-    }
+  implicit def equal[F[_]](implicit F: Delay[Equal, F]): Equal[Fix[F]] =
+    Recursive.equal[Fix[F], F]
 
-
-  implicit def equal[F[_]](implicit F: Delay[Equal, Based[Fix[F]]#Base])
-      : Equal[Fix[F]] =
-    Recursive.equal[Fix[F]]
-
-  implicit def show[F[_]](implicit F: Delay[Show, Based[Fix[F]]#Base])
-      : Show[Fix[F]] =
-    Recursive.show[Fix[F]]
+  implicit def show[F[_]](implicit F: Delay[Show, F]): Show[Fix[F]] =
+    Recursive.show[Fix[F], F]
 }

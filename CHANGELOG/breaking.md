@@ -1,0 +1,9 @@
+- make it possible to define recursion schemes on directly-recursive types
+- type parameters and implicits have changed all over the place.
+- standard folds and unfolds on {Co}Free have changed behavior
+- many operations that were previously defined specifically for `Free` and `Cofree` are no longer necessary, here are their new representations:
+  - `attributeAna(a)(f)` => `ana(a)(attributeCoalgebra(f))`
+  - `intepretCata(t)(f)` => `cata(t)(recover(f))`
+  - `freeAna(a)(f)` => `ana(a)(f)`
+  - `cofCata(t)(f)` => `cata(t)(f)`
+  - `cofCataM(t)(f)` => `cataM(t)(f)`

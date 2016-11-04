@@ -21,7 +21,7 @@ import scala.{Boolean, Function, Int, None, Option, Unit}
 import scala.collection.immutable.{List, ::}
 
 import monocle._
-import scalaz._, Scalaz._
+import scalaz._, Liskov._, Scalaz._
 
 /** Generalized folds, unfolds, and refolds.
   *
@@ -294,7 +294,7 @@ package object matryoshka {
     *
     * @group refolds
     */
-  def elgot[F[_]: Functor, A, B](a: A)(φ: Algebra[F, B], ψ: CoalgebraM[B \/ ?, F, A]): B = {
+  def elgot[F[_]: Functor, A, B](a: A)(φ: Algebra[F, B], ψ: ElgotCoalgebra[B \/ ?, F, A]): B = {
     def h: A => B =
       (((x: B) => x) ||| ((x: F[A]) => φ(x ∘ h))) ⋘ ψ
     h(a)
@@ -338,9 +338,8 @@ package object matryoshka {
     *
     * @group dist
     */
-  def distPara[T, F[_]: Functor](implicit T: Corecursive.Aux[T, F])
-      : DistributiveLaw[F, (T, ?)] =
-    distZygo[F, T](_.embed)
+  def distPara[T](implicit T: Corecursive[T]): DistributiveLaw[T.Base, (T, ?)] =
+    distZygo[T.Base, T](T.embed(_))(T.BF)
 
   /**
     *
@@ -415,9 +414,8 @@ package object matryoshka {
     *
     * @group dist
     */
-  def distApo[T, F[_]: Functor](implicit T: Recursive.Aux[T, F])
-      : DistributiveLaw[T \/ ?, F] =
-    distGApo(T.project)
+  def distApo[T](implicit T: Recursive[T]): DistributiveLaw[T \/ ?, T.Base] =
+    distGApo[T.Base, T](T.project(_))(T.BF)
 
   /**
     *
@@ -535,8 +533,8 @@ package object matryoshka {
     *
     * @group algtrans
     */
-  def attrSelf[T, F[_]: Functor](implicit T: Corecursive.Aux[T, F]) =
-    attributeAlgebra[F, T](_.embed)
+  def attrSelf[T](implicit T: Corecursive[T]) =
+    attributeAlgebra[T.Base, T](T.embed(_))(T.BF)
 
   /** A function to be called like `attributeElgotM[M](myElgotAlgebraM)`.
     *
@@ -717,12 +715,19 @@ package object matryoshka {
 
   implicit def toIdOps[A](a: A): IdOps[A] = new IdOps[A](a)
 
-  implicit final class CorecursiveOps[T, F[_]](
+  implicit final class CorecursiveOps[T, F[_], FF[_]](
     self: F[T])(
-    implicit T: Corecursive.Aux[T, F]) {
+    implicit T: Corecursive.Aux[T, FF], Sub: F[T] <~< FF[T]) {
 
-    val embed: T = T.embed(self)
-    def colambek(implicit TR: Recursive.Aux[T, F]): T = T.colambek(self)
+    val embed: T = T.embed(Sub(self))
+    def colambek(implicit TR: Recursive.Aux[T, FF]): T = T.colambek(Sub(self))
+  }
+
+  implicit final class CorecursiveTOps[T[_[_]], F[_], FF[_]: Functor](
+    self: F[T[FF]])(
+    implicit T: CorecursiveT[T], Sub: F[T[FF]] <~< FF[T[FF]]) {
+
+    val embedT: T[FF] = T.embedT[FF](Sub(self))
   }
 
   implicit def toAlgebraOps[F[_], A](a: Algebra[F, A]): AlgebraOps[F, A] =

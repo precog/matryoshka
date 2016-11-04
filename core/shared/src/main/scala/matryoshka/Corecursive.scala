@@ -61,12 +61,12 @@ import simulacrum._
     f(a) ∘ (_.point[N]) >>= loop
   }
 
-  def elgotAna[M[_], A](
+  def elgotAna[N[_], A](
     a: A)(
-    k: DistributiveLaw[M, Base], ψ: CoalgebraM[M, Base, A])(
-    implicit M: Monad[M]):
+    k: DistributiveLaw[N, Base], ψ: ElgotCoalgebra[N, Base, A])(
+    implicit N: Monad[N]):
       T = {
-    def loop(x: M[Base[A]]): T = embed(k(x) ∘ (x => loop(M.lift(ψ)(x).join)))
+    def loop(x: N[Base[A]]): T = embed(k(x) ∘ (x => loop(N.lift(ψ)(x).join)))
 
     loop(ψ(a))
   }
@@ -78,7 +78,7 @@ import simulacrum._
     //     would add a [[matryoshka.Recursive]] constraint.
     embed(f(a) ∘ (_.fold(Predef.identity, apo(_)(f))))
 
-  def elgotApo[A](a: A)(f: CoalgebraM[T \/ ?, Base, A]): T =
+  def elgotApo[A](a: A)(f: ElgotCoalgebra[T \/ ?, Base, A]): T =
     // NB: This is not implemented with [[matryoshka.distApo]] because that
     //     would add a [[matryoshka.Recursive]] constraint.
     f(a).fold(Predef.identity, fa => embed(fa ∘ (elgotApo(_)(f))))
@@ -119,7 +119,7 @@ import simulacrum._
   def futu[A](a: A)(f: GCoalgebra[Free[Base, ?], Base, A]): T =
     gana[Free[Base, ?], A](a)(distFutu, f)
 
-  def elgotFutu[A](a: A)(f: CoalgebraM[Free[Base, ?], Base, A]): T =
+  def elgotFutu[A](a: A)(f: ElgotCoalgebra[Free[Base, ?], Base, A]): T =
     elgotAna[Free[Base, ?], A](a)(distFutu, f)
 
   def futuM[M[_]: Monad, A](a: A)(f: GCoalgebraM[Free[Base, ?], M, Base, A])(

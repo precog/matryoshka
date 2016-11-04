@@ -7,7 +7,7 @@ import org.scalajs.sbtplugin.cross.CrossProject
 
 lazy val checkHeaders = taskKey[Unit]("Fail the build if createHeaders is not up-to-date")
 
-val monocleVersion = "1.2.1"
+val monocleVersion = "1.2.2"
 val scalazVersion = "7.2.1"
 // Latest version built against scalacheck 1.12.5
 // doesn't support scala.js yet, until then tests are JVM-only

@@ -57,11 +57,11 @@ package object fixedpoint {
     })
 
     def max(other: T) =
-      (self, other).apo(_.bimap(_.project, _.project) match {
+      (self, other).apo[T](_.bimap(_.project, _.project) match {
         case (None,    b)       => b ∘ (_.left)
         case (a,       None)    => a ∘ (_.left)
         case (Some(a), Some(b)) => Some((a, b).right)
-    })
+      })
 }
 
   type Conat = Nu[Option]
@@ -93,11 +93,14 @@ package object fixedpoint {
 
   implicit class ListOps[A](self: Mu[ListF[A, ?]]) {
     def length: Int = self.cata(size) - 1
+    def headOption: Option[A] = self.project.headOption
+    def tailOption: Option[List[A]] = self.project.tailOption
   }
 
   implicit class RecListFOps[T, A]
     (self: T)
     (implicit T: Recursive.Aux[T, ListF[A, ?]]) {
+    def length: Int = self.cata(size) - 1
     def headOption: Option[A] = self.project.headOption
     def tailOption: Option[T] = self.project.tailOption
   }

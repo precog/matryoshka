@@ -36,27 +36,25 @@ object Nu {
       val unNu = f
     }
 
-  implicit def recursive[F[_]]: Recursive.Aux[Nu[F], F] =
-    new Recursive[Nu[F]] {
-      type Base[A] = F[A]
+  implicit def recursiveT: RecursiveT[Nu] = new RecursiveT[Nu] {
+    def projectT[F[_]: Functor](t: Nu[F]) = t.unNu(t.a).map(Nu(t.unNu, _))
+  }
 
-      def project(t: Nu[F]) = t.unNu(t.a).map(Nu(t.unNu, _))
-    }
+  implicit def corecursiveT: CorecursiveT[Nu] = new CorecursiveT[Nu] {
+    // FIXME: ugh, shouldn’t have to redefine `colambek` in here?
+    def embedT[F[_]: Functor](t: F[Nu[F]]) = anaT(t)(_ ∘ recursiveT.projectT[F])
+    override def anaT[F[_]: Functor, A](a: A)(f: A => F[A]) = Nu(f, a)
+  }
+
+  implicit def recursive[F[_]]: Recursive.Aux[Nu[F], F] =
+    RecursiveT.recursive[Nu, F]
 
   implicit def corecursive[F[_]]: Corecursive.Aux[Nu[F], F] =
-    new Corecursive[Nu[F]] {
-      type Base[A] = F[A]
+    CorecursiveT.corecursive[Nu, F]
 
-      // FIXME: ugh, shouldn’t have to redefine `colambek` in here?
-      def embed(t: F[Nu[F]]) = ana(t)(_ ∘ recursive[F].project)
-      override def ana[A](a: A)(f: A => F[A]) = Nu(f, a)
-    }
+  implicit def equal[F[_]](implicit F: Delay[Equal, F]): Equal[Nu[F]] =
+    Recursive.equal[Nu[F], F]
 
-  implicit def equal[F[_]](implicit F: Delay[Equal, Based[Nu[F]]#Base])
-      : Equal[Nu[F]] =
-    Recursive.equal[Nu[F]]
-
-  implicit def show[F[_]](implicit F: Delay[Show, Based[Nu[F]]#Base])
-      : Show[Nu[F]] =
-    Recursive.show[Nu[F]]
+  implicit def show[F[_]](implicit F: Delay[Show, F]): Show[Nu[F]] =
+    Recursive.show[Nu[F], F]
 }

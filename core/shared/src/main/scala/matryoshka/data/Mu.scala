@@ -25,30 +25,29 @@ import scalaz._, Scalaz._
   */
 final case class Mu[F[_]](unMu: λ[A => Algebra[F, A]] ~> Id)
 object Mu {
-  implicit def recursive[F[_]]: Recursive.Aux[Mu[F], F] =
-    new Recursive[Mu[F]] {
-      type Base[A] = F[A]
+  implicit def recursiveT: RecursiveT[Mu] = new RecursiveT[Mu] {
+    // FIXME: ugh, shouldn’t have to redefine `lambek` in here?
+    def projectT[F[_]: Functor](t: Mu[F]) =
+      cataT[F, F[Mu[F]]](t)(_ ∘ corecursiveT.embedT[F])
+    override def cataT[F[_]: Functor, A](t: Mu[F])(f: Algebra[F, A]) = t.unMu(f)
+  }
 
-      // FIXME: ugh, shouldn’t have to redefine `lambek` in here?
-      def project(t: Mu[F]) = cata[F[Mu[F]]](t)(_ ∘ corecursive.embed)
-      override def cata[A](t: Mu[F])(f: F[A] => A) = t.unMu(f)
-    }
+  implicit def corecursiveT: CorecursiveT[Mu] = new CorecursiveT[Mu] {
+    def embedT[F[_]: Functor](t: F[Mu[F]]) =
+      Mu(new (λ[A => (F[A] => A)] ~> Id) {
+        def apply[A](fa: F[A] => A): A = fa(t.map(recursiveT.cataT(_)(fa)))
+      })
+  }
+
+  implicit def recursive[F[_]]: Recursive.Aux[Mu[F], F] =
+    RecursiveT.recursive[Mu, F]
 
   implicit def corecursive[F[_]]: Corecursive.Aux[Mu[F], F] =
-    new Corecursive[Mu[F]] {
-      type Base[A] = F[A]
+    CorecursiveT.corecursive[Mu, F]
 
-      def embed(t: F[Mu[F]]) =
-        Mu(new (λ[A => (F[A] => A)] ~> Id) {
-          def apply[A](fa: F[A] => A): A = fa(t.map(recursive.cata(_)(fa)))
-        })
-    }
+  implicit def equal[F[_]](implicit F: Delay[Equal, F]): Equal[Mu[F]] =
+    Recursive.equal[Mu[F], F]
 
-  implicit def equal[F[_]](implicit F: Delay[Equal, Based[Mu[F]]#Base])
-      : Equal[Mu[F]] =
-    Recursive.equal[Mu[F]]
-
-  implicit def show[F[_]](implicit F: Delay[Show, Based[Mu[F]]#Base])
-      : Show[Mu[F]] =
-    Recursive.show[Mu[F]]
+  implicit def show[F[_]](implicit F: Delay[Show, F]): Show[Mu[F]] =
+    Recursive.show[Mu[F], F]
 }

@@ -21,6 +21,7 @@ import matryoshka.data.Mu
 import matryoshka.example._
 import matryoshka.exp._
 import matryoshka.helpers._
+import matryoshka.scalacheck.arbitrary._
 import matryoshka.specs2.scalacheck.CheckAll
 
 import scala.Predef.{implicitly, wrapString}
@@ -68,31 +69,38 @@ class DiffSpec extends Specification with DiffArb with ScalazMatchers {
   "diff" should {
     "find non-recursive differences" in {
       NonRec[Mu[Example]]("a", 1).embed.paraMerga(NonRec[Mu[Example]]("b", 1).embed)(diff) must
-      equal(CorecursiveOps[Mu, Diff[Mu, Example, ?]](
-        LocallyDifferent(NonRec[DiffT[Mu, Example]]("a", 1),
-                         NonRec[Unit]("b", 1))).embed)
+      equal(
+        LocallyDifferent[Mu, Example, Mu[Diff[Mu, Example, ?]]](
+          NonRec[Mu[Diff[Mu, Example, ?]]]("a", 1),
+          NonRec[Unit]("b", 1)).embed)
     }
 
     "create `Removed` for shorter list" in {
       OneList(List(Empty[Mu[Example]]().embed, Empty[Mu[Example]]().embed)).embed.paraMerga(
         OneList(List(NonRec[Mu[Example]]("x", 3).embed)).embed)(diff) must
-        equal(CorecursiveOps[Mu, Diff[Mu, Example, ?]](Similar(OneList(List(
-          CorecursiveOps[Mu, Diff[Mu, Example, ?]](Different(Empty[Mu[Example]]().embed, NonRec[Mu[Example]]("x", 3).embed)).embed,
-          CorecursiveOps[Mu, Diff[Mu, Example, ?]](Removed(Empty[Mu[Example]]().embed)).embed)))).embed)
+      equal(
+        Similar[Mu, Example, Mu[Diff[Mu, Example, ?]]](
+          OneList(List(
+            Different[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed, NonRec[Mu[Example]]("x", 3).embed).embed,
+            Removed[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embed))).embed)
     }
 
     "create `Added` for longer list" in {
       OneList(List(NonRec[Mu[Example]]("x", 3).embed)).embed.paraMerga(
         OneList(List(Empty[Mu[Example]]().embed, Empty[Mu[Example]]().embed)).embed)(diff) must
-        equal(CorecursiveOps[Mu, Diff[Mu, Example, ?]](Similar(OneList(List(
-          CorecursiveOps[Mu, Diff[Mu, Example, ?]](Different(NonRec[Mu[Example]]("x", 3).embed, Empty[Mu[Example]]().embed)).embed,
-          CorecursiveOps[Mu, Diff[Mu, Example, ?]](Added(Empty[Mu[Example]]().embed)).embed)))).embed)
+      equal(
+        Similar[Mu, Example, Mu[Diff[Mu, Example, ?]]](OneList(List(
+          Different[Mu, Example, Mu[Diff[Mu, Example, ?]]](NonRec[Mu[Example]]("x", 3).embed, Empty[Mu[Example]]().embed).embed,
+          Added[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embed))).embed)
     }
 
     "choose “simplest” diff" in {
       OneList(List(Empty[Mu[Example]]().embed)).embed.paraMerga(
         OneList(List(NonRec[Mu[Example]]("x", 3).embed, Empty[Mu[Example]]().embed)).embed)(diff) must
-        equal(CorecursiveOps[Mu, Diff[Mu, Example, ?]](Similar(OneList(List(CorecursiveOps[Mu, Diff[Mu, Example, ?]](Added(NonRec[Mu[Example]]("x", 3).embed)).embed, CorecursiveOps[Mu, Diff[Mu, Example, ?]](Same(Empty[Mu[Example]]().embed)).embed)))).embed)
+      equal(
+        Similar[Mu, Example, Mu[Diff[Mu, Example, ?]]](OneList(List(
+          Added[Mu, Example, Mu[Diff[Mu, Example, ?]]](NonRec[Mu[Example]]("x", 3).embed).embed,
+          Same[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embed))).embed)
     }.pendingUntilFixed("can’t just walk lists from start to finish")
 
     "create `Removed` and `Added` for mixed lists" in {
@@ -100,9 +108,15 @@ class DiffSpec extends Specification with DiffArb with ScalazMatchers {
         TwoLists(
           List(NonRec[Mu[Example]]("x", 3).embed),
           List(Empty[Mu[Example]]().embed, Empty[Mu[Example]]().embed, Empty[Mu[Example]]().embed)).embed)(diff) must
-        equal(CorecursiveOps[Mu, Diff[Mu, Example, ?]](Similar(TwoLists(
-          List(CorecursiveOps[Mu, Diff[Mu, Example, ?]](Different(Empty[Mu[Example]]().embed, NonRec[Mu[Example]]("x", 3).embed)).embed, CorecursiveOps[Mu, Diff[Mu, Example, ?]](Removed(Empty[Mu[Example]]().embed)).embed),
-          List(CorecursiveOps[Mu, Diff[Mu, Example, ?]](Same(Empty[Mu[Example]]().embed)).embed, CorecursiveOps[Mu, Diff[Mu, Example, ?]](Added(Empty[Mu[Example]]().embed)).embed, CorecursiveOps[Mu, Diff[Mu, Example, ?]](Added(Empty[Mu[Example]]().embed)).embed)))).embed)
+      equal(
+        Similar[Mu, Example, Mu[Diff[Mu, Example, ?]]](TwoLists(
+          List(
+            Different[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed, NonRec[Mu[Example]]("x", 3).embed).embedT,
+            Removed[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embedT),
+          List(
+            Same[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embedT,
+            Added[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embedT,
+            Added[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embedT))).embedT)
     }
   }
 
@@ -141,7 +155,7 @@ class DiffSpec extends Specification with DiffArb with ScalazMatchers {
             Empty[Mu[Example]]().embed,
             Empty[Mu[Example]]().embed)).embed
 
-      Recursive[Mu].cata((left paraMerga right)(diff))(toTree).drawTree must
+      (left paraMerga right)(diff).cata(toTree).drawTree must
         equal("""TwoLists([(),(),(),()], [(),(),()])
                 ||
                 |+- NonRec("foo", 3) <=/=> NonRec("bar", 3)

@@ -16,9 +16,10 @@
 
 package matryoshka.example
 
-import matryoshka._, Recursive.ops._
+import matryoshka._, RecursiveT.ops._
 import matryoshka.helpers._
 import matryoshka.patterns._
+import matryoshka.scalacheck.arbitrary._
 import matryoshka.specs2.scalacheck.CheckAll
 
 import java.lang.String
@@ -30,13 +31,13 @@ import org.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
-sealed trait Example[A]
-case class Empty[A]()                                   extends Example[A]
-case class NonRec[A](a: String, b: Int)                 extends Example[A]
-case class SemiRec[A](a: Int, b: A)                     extends Example[A]
-case class MultiRec[A](a: A, b: A)                      extends Example[A]
-case class OneList[A](l: List[A])                       extends Example[A]
-case class TwoLists[A](first: List[A], second: List[A]) extends Example[A]
+sealed abstract class Example[A]
+final case class Empty[A]()                                   extends Example[A]
+final case class NonRec[A](a: String, b: Int)                 extends Example[A]
+final case class SemiRec[A](a: Int, b: A)                     extends Example[A]
+final case class MultiRec[A](a: A, b: A)                      extends Example[A]
+final case class OneList[A](l: List[A])                       extends Example[A]
+final case class TwoLists[A](first: List[A], second: List[A]) extends Example[A]
 
 object Example {
   implicit val traverse: Traverse[Example] = new Traverse[Example] {
@@ -88,17 +89,17 @@ object Example {
   }
 
   implicit val diffable: Diffable[Example] = new Diffable[Example] {
-    def diffImpl[T[_[_]]: Recursive: Corecursive](l: T[Example], r: T[Example]):
+    def diffImpl[T[_[_]]: RecursiveT: CorecursiveT](l: T[Example], r: T[Example]):
         Option[DiffT[T, Example]] =
-      (l.project, r.project) match {
+      (l.projectT, r.projectT) match {
         case (l @ Empty(),        r @ Empty())        => localDiff(l, r).some
         case (l @ NonRec(_, _),   r @ NonRec(_, _))   => localDiff(l, r).some
         case (l @ SemiRec(_, _),  r @ SemiRec(_, _))  => localDiff(l, r).some
         case (l @ MultiRec(_, _), r @ MultiRec(_, _)) => localDiff(l, r).some
         case (OneList(l),         OneList(r))         =>
-          CorecursiveOps[T, Diff[T, Example, ?]](Similar(OneList[DiffT[T, Example]](diffTraverse(l, r)))).embed.some
+          Similar[T, Example, T[Diff[T, Example, ?]]](OneList[DiffT[T, Example]](diffTraverse(l, r))).embedT.some
         case (TwoLists(l1, l2),   TwoLists(r1, r2))   =>
-          CorecursiveOps[T, Diff[T, Example, ?]](Similar(TwoLists[DiffT[T, Example]](diffTraverse(l1, r1), diffTraverse(l2, r2)))).embed.some
+          Similar[T, Example, T[Diff[T, Example, ?]]](TwoLists[DiffT[T, Example]](diffTraverse(l1, r1), diffTraverse(l2, r2))).embedT.some
         case (_,                  _)                  => None
       }
   }
