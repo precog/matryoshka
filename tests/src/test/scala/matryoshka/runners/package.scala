@@ -54,9 +54,9 @@ package object runners extends SpecificationLike {
     def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[F], F], Eq: Equal[T[G]], S: Show[T[G]]):
       T[F] => MatchResult[T[G]]
   }
-  def testFunc[F[_], G[_]: Functor](
+  def testFunc[F[_]: Functor, G[_]: Functor](
     t: Fix[F], r: FuncRunner[F, G])(
-    implicit F: Functor[F], Eq0: Delay[Equal, G], S0: Delay[Show, G]):
+    implicit Eq0: Delay[Equal, G], S0: Delay[Show, G]):
       Result =
     r.run[Fix].apply(t).toResult and
     r.run[Mu].apply(t.convertTo[Mu[F]]).toResult and
@@ -66,9 +66,9 @@ package object runners extends SpecificationLike {
     def run[T[_[_]]: TraverseT](implicit TC: Corecursive.Aux[T[F], F], Eq: Equal[T[G]], S: Show[T[G]]):
       T[F] => MatchResult[M[T[G]]]
   }
-  def testTrav[M[_], F[_], G[_]: Functor](
+  def testTrav[M[_], F[_]: Functor, G[_]: Functor](
     t: Fix[F], r: TravRunner[M, F, G])(
-    implicit F: Functor[F], Eq0: Delay[Equal, G], S0: Delay[Show, G]):
+    implicit Eq0: Delay[Equal, G], S0: Delay[Show, G]):
       Result =
     r.run[Fix].apply(t).toResult and
     r.run[Mu].apply(t.convertTo[Mu[F]]).toResult and

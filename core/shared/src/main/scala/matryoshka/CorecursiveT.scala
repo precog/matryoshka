@@ -19,9 +19,9 @@ package matryoshka
 import scalaz._, Scalaz._
 import simulacrum.typeclass
 
-/** This is a workaround for a certain use case (e.g., [[Diff]] and
-  * [[PotentialFailure]]). Define an instance of this rather than
-  * [[Corecursive]] when possible.
+/** This is a workaround for a certain use case (e.g.,
+  * [[matryoshka.patterns.Diff]] and [[matryoshka.patterns.PotentialFailure]]).
+  * Define an instance of this rather than [[Corecursive]] when possible.
   */
 @typeclass trait CorecursiveT[T[_[_]]] {
   def embedT[F[_]: Functor](t: F[T[F]]): T[F]

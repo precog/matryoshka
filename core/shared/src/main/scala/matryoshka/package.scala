@@ -15,7 +15,7 @@
  */
 
 import matryoshka.Recursive.ops._
-import matryoshka.patterns.EnvT
+import matryoshka.patterns.{CoEnv, EnvT}
 
 import scala.{Boolean, Function, Int, None, Option, Unit}
 import scala.collection.immutable.{List, ::}
@@ -555,6 +555,16 @@ package object matryoshka {
   def liftT[F[_], A, B](φ: ElgotAlgebra[(A, ?), F, B]):
       Algebra[EnvT[A, F, ?], B] =
     ann => φ(ann.run)
+
+  /** Makes it possible to use ElgotAlgebras on EnvT.
+    */
+  def liftTM[M[_], F[_], A, B](φ: ElgotAlgebraM[(A, ?), M, F, B]):
+      AlgebraM[M, EnvT[A, F, ?], B] =
+    ann => φ(ann.run)
+
+  def runT[F[_], A, B](ψ: ElgotCoalgebra[A \/ ?, F, B])
+      : Coalgebra[CoEnv[A, F, ?], B] =
+    b => CoEnv(ψ(b))
 
   /**
     *

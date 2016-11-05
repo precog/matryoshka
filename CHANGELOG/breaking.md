@@ -7,3 +7,4 @@
   - `freeAna(a)(f)` => `ana(a)(f)`
   - `cofCata(t)(f)` => `cata(t)(f)`
   - `cofCataM(t)(f)` => `cataM(t)(f)`
+- also makes `CorecursiveOps` (like `embed`) work even when the outer value is a subtype of the functor

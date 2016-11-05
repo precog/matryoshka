@@ -19,9 +19,9 @@ package matryoshka
 import scalaz._, Scalaz._
 import simulacrum.typeclass
 
-/** This is a workaround for a certain use case (e.g., [[Diff]] and
-  * [[PotentialFailure]]). Define an instance of this rather than [[Recursive]]
-  * when possible.
+/** This is a workaround for a certain use case (e.g.,
+  * [[matryoshka.patterns.Diff]] and [[matryoshka.patterns.PotentialFailure]]).
+  * Define an instance of this rather than [[Recursive]] when possible.
   */
 @typeclass trait RecursiveT[T[_[_]]] {
   def projectT[F[_]: Functor](t: T[F]): F[T[F]]

@@ -299,9 +299,9 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testFunc(
           num(1),
           new FuncRunner[Exp, Exp2] {
-            def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[Exp], Exp], Eq: Equal[T[Exp2]], S: Show[T[Exp2]]) =
-              _.transPrepro(MinusThree, addOneExpExp2ƒ) must
-                equal(num2(2).convertTo[T[Exp]])
+            def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[Exp2], Exp2], Eq: Equal[T[Exp2]], S: Show[T[Exp2]]) =
+              (_: T[Exp]).transPrepro(MinusThree, addOneExpExp2ƒ) must
+                equal(num2(2).convertTo[T[Exp2]])
           })
       }
     }
@@ -332,7 +332,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
           num2(1),
           new FuncRunner[Exp2, Exp] {
             def run[T[_[_]]: FunctorT](implicit TC: Corecursive.Aux[T[Exp], Exp], Eq: Equal[T[Exp]], S: Show[T[Exp]]) =
-              _.transPostpro(MinusThree, addOneExp2Expƒ) must
+              (_: T[Exp2]).transPostpro(MinusThree, addOneExp2Expƒ) must
                 equal(num(2).convertTo[T[Exp]])
           })
       }
@@ -415,14 +415,14 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     "coelgot" >> {
       "behave like cofCata ⋘ attributeAna" >> prop { (i: Int) =>
         i.coelgot(eval.generalizeElgot[(Int, ?)], extractFactors) must equal(
-          i.ana[Free[Exp, Int]](attributeCoalgebra(extractFactors)).cata(eval.generalizeElgot[(Int, ?)]))
+          i.ana[Cofree[Exp, Int]](attributeCoalgebra(extractFactors)).cata(liftT(eval.generalizeElgot[(Int, ?)])))
       }
     }
 
     "elgot" >> {
       "behave like interpCata ⋘ freeAna" >> prop { (i: Int) =>
         i.elgot(eval, extractFactors.generalizeElgot[Int \/ ?]) must equal(
-          i.ana[Free[Exp, Int]](extractFactors.generalizeElgot[Int \/ ?]).cata(patterns.recover(eval)))
+          i.ana[Free[Exp, Int]](runT(extractFactors.generalizeElgot[Int \/ ?])).cata(patterns.recover(eval)))
       }
     }
 
@@ -509,7 +509,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
           Cofree(2, Mul(
             Cofree(3, Num(2)),
             Cofree(3, Num(3))))))
-          .cataM(attributeElgotM[(Int, ?), Option](weightedEval)) must
+          .cataM(liftTM(attributeElgotM[(Int, ?), Option](weightedEval))) must
           equal(
             Cofree[Exp, Int](216, Mul(
               Cofree(2, Num(1)),

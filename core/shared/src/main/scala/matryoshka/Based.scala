@@ -23,13 +23,13 @@ import simulacrum.typeclass
 
 /** Provides a type describing the “unwrapped” type of `T`. In the simplest
   * case, the `Base[F, A]` of `T[F]` is `F[A]`, but it may be more complicated
-  * in others (cf. [[matryoshka.CofreeInstances]]).
+  * in others (cf. [[matryoshka.data.CofreeInstances]]).
   *
-  * Basically, the standard fixed point types ([[matryoshka.Mu]],
-  * [[matryoshka.Nu]], and [[matryoshka.Fix]]) have a base of `F[A]`, which
-  * could be implemented without this type member. However, with `Base` we can
-  * make non-fixed point types (Cofree, Free, List, etc.) behave _like_ fixed
-  * point types by abstracting this type.
+  * Basically, the standard fixed point types ([[matryoshka.data.Mu]],
+  * [[matryoshka.data.Nu]], and [[matryoshka.data.Fix]]) have a base of `F[A]`,
+  * which could be implemented without this type member. However, with `Base` we
+  * can make non-fixed point types (Cofree, Free, List, etc.) behave _like_
+  * fixed point types by abstracting this type.
   *
   * For “true” fixed point types, `Base` is simplify the functor. E.g., The base
   * of `Nu[F]` is `F`. It exists in order to allow non-fixed point types to
