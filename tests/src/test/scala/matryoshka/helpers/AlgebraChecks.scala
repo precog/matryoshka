@@ -28,7 +28,7 @@ import org.typelevel.discipline.specs2.mutable._
 import scalaz._, Scalaz._
 
 trait AlgebraChecks extends SpecificationLike with Discipline {
-  def checkFoldIsoLaws[T: Arbitrary: Equal, F[_], A: Arbitrary: Equal]
+  def checkFoldIsoLaws[T: Arbitrary: Equal, F[_]: Functor, A: Arbitrary: Equal]
     (name: String, iso: AlgebraIso[F, A])
     (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
     checkAll(name + " Iso", IsoTests(foldIso[T, F, A](iso)))

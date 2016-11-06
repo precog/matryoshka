@@ -21,12 +21,14 @@ import matryoshka.patterns._
 
 import scala.collection.immutable.{::, List, Nil}
 
+import scalaz._
+
 trait ListInstances {
   implicit def listRecursive[A]: Recursive.Aux[List[A], ListF[A, ?]] =
     new Recursive[List[A]] {
       type Base[B] = ListF[A, B]
 
-      def project(t: List[A]) = t match {
+      def project(t: List[A])(implicit BF: Functor[Base]) = t match {
         case h :: t => ConsF(h, t)
         case Nil    => NilF[A, List[A]]()
       }
@@ -36,7 +38,7 @@ trait ListInstances {
     new Corecursive[List[A]] {
       type Base[B] = ListF[A, B]
 
-      def embed(t: ListF[A, List[A]]) = t match {
+      def embed(t: ListF[A, List[A]])(implicit BF: Functor[Base]) = t match {
         case ConsF(h, t) => h :: t
         case NilF()      => Nil
       }

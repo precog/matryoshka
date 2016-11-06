@@ -16,8 +16,6 @@
 
 package matryoshka
 
-import scala.Predef.implicitly
-
 import scalaz._
 
 sealed class IdOps[A](self: A) {
@@ -83,7 +81,9 @@ sealed class IdOps[A](self: A) {
     def apply[T] = new Aux[T]
 
     final class Aux[T] {
-      def apply[F[_]](f: Coalgebra[F, A])(implicit T: Corecursive.Aux[T, F])
+      def apply[F[_]: Functor]
+        (f: Coalgebra[F, A])
+        (implicit T: Corecursive.Aux[T, F])
           : T =
         T.ana(self)(f)
     }
@@ -93,9 +93,11 @@ sealed class IdOps[A](self: A) {
     def apply[T] = new Aux[T]
 
     final class Aux[T] {
-      def apply[M[_]: Monad, F[_]](f: CoalgebraM[M, F, A])(implicit T: Corecursive.Aux[T, F], FT: Traverse[F]):
-          M[T] =
-        T.anaM(self)(f)(implicitly, FT)
+      def apply[M[_]: Monad, F[_]: Traverse]
+        (f: CoalgebraM[M, F, A])
+        (implicit T: Corecursive.Aux[T, F])
+          : M[T] =
+        T.anaM(self)(f)
     }
   }
 
@@ -103,7 +105,7 @@ sealed class IdOps[A](self: A) {
     def apply[T] = new Aux[T]
 
     final class Aux[T] {
-      def apply[N[_]: Monad, F[_]]
+      def apply[N[_]: Monad, F[_]: Functor]
         (k: DistributiveLaw[N, F], f: GCoalgebra[N, F, A])
         (implicit T: Corecursive.Aux[T, F])
           : T =
@@ -115,7 +117,7 @@ sealed class IdOps[A](self: A) {
     def apply[T] = new Aux[T]
 
     final class Aux[T] {
-      def apply[N[_]: Monad, F[_]]
+      def apply[N[_]: Monad, F[_]: Functor]
         (k: DistributiveLaw[N, F], f: ElgotCoalgebra[N, F, A])
         (implicit T: Corecursive.Aux[T, F])
           : T =
@@ -127,7 +129,7 @@ sealed class IdOps[A](self: A) {
     def apply[T] = new Aux[T]
 
     final class Aux[T] {
-      def apply[F[_]]
+      def apply[F[_]: Functor]
         (f: GCoalgebra[T \/ ?, F, A])
         (implicit T: Corecursive.Aux[T, F])
           : T =
@@ -139,9 +141,11 @@ sealed class IdOps[A](self: A) {
     def apply[T] = new Aux[T]
 
     final class Aux[T] {
-      def apply[M[_]: Monad, F[_]](f: A => M[F[T \/ A]])(implicit T: Corecursive.Aux[T, F], FT: Traverse[F]):
-          M[T] =
-        T.apoM(self)(f)(implicitly, FT)
+      def apply[M[_]: Monad, F[_]: Traverse]
+        (f: GCoalgebraM[T \/ ?, M, F, A])
+        (implicit T: Corecursive.Aux[T, F])
+          : M[T] =
+        T.apoM(self)(f)
     }
   }
 
@@ -149,7 +153,7 @@ sealed class IdOps[A](self: A) {
     def apply[T] = new Aux[T]
 
     final class Aux[T] {
-      def apply[F[_]]
+      def apply[F[_]: Functor]
         (f: ElgotCoalgebra[T \/ ?, F, A])
         (implicit T: Corecursive.Aux[T, F])
           : T =
@@ -161,7 +165,7 @@ sealed class IdOps[A](self: A) {
     def apply[T] = new Aux[T]
 
     final class Aux[T] {
-      def apply[F[_]]
+      def apply[F[_]: Functor]
         (e: F ~> F, g: Coalgebra[F, A])
         (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F])
           : T =
@@ -173,7 +177,7 @@ sealed class IdOps[A](self: A) {
     def apply[T] = new Aux[T]
 
     final class Aux[T] {
-      def apply[N[_]: Monad, F[_]]
+      def apply[N[_]: Monad, F[_]: Functor]
         (k: DistributiveLaw[N, F], e: F ~> F, g: GCoalgebra[N, F, A])
         (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F])
           : T =
@@ -185,7 +189,7 @@ sealed class IdOps[A](self: A) {
     def apply[T] = new Aux[T]
 
     final class Aux[T] {
-      def apply[F[_]]
+      def apply[F[_]: Functor]
         (f: GCoalgebra[Free[F, ?], F, A])
         (implicit T: Corecursive.Aux[T, F])
           : T =
@@ -193,7 +197,9 @@ sealed class IdOps[A](self: A) {
     }
   }
 
-  def futuM[T, M[_]: Monad, F[_]](f: GCoalgebraM[Free[F, ?], M, F, A])(implicit T: Corecursive.Aux[T, F], FT: Traverse[F]):
-      M[T] =
-    T.futuM(self)(f)(implicitly, FT)
+  def futuM[T, M[_]: Monad, F[_]: Traverse]
+    (f: GCoalgebraM[Free[F, ?], M, F, A])
+    (implicit T: Corecursive.Aux[T, F])
+      : M[T] =
+    T.futuM(self)(f)
 }

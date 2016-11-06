@@ -34,7 +34,9 @@ sealed trait ArbitraryInstances0 {
 }
 
 trait ArbitraryInstances extends ArbitraryInstances0 {
-  def corecursiveArbitrary[T, F[_]](implicit T: Corecursive.Aux[T, F], fArb: Delay[Arbitrary, F]): Arbitrary[T] =
+  def corecursiveArbitrary[T, F[_]: Functor]
+    (implicit T: Corecursive.Aux[T, F], fArb: Delay[Arbitrary, F])
+      : Arbitrary[T] =
     Arbitrary(Gen.sized(size =>
       fArb(Arbitrary(
         if (size <= 0)
@@ -42,13 +44,13 @@ trait ArbitraryInstances extends ArbitraryInstances0 {
         else
           Gen.resize(size - 1, corecursiveArbitrary[T, F].arbitrary))).arbitrary ∘ (_.embed)))
 
-  implicit def fixArbitrary[F[_]](implicit fArb: Delay[Arbitrary, F]): Arbitrary[Fix[F]] =
+  implicit def fixArbitrary[F[_]: Functor](implicit fArb: Delay[Arbitrary, F]): Arbitrary[Fix[F]] =
     corecursiveArbitrary[Fix[F], F]
 
-  implicit def muArbitrary[F[_]](implicit fArb: Delay[Arbitrary, F]): Arbitrary[Mu[F]] =
+  implicit def muArbitrary[F[_]: Functor](implicit fArb: Delay[Arbitrary, F]): Arbitrary[Mu[F]] =
     corecursiveArbitrary[Mu[F], F]
 
-  implicit def nuArbitrary[F[_]](implicit fArb: Delay[Arbitrary, F]): Arbitrary[Nu[F]] =
+  implicit def nuArbitrary[F[_]: Functor](implicit fArb: Delay[Arbitrary, F]): Arbitrary[Nu[F]] =
     corecursiveArbitrary[Nu[F], F]
 
   implicit def coEnvArbitrary[E: Arbitrary, F[_]](

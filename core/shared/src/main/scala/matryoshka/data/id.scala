@@ -29,13 +29,13 @@ trait IdInstances {
   def idRecursive[A]: Recursive.Aux[A, Const[A, ?]] = new Recursive[A] {
     type Base[B] = Const[A, B]
 
-    def project(t: A) = Const(t)
+    def project(t: A)(implicit BF: Functor[Base]) = Const(t)
   }
 
   def idCorecursive[A]: Corecursive.Aux[A, Const[A, ?]] = new Corecursive[A] {
     type Base[B] = Const[A, B]
 
-    def embed(t: Const[A, A]) = t.getConst
+    def embed(t: Const[A, A])(implicit BF: Functor[Base]) = t.getConst
   }
 }
 

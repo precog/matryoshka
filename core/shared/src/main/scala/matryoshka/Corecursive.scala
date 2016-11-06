@@ -19,19 +19,19 @@ package matryoshka
 import scala.Predef
 
 import scalaz._, Scalaz._
-import simulacrum._
 
 /** Unfolds for corecursive data types. */
-@typeclass trait Corecursive[T] extends Based[T] {
-  def embed(t: Base[T]): T
+trait Corecursive[T] extends Based[T] {
+  def embed(t: Base[T])(implicit BF: Functor[Base]): T
 
   /** Roughly a default impl of `embed`, given a [[matryoshka.Recursive]]
     * instance and an overridden `ana`.
     */
-  def colambek(ft: Base[T])(implicit TR: Recursive.Aux[T, Base]): T =
-    ana(ft)(_ ∘ (TR.project))
+  def colambek(ft: Base[T])(implicit TR: Recursive.Aux[T, Base], BF: Functor[Base]): T =
+    ana(ft)(_ ∘ (TR.project(_)))
 
-  def ana[A](a: A)(f: Coalgebra[Base, A]): T = embed(f(a) ∘ (ana(_)(f)))
+  def ana[A](a: A)(f: Coalgebra[Base, A])(implicit BF: Functor[Base]): T =
+    embed(f(a) ∘ (ana(_)(f)))
 
   def anaM[M[_]: Monad, A]
     (a: A)
@@ -43,7 +43,7 @@ import simulacrum._
   def gana[N[_], A]
     (a: A)
     (k: DistributiveLaw[N, Base], f: GCoalgebra[N, Base, A])
-    (implicit N: Monad[N])
+    (implicit BF: Functor[Base], N: Monad[N])
       : T = {
     def loop(x: N[Base[N[A]]]): T = embed(k(x) ∘ (x => loop(N.lift(f)(x.join))))
 
@@ -64,7 +64,7 @@ import simulacrum._
   def elgotAna[N[_], A](
     a: A)(
     k: DistributiveLaw[N, Base], ψ: ElgotCoalgebra[N, Base, A])(
-    implicit N: Monad[N]):
+    implicit BF: Functor[Base], N: Monad[N]):
       T = {
     def loop(x: N[Base[A]]): T = embed(k(x) ∘ (x => loop(N.lift(ψ)(x).join)))
 
@@ -73,19 +73,27 @@ import simulacrum._
 
   /** An unfold that can short-circuit certain sections.
     */
-  def apo[A](a: A)(f: GCoalgebra[T \/ ?, Base, A]): T =
+  def apo[A](a: A)(f: GCoalgebra[T \/ ?, Base, A])(implicit BF: Functor[Base])
+      : T =
     // NB: This is not implemented with [[matryoshka.distApo]] because that
     //     would add a [[matryoshka.Recursive]] constraint.
     embed(f(a) ∘ (_.fold(Predef.identity, apo(_)(f))))
 
-  def elgotApo[A](a: A)(f: ElgotCoalgebra[T \/ ?, Base, A]): T =
+  def elgotApo[A]
+    (a: A)
+    (f: ElgotCoalgebra[T \/ ?, Base, A])
+    (implicit BF: Functor[Base])
+      : T =
     // NB: This is not implemented with [[matryoshka.distApo]] because that
     //     would add a [[matryoshka.Recursive]] constraint.
     f(a).fold(Predef.identity, fa => embed(fa ∘ (elgotApo(_)(f))))
 
   /** An unfold that can handle sections with a secondary unfold.
     */
-  def gapo[A, B](a: A)(ψ0: Coalgebra[Base, B], ψ: GCoalgebra[B \/ ?, Base, A])
+  def gapo[A, B]
+    (a: A)
+    (ψ0: Coalgebra[Base, B], ψ: GCoalgebra[B \/ ?, Base, A])
+    (implicit BF: Functor[Base])
       : T =
     embed(ψ(a) ∘ (_.fold(ana(_)(ψ0), gapo(_)(ψ0, ψ))))
 
@@ -99,14 +107,14 @@ import simulacrum._
   def postpro[A](
     a: A)(
     e: Base ~> Base, g: Coalgebra[Base, A])(
-    implicit T: Recursive.Aux[T, Base]):
+    implicit T: Recursive.Aux[T, Base], BF: Functor[Base]):
       T =
     gpostpro[Id, A](a)(distAna, e, g)
 
   def gpostpro[N[_], A](
     a: A)(
     k: DistributiveLaw[N, Base], e: Base ~> Base, ψ: GCoalgebra[N, Base, A])(
-    implicit T: Recursive.Aux[T, Base], N: Monad[N]):
+    implicit T: Recursive.Aux[T, Base], BF: Functor[Base], N: Monad[N]):
       T = {
     def loop(ma: N[A]): T =
       embed(k(N.lift(ψ)(ma)) ∘ (x => ana(loop(x.join))(x => e(T.project(x)))))
@@ -116,10 +124,18 @@ import simulacrum._
 
   // Futu should probably be library-specific, so not part of the typeclass. Can
   // just use `gana` explicitly, or maybe handle injecting them somehow else.
-  def futu[A](a: A)(f: GCoalgebra[Free[Base, ?], Base, A]): T =
+  def futu[A]
+    (a: A)
+    (f: GCoalgebra[Free[Base, ?], Base, A])
+    (implicit BF: Functor[Base])
+      : T =
     gana[Free[Base, ?], A](a)(distFutu, f)
 
-  def elgotFutu[A](a: A)(f: ElgotCoalgebra[Free[Base, ?], Base, A]): T =
+  def elgotFutu[A]
+    (a: A)
+    (f: ElgotCoalgebra[Free[Base, ?], Base, A])
+    (implicit BF: Functor[Base])
+      : T =
     elgotAna[Free[Base, ?], A](a)(distFutu, f)
 
   def futuM[M[_]: Monad, A](a: A)(f: GCoalgebraM[Free[Base, ?], M, Base, A])(
@@ -132,4 +148,6 @@ import simulacrum._
 }
 object Corecursive {
   type Aux[T, F[_]] = Corecursive[T] { type Base[A] = F[A] }
+
+  def apply[T, F[_]](implicit instance: Aux[T, F]): Aux[T, F] = instance
 }

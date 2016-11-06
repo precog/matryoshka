@@ -45,9 +45,9 @@ object Mu {
   implicit def corecursive[F[_]]: Corecursive.Aux[Mu[F], F] =
     CorecursiveT.corecursive[Mu, F]
 
-  implicit def equal[F[_]](implicit F: Delay[Equal, F]): Equal[Mu[F]] =
+  implicit def equal[F[_]: Functor](implicit F: Delay[Equal, F]): Equal[Mu[F]] =
     Recursive.equal[Mu[F], F]
 
-  implicit def show[F[_]](implicit F: Delay[Show, F]): Show[Mu[F]] =
+  implicit def show[F[_]: Functor](implicit F: Delay[Show, F]): Show[Mu[F]] =
     Recursive.show[Mu[F], F]
 }

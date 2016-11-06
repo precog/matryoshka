@@ -27,14 +27,15 @@ trait FreeInstances {
     new Recursive[Free[F, A]] {
       type Base[B] = CoEnv[A, F, B]
 
-      def project(t: Free[F, A]) = CoEnv(t.resume.swap)
+      def project(t: Free[F, A])(implicit BF: Functor[Base]) =
+        CoEnv(t.resume.swap)
     }
 
   implicit def freeCorecursive[F[_]: Functor, A]: Corecursive.Aux[Free[F, A], CoEnv[A, F, ?]] =
     new Corecursive[Free[F, A]] {
       type Base[B] = CoEnv[A, F, B]
 
-      def embed(t: CoEnv[A, F, Free[F, A]]) =
+      def embed(t: CoEnv[A, F, Free[F, A]])(implicit BF: Functor[Base]) =
         t.run.fold(_.point[Free[F, ?]], Free.liftF(_).join)
     }
 

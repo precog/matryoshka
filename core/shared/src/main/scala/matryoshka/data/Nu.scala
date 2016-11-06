@@ -52,9 +52,9 @@ object Nu {
   implicit def corecursive[F[_]]: Corecursive.Aux[Nu[F], F] =
     CorecursiveT.corecursive[Nu, F]
 
-  implicit def equal[F[_]](implicit F: Delay[Equal, F]): Equal[Nu[F]] =
+  implicit def equal[F[_]: Functor](implicit F: Delay[Equal, F]): Equal[Nu[F]] =
     Recursive.equal[Nu[F], F]
 
-  implicit def show[F[_]](implicit F: Delay[Show, F]): Show[Nu[F]] =
+  implicit def show[F[_]: Functor](implicit F: Delay[Show, F]): Show[Nu[F]] =
     Recursive.show[Nu[F], F]
 }

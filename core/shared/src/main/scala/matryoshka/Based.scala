@@ -16,9 +16,6 @@
 
 package matryoshka
 
-import scala.Predef.implicitly
-
-import scalaz._
 import simulacrum.typeclass
 
 /** Provides a type describing the “unwrapped” type of `T`. In the simplest
@@ -37,6 +34,4 @@ import simulacrum.typeclass
   */
 @typeclass trait Based[T] {
   type Base[A]
-
-  implicit def BF: Functor[Base] = implicitly
 }

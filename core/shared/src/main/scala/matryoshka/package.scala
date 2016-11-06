@@ -170,17 +170,17 @@ package object matryoshka {
       Prism(ψ)(φ)
   }
 
-  def birecursiveIso[T, F[_]]
+  def birecursiveIso[T, F[_]: Functor]
     (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
     AlgebraIso[F, T](_.embed)(_.project)
 
-  def bilambekIso[T, F[_]]
+  def bilambekIso[T, F[_]: Functor]
     (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
     AlgebraIso[F, T](_.colambek)(_.lambek)
 
   /** There is a fold/unfold isomorphism for any AlgebraIso.
     */
-  def foldIso[T, F[_], A]
+  def foldIso[T, F[_]: Functor, A]
     (alg: AlgebraIso[F, A])
     (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
     Iso[T, A](_.cata(alg.get))(_.ana[T](alg.reverseGet))
@@ -338,8 +338,9 @@ package object matryoshka {
     *
     * @group dist
     */
-  def distPara[T](implicit T: Corecursive[T]): DistributiveLaw[T.Base, (T, ?)] =
-    distZygo[T.Base, T](T.embed(_))(T.BF)
+  def distPara[T, F[_]: Functor](implicit T: Corecursive.Aux[T, F])
+      : DistributiveLaw[F, (T, ?)] =
+    distZygo[F, T](T.embed(_))
 
   /**
     *
@@ -394,6 +395,9 @@ package object matryoshka {
     *
     * @group dist
     */
+  // TODO: Should be able to generalize this over `Recursive.Aux[T, EnvT[…]]`
+  //       somehow, then it wouldn’t depend on Scalaz and would work with any
+  //       `Cofree` representation.
   def distGHisto[F[_],  H[_]](
     k: DistributiveLaw[F, H])(
     implicit F: Functor[F], H: Functor[H]) =
@@ -414,8 +418,9 @@ package object matryoshka {
     *
     * @group dist
     */
-  def distApo[T](implicit T: Recursive[T]): DistributiveLaw[T \/ ?, T.Base] =
-    distGApo[T.Base, T](T.project(_))(T.BF)
+  def distApo[T, F[_]: Functor](implicit T: Recursive.Aux[T, F])
+      : DistributiveLaw[T \/ ?, F] =
+    distGApo[F, T](T.project(_))
 
   /**
     *
@@ -452,6 +457,9 @@ package object matryoshka {
     *
     * @group dist
     */
+  // TODO: Should be able to generalize this over `Recursive.Aux[T, CoEnv[…]]`
+  //       somehow, then it wouldn’t depend on Scalaz and would work with any
+  //       `Free` representation.
   def distGFutu[H[_], F[_]](
     k: DistributiveLaw[H, F])(
     implicit H: Functor[H], F: Functor[F]): DistributiveLaw[Free[H, ?], F] =
@@ -533,8 +541,8 @@ package object matryoshka {
     *
     * @group algtrans
     */
-  def attrSelf[T](implicit T: Corecursive[T]) =
-    attributeAlgebra[T.Base, T](T.embed(_))(T.BF)
+  def attrSelf[T, F[_]: Functor](implicit T: Corecursive.Aux[T, F]) =
+    attributeAlgebra[F, T](T.embed(_))
 
   /** A function to be called like `attributeElgotM[M](myElgotAlgebraM)`.
     *
@@ -649,7 +657,7 @@ package object matryoshka {
     *
     * @group algebras
     */
-  def zipTuple[T, F[_]: Zip](implicit T: Recursive.Aux[T, F])
+  def zipTuple[T, F[_]: Functor: Zip](implicit T: Recursive.Aux[T, F])
       : Coalgebra[F, (T, T)] =
     p => Zip[F].zip[T, T](p._1.project, p._2.project)
 
@@ -666,7 +674,7 @@ package object matryoshka {
     *
     * @group algebras
     */
-  def mergeTuple[T, F[_]: Merge](implicit T: Recursive.Aux[T, F])
+  def mergeTuple[T, F[_]: Functor: Merge](implicit T: Recursive.Aux[T, F])
       : CoalgebraM[Option, F, (T, T)] =
     p => Merge[F].merge[T, T](p._1.project, p._2.project)
 
@@ -729,15 +737,16 @@ package object matryoshka {
     self: F[T])(
     implicit T: Corecursive.Aux[T, FF], Sub: F[T] <~< FF[T]) {
 
-    val embed: T = T.embed(Sub(self))
-    def colambek(implicit TR: Recursive.Aux[T, FF]): T = T.colambek(Sub(self))
+    def embed(implicit F: Functor[FF]): T = T.embed(Sub(self))
+    def colambek(implicit TR: Recursive.Aux[T, FF], F: Functor[FF]): T =
+      T.colambek(Sub(self))
   }
 
-  implicit final class CorecursiveTOps[T[_[_]], F[_], FF[_]: Functor](
+  implicit final class CorecursiveTOps[T[_[_]], F[_], FF[_]](
     self: F[T[FF]])(
     implicit T: CorecursiveT[T], Sub: F[T[FF]] <~< FF[T[FF]]) {
 
-    val embedT: T[FF] = T.embedT[FF](Sub(self))
+    def embedT(implicit F: Functor[FF]): T[FF] = T.embedT[FF](Sub(self))
   }
 
   implicit def toAlgebraOps[F[_], A](a: Algebra[F, A]): AlgebraOps[F, A] =

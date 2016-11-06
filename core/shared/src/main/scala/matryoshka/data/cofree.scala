@@ -27,14 +27,16 @@ trait CofreeInstances {
     new Recursive[Cofree[F, A]] {
       type Base[B] = EnvT[A, F, B]
 
-      def project(t: Cofree[F, A]) = EnvT((t.head, t.tail))
+      def project(t: Cofree[F, A])(implicit BF: Functor[Base]) =
+        EnvT((t.head, t.tail))
     }
 
   implicit def cofreeCorecursive[F[_], A]: Corecursive.Aux[Cofree[F, A], EnvT[A, F, ?]] =
     new Corecursive[Cofree[F, A]] {
       type Base[B] = EnvT[A, F, B]
 
-      def embed(t: EnvT[A, F, Cofree[F, A]]) = Cofree(t.ask, t.lower)
+      def embed(t: EnvT[A, F, Cofree[F, A]])(implicit BF: Functor[Base]) =
+        Cofree(t.ask, t.lower)
     }
 
   implicit def cofreeTraverseT[A]: TraverseT[Cofree[?[_], A]] =

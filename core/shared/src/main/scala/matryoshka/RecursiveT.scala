@@ -33,8 +33,9 @@ object RecursiveT {
   def recursive[T[_[_]]: RecursiveT, F[_]]: Recursive.Aux[T[F], F] =
     new Recursive[T[F]] {
       type Base[A] = F[A]
-      def project(t: T[F]) = RecursiveT[T].projectT[F](t)
-      override def cata[A](t: T[F])(f: Algebra[F, A]) =
+      def project(t: T[F])(implicit F: Functor[F]) =
+        RecursiveT[T].projectT[F](t)
+      override def cata[A](t: T[F])(f: Algebra[F, A])(implicit F: Functor[F]) =
         RecursiveT[T].cataT[F, A](t)(f)
     }
 }

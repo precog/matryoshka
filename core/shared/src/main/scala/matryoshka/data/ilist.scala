@@ -26,7 +26,7 @@ trait IListInstances {
     new Recursive[IList[A]] {
       type Base[B] = ListF[A, B]
 
-      def project(t: IList[A]) = t match {
+      def project(t: IList[A])(implicit BF: Functor[Base]) = t match {
         case ICons(h, t) => ConsF(h, t)
         case INil()      => NilF[A, IList[A]]()
       }
@@ -36,7 +36,7 @@ trait IListInstances {
     new Corecursive[IList[A]] {
       type Base[B] = ListF[A, B]
 
-      def embed(t: ListF[A, IList[A]]) = t match {
+      def embed(t: ListF[A, IList[A]])(implicit BF: Functor[Base]) = t match {
         case ConsF(h, t) => ICons(h, t)
         case NilF()      => INil[A]
       }

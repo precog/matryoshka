@@ -38,9 +38,9 @@ object Fix {
   implicit def corecursive[F[_]]: Corecursive.Aux[Fix[F], F] =
     CorecursiveT.corecursive[Fix, F]
 
-  implicit def equal[F[_]](implicit F: Delay[Equal, F]): Equal[Fix[F]] =
+  implicit def equal[F[_]: Functor](implicit F: Delay[Equal, F]): Equal[Fix[F]] =
     Recursive.equal[Fix[F], F]
 
-  implicit def show[F[_]](implicit F: Delay[Show, F]): Show[Fix[F]] =
+  implicit def show[F[_]: Functor](implicit F: Delay[Show, F]): Show[Fix[F]] =
     Recursive.show[Fix[F], F]
 }
