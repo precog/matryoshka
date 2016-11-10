@@ -324,164 +324,162 @@ object Recursive {
     def typeClassInstance: Aux[T, F]
     def self: T
 
-    type BaseT[A] = Aux[T, F]#Base[A]
-    def project(implicit BF: Functor[BaseT]): BaseT[T] =
-      typeClassInstance.project(self)
-    def lambek(implicit T: Corecursive.Aux[T, BaseT], BF: Functor[BaseT])
-        : BaseT[T] =
+    def project(implicit BF: Functor[F]): F[T] = typeClassInstance.project(self)
+    def lambek(implicit T: Corecursive.Aux[T, F], BF: Functor[F]): F[T] =
       typeClassInstance.lambek(self)
-    def cata[A](f: Algebra[BaseT, A])(implicit BF: Functor[BaseT]): A =
+    def cata[A](f: Algebra[F, A])(implicit BF: Functor[F]): A =
       typeClassInstance.cata[A](self)(f)
-    def cataM[M[_]: Monad, A](f: AlgebraM[M, BaseT, A])(implicit BT: Traverse[BaseT]): M[A] =
+    def cataM[M[_]: Monad, A](f: AlgebraM[M, F, A])(implicit BT: Traverse[F])
+        : M[A] =
       typeClassInstance.cataM[M, A](self)(f)
     def gcata[W[_]: Comonad, A]
-      (k: DistributiveLaw[BaseT, W], g: GAlgebra[W, BaseT, A])
-      (implicit BF: Functor[BaseT])
+      (k: DistributiveLaw[F, W], g: GAlgebra[W, F, A])
+      (implicit BF: Functor[F])
         : A =
       typeClassInstance.gcata[W, A](self)(k, g)
     def gcataM[W[_]: Comonad: Traverse, M[_]: Monad, A]
-      (k: DistributiveLaw[BaseT, W], g: GAlgebraM[W, M, BaseT, A])
-      (implicit BT: Traverse[BaseT])
+      (k: DistributiveLaw[F, W], g: GAlgebraM[W, M, F, A])
+      (implicit BT: Traverse[F])
         : M[A] =
       typeClassInstance.gcataM[W, M, A](self)(k, g)
     def elgotCata[W[_]: Comonad, A]
-      (k: DistributiveLaw[BaseT, W], g: ElgotAlgebra[W, BaseT, A])
-      (implicit BF: Functor[BaseT])
+      (k: DistributiveLaw[F, W], g: ElgotAlgebra[W, F, A])
+      (implicit BF: Functor[F])
         : A =
       typeClassInstance.elgotCata[W, A](self)(k, g)
-    def para[A](f: GAlgebra[(T, ?), BaseT, A])(implicit BF: Functor[BaseT]): A =
+    def para[A](f: GAlgebra[(T, ?), F, A])(implicit BF: Functor[F]): A =
       typeClassInstance.para[A](self)(f)
     def elgotPara[A]
-      (f: ElgotAlgebra[(T, ?), BaseT, A])
-      (implicit BF: Functor[BaseT])
+      (f: ElgotAlgebra[(T, ?), F, A])
+      (implicit BF: Functor[F])
         : A =
       typeClassInstance.elgotPara[A](self)(f)
     def paraM[M[_]: Monad, A]
-      (f: GAlgebraM[(T, ?), M, BaseT, A])
-      (implicit BT: Traverse[BaseT])
+      (f: GAlgebraM[(T, ?), M, F, A])
+      (implicit BT: Traverse[F])
         : M[A] =
       typeClassInstance.paraM[M, A](self)(f)
     def gpara[W[_]: Comonad, A]
-      (e: DistributiveLaw[BaseT, W], f: GAlgebra[EnvT[T, W, ?], BaseT, A])
-      (implicit T: Corecursive.Aux[T, BaseT], BF: Functor[BaseT])
+      (e: DistributiveLaw[F, W], f: GAlgebra[EnvT[T, W, ?], F, A])
+      (implicit T: Corecursive.Aux[T, F], BF: Functor[F])
         : A =
       typeClassInstance.gpara[W, A](self)(e, f)
     def zygo[A, B]
-      (f: Algebra[BaseT, B], g: GAlgebra[(B, ?), BaseT, A])
-      (implicit BF: Functor[BaseT])
+      (f: Algebra[F, B], g: GAlgebra[(B, ?), F, A])
+      (implicit BF: Functor[F])
         : A =
       typeClassInstance.zygo[A, B](self)(f, g)
     def elgotZygo[A, B]
-      (f: Algebra[BaseT, B], g: ElgotAlgebra[(B, ?), BaseT, A])
-      (implicit BF: Functor[BaseT])
+      (f: Algebra[F, B], g: ElgotAlgebra[(B, ?), F, A])
+      (implicit BF: Functor[F])
         : A =
       typeClassInstance.elgotZygo[A, B](self)(f, g)
     def gzygo[W[_]: Comonad, A, B]
-      (f: Algebra[BaseT, B],
-        w: DistributiveLaw[BaseT, W],
-        g: GAlgebra[EnvT[B, W, ?], BaseT, A])
-      (implicit BF: Functor[BaseT])
+      (f: Algebra[F, B],
+        w: DistributiveLaw[F, W],
+        g: GAlgebra[EnvT[B, W, ?], F, A])
+      (implicit BF: Functor[F])
         : A =
       typeClassInstance.gzygo[W, A, B](self)(f, w, g)
     def gElgotZygo[W[_]: Comonad, A, B]
-      (f: Algebra[BaseT, B],
-        w: DistributiveLaw[BaseT, W],
-        g: ElgotAlgebra[EnvT[B, W, ?], BaseT, A])
-      (implicit BF: Functor[BaseT])
+      (f: Algebra[F, B],
+        w: DistributiveLaw[F, W],
+        g: ElgotAlgebra[EnvT[B, W, ?], F, A])
+      (implicit BF: Functor[F])
         : A =
       typeClassInstance.gElgotZygo [W, A, B](self)(f, w, g)
     def mutu[A, B]
-      (f: GAlgebra[(A, ?), BaseT, B], g: GAlgebra[(B, ?), BaseT, A])
-      (implicit BF: Functor[BaseT])
+      (f: GAlgebra[(A, ?), F, B], g: GAlgebra[(B, ?), F, A])
+      (implicit BF: Functor[F])
         : A =
       typeClassInstance.mutu[A, B](self)(f, g)
     def prepro[A]
-      (e: BaseT ~> BaseT, f: Algebra[BaseT, A])
-      (implicit T: Corecursive.Aux[T, BaseT], BF: Functor[BaseT])
+      (e: F ~> F, f: Algebra[F, A])
+      (implicit T: Corecursive.Aux[T, F], BF: Functor[F])
         : A =
       typeClassInstance.prepro[A](self)(e, f)
     def gprepro[W[_]: Comonad, A]
-      (k: DistributiveLaw[BaseT, W], e: BaseT ~> BaseT, f: GAlgebra[W, BaseT, A])
-      (implicit T: Corecursive.Aux[T, BaseT], BF: Functor[BaseT])
+      (k: DistributiveLaw[F, W], e: F ~> F, f: GAlgebra[W, F, A])
+      (implicit T: Corecursive.Aux[T, F], BF: Functor[F])
         : A =
       typeClassInstance.gprepro[W, A](self)(k, e, f)
     def histo[A]
-      (f: GAlgebra[Cofree[BaseT, ?], BaseT, A])
-      (implicit BF: Functor[BaseT])
+      (f: GAlgebra[Cofree[F, ?], F, A])
+      (implicit BF: Functor[F])
         : A =
       typeClassInstance.histo(self)(f)
     def elgotHisto[A]
-      (f: ElgotAlgebra[Cofree[BaseT, ?], BaseT, A])
-      (implicit BF: Functor[BaseT])
+      (f: ElgotAlgebra[Cofree[F, ?], F, A])
+      (implicit BF: Functor[F])
         : A =
       typeClassInstance.elgotHisto(self)(f)
     def ghisto[H[_]: Functor, A]
-      (g: DistributiveLaw[BaseT, H], f: GAlgebra[Cofree[H, ?], BaseT, A])
-      (implicit BF: Functor[BaseT])
+      (g: DistributiveLaw[F, H], f: GAlgebra[Cofree[H, ?], F, A])
+      (implicit BF: Functor[F])
         : A =
       typeClassInstance.ghisto(self)(g, f)
     def paraZygo[A, B]
-      (f: GAlgebra[(T, ?), BaseT, B], g: GAlgebra[(B, ?), BaseT, A])
-      (implicit BF: Functor[BaseT], BU: Unzip[BaseT])
+      (f: GAlgebra[(T, ?), F, B], g: GAlgebra[(B, ?), F, A])
+      (implicit BF: Functor[F], BU: Unzip[F])
         : A =
       typeClassInstance.paraZygo[A, B](self)(f, g)
     def paraMerga[A]
       (that: T)
-      (f: (T, T, Option[BaseT[A]]) => A)
-      (implicit BF: Functor[BaseT], BM: Merge[BaseT])
+      (f: (T, T, Option[F[A]]) => A)
+      (implicit BF: Functor[F], BM: Merge[F])
         : A =
       typeClassInstance.paraMerga[A](self, that)(f)
-    def isLeaf(implicit BT: Traverse[BaseT]): Boolean =
+    def isLeaf(implicit BT: Traverse[F]): Boolean =
       typeClassInstance.isLeaf(self)
-    def children(implicit BT: Traverse[BaseT]): List[T] =
+    def children(implicit BT: Traverse[F]): List[T] =
       typeClassInstance.children(self)
-    def universe(implicit BT: Traverse[BaseT]): List[T] =
+    def universe(implicit BT: Traverse[F]): List[T] =
       typeClassInstance.universe(self)
     def topDownCataM[M[_]: Monad, A]
       (a: A)
       (f: (A, T) => M[(A, T)])
-      (implicit T: Corecursive.Aux[T, BaseT], BT: Traverse[BaseT])
+      (implicit T: Corecursive.Aux[T, F], BT: Traverse[F])
         : M[T] =
       typeClassInstance.topDownCataM[M, A](self, a)(f)
     def attributeTopDown[A]
       (z: A)
-      (f: (A, BaseT[T]) => A)
-      (implicit BF: Functor[BaseT])
-        : Cofree[BaseT, A] =
+      (f: (A, F[T]) => A)
+      (implicit BF: Functor[F])
+        : Cofree[F, A] =
       typeClassInstance.attributeTopDown[A](self, z)(f)
     def attributeTopDownM[M[_]: Monad, A]
       (z: A)
-      (f: (A, BaseT[T]) => M[A])
-      (implicit BT: Traverse[BaseT])
-        : M[Cofree[BaseT, A]] =
+      (f: (A, F[T]) => M[A])
+      (implicit BT: Traverse[F])
+        : M[Cofree[F, A]] =
       typeClassInstance.attributeTopDownM[M, A](self, z)(f)
-    def all(p: T ⇒ Boolean)(implicit BF: Functor[BaseT], B: Foldable[BaseT])
+    def all(p: T ⇒ Boolean)(implicit BF: Functor[F], B: Foldable[F])
         : Boolean =
       typeClassInstance.all(self)(p)
-    def any(p: T ⇒ Boolean)(implicit BF: Functor[BaseT], B: Foldable[BaseT])
+    def any(p: T ⇒ Boolean)(implicit BF: Functor[F], B: Foldable[F])
         : Boolean =
       typeClassInstance.any(self)(p)
     def collect[B]
       (pf: PartialFunction[T, B])
-      (implicit BF: Functor[BaseT], B: Foldable[BaseT])
+      (implicit BF: Functor[F], B: Foldable[F])
         : List[B] =
       typeClassInstance.collect[B](self)(pf)
     def contains
       (c: T)
-      (implicit T: Equal[T], BF: Functor[BaseT], B: Foldable[BaseT])
+      (implicit T: Equal[T], BF: Functor[F], B: Foldable[F])
         : Boolean =
       typeClassInstance.contains(self, c)
     def foldMap[Z: Monoid]
       (f: T => Z)
-      (implicit BF: Functor[BaseT], B: Foldable[BaseT])
+      (implicit BF: Functor[F], B: Foldable[F])
         : Z =
       typeClassInstance.foldMap[Z](self)(f)
     def foldMapM[M[_]: Monad, Z: Monoid]
       (f: T => M[Z])
-      (implicit BF: Functor[BaseT], B: Foldable[BaseT])
+      (implicit BF: Functor[F], B: Foldable[F])
         : M[Z] =
       typeClassInstance.foldMapM[M, Z](self)(f)
-    def convertTo[R](implicit R: Corecursive.Aux[R, BaseT], BF: Functor[BaseT])
+    def convertTo[R](implicit R: Corecursive.Aux[R, F], BF: Functor[F])
         : R =
       typeClassInstance.convertTo[R](self)
   }

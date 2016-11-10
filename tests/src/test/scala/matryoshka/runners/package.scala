@@ -19,9 +19,6 @@ package matryoshka
 import matryoshka.Recursive.ops._
 import matryoshka.data._
 
-// FIXME: This is needed because of failed Corecursive resolution
-import scala.Predef.implicitly
-
 import org.specs2.execute._
 import org.specs2.matcher._
 import org.specs2.mutable.SpecificationLike
@@ -37,8 +34,8 @@ package object runners extends SpecificationLike {
   def testRec[F[_], A](t: Fix[F], r: RecRunner[F, A])(implicit F: Functor[F]):
       MatchResult[A] = {
     r.run[Fix[F]].apply(t) and
-    r.run[Mu[F]].apply(t.convertTo[Mu[F]](Corecursive[Mu[F], F], implicitly)) and
-    r.run[Nu[F]].apply(t.convertTo[Nu[F]](Corecursive[Nu[F], F], implicitly))
+    r.run[Mu[F]].apply(t.convertTo[Mu[F]]) and
+    r.run[Nu[F]].apply(t.convertTo[Nu[F]])
   }
 
   abstract class CorecRunner[M[_], F[_], A] {
@@ -62,8 +59,8 @@ package object runners extends SpecificationLike {
     implicit Eq0: Delay[Equal, G], S0: Delay[Show, G]):
       Result =
     r.run[Fix].apply(t).toResult and
-    r.run[Mu].apply(t.convertTo[Mu[F]](Corecursive[Mu[F], F], implicitly)).toResult and
-    r.run[Nu].apply(t.convertTo[Nu[F]](Corecursive[Nu[F], F], implicitly)).toResult
+    r.run[Mu].apply(t.convertTo[Mu[F]]).toResult and
+    r.run[Nu].apply(t.convertTo[Nu[F]]).toResult
 
   abstract class TravRunner[M[_], F[_], G[_]] {
     def run[T[_[_]]: TraverseT](implicit TC: Corecursive.Aux[T[G], G], Eq: Equal[T[G]], S: Show[T[G]]):
@@ -74,6 +71,6 @@ package object runners extends SpecificationLike {
     implicit Eq0: Delay[Equal, G], S0: Delay[Show, G]):
       Result =
     r.run[Fix].apply(t).toResult and
-    r.run[Mu].apply(t.convertTo[Mu[F]](Corecursive[Mu[F], F], implicitly)).toResult and
-    r.run[Nu].apply(t.convertTo[Nu[F]](Corecursive[Nu[F], F], implicitly)).toResult
+    r.run[Mu].apply(t.convertTo[Mu[F]]).toResult and
+    r.run[Nu].apply(t.convertTo[Nu[F]]).toResult
 }
