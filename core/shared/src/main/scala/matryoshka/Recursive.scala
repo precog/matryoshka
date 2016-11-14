@@ -16,7 +16,7 @@
 
 package matryoshka
 
-import Merge.ops._
+import matryoshka.implicits._
 import matryoshka.patterns.EnvT
 
 import scala.{Boolean, Option, PartialFunction}

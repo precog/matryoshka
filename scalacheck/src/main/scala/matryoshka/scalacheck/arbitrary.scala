@@ -18,6 +18,7 @@ package matryoshka.scalacheck
 
 import matryoshka._
 import matryoshka.data._
+import matryoshka.implicits._
 import matryoshka.patterns._
 
 import scala.{Option, None}

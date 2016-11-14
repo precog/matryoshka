@@ -17,6 +17,7 @@
 package matryoshka.patterns
 
 import matryoshka._
+import matryoshka.implicits._
 
 import scala.Option
 import scala.Predef.implicitly

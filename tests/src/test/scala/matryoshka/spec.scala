@@ -16,11 +16,11 @@
 
 package matryoshka
 
-import Recursive.ops._, RecursiveT.ops._, FunctorT.ops._, TraverseT.nonInheritedOps._
 import matryoshka.data._
 import matryoshka.exp._
 import matryoshka.exp2._
 import matryoshka.helpers._
+import matryoshka.implicits._
 import matryoshka.runners._
 import matryoshka.scalacheck.arbitrary._
 import matryoshka.specs2.scalacheck.CheckAll

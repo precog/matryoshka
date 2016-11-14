@@ -16,7 +16,8 @@
 
 package matryoshka.instances.fixedpoint
 
-import matryoshka._, Recursive.ops._
+import matryoshka._
+import matryoshka.implicits._
 import matryoshka.patterns._
 
 import scala.Int

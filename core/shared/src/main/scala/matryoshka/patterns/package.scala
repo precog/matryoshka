@@ -16,6 +16,8 @@
 
 package matryoshka
 
+import matryoshka.implicits._
+
 import scala.Option
 
 import scalaz._, Scalaz._, Leibniz._

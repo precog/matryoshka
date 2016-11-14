@@ -16,8 +16,8 @@
 
 package matryoshka
 
-import matryoshka.Recursive.ops._
 import matryoshka.data._
+import matryoshka.implicits._
 
 import org.specs2.execute._
 import org.specs2.matcher._

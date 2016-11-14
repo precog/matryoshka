@@ -20,7 +20,8 @@ Generalized folds, unfolds, and traversals for fixed point data structures in Sc
 To use Matryoshka, the following import should bring in pretty much everything:
 
 ```scala
-import matryoshka._, Recursive.ops._, TraverseT.ops._
+import matryoshka._
+import matryoshka.implicits._
 ```
 
 Also, there are a number of implicits that scalac has trouble finding. Adding @milessabin’s [SI-2712 fix compiler plugin](https://github.com/milessabin/si2712fix-plugin) will simplify a ton of Matryoshka-related code.
