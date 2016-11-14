@@ -20,30 +20,26 @@ import matryoshka._
 import matryoshka.patterns.EnvT
 
 import scalaz._
-import scalaz.syntax.functor._
 
-trait CofreeInstances {
-  implicit def cofreeRecursive[F[_], A]: Recursive.Aux[Cofree[F, A], EnvT[A, F, ?]] =
-    new Recursive[Cofree[F, A]] {
+trait CofreeInstances0 {
+  implicit def cofreeBirecursive[F[_], A]: Birecursive.Aux[Cofree[F, A], EnvT[A, F, ?]] =
+    new Birecursive[Cofree[F, A]] {
       type Base[B] = EnvT[A, F, B]
 
       def project(t: Cofree[F, A])(implicit BF: Functor[Base]) =
         EnvT((t.head, t.tail))
-    }
-
-  implicit def cofreeCorecursive[F[_], A]: Corecursive.Aux[Cofree[F, A], EnvT[A, F, ?]] =
-    new Corecursive[Cofree[F, A]] {
-      type Base[B] = EnvT[A, F, B]
 
       def embed(t: EnvT[A, F, Cofree[F, A]])(implicit BF: Functor[Base]) =
         Cofree(t.ask, t.lower)
     }
+}
 
-  implicit def cofreeTraverseT[A]: TraverseT[Cofree[?[_], A]] =
-    new TraverseT[Cofree[?[_], A]] {
-      def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: Cofree[F, A])(f: F[Cofree[F, A]] => M[G[Cofree[G, A]]]) =
-        f(t.tail).map(Cofree(t.head, _))
-    }
+trait CofreeInstances extends CofreeInstances0 {
+  implicit def cofreeRecursive[F[_], A]: Recursive.Aux[Cofree[F, A], EnvT[A, F, ?]] =
+    cofreeBirecursive
+
+  implicit def cofreeCorecursive[F[_], A]: Corecursive.Aux[Cofree[F, A], EnvT[A, F, ?]] =
+    cofreeBirecursive
 
   implicit def cofreeEqual[F[_]](implicit F: Delay[Equal, F]):
       Delay[Equal, Cofree[F, ?]] =
