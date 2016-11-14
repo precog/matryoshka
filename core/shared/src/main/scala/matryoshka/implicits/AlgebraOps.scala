@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
-package matryoshka
+package matryoshka.implicits
+
+import matryoshka._
 
 import scalaz._
 import scalaz.syntax.comonad._
