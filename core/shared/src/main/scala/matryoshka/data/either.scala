@@ -16,24 +16,18 @@
 
 package matryoshka.data
 
-import matryoshka.exp.Exp
-import matryoshka.helpers._
-import matryoshka.patterns.CoEnv
-import matryoshka.scalacheck.arbitrary._
-import matryoshka.specs2.scalacheck._
+import matryoshka._
 
-import scala.Int
+import scala.Either
 
-import org.specs2.mutable._
-import scalaz._, Scalaz._
-import scalaz.scalacheck.ScalazProperties._
+import scalaz._
 
-class FixSpec extends Specification with CheckAll with AlgebraChecks {
-  "Fix" should {
-    "satisfy relevant laws" in {
-      checkAll(equal.laws[Fix[Exp]])
-    }
-  }
+trait EitherInstances {
+  implicit def eitherRecursive[A, B]: Recursive.Aux[Either[A, B], Const[Either[A, B], ?]] =
+    id.idRecursive[Either[A, B]]
 
-  checkFoldIsoLaws[Fix[CoEnv[Int, Exp, ?]], CoEnv[Int, Exp, ?], Free[Exp, Int]]("Fix", CoEnv.freeIso)
+  implicit def eitherCorecursive[A, B]: Corecursive.Aux[Either[A, B], Const[Either[A, B], ?]] =
+    id.idCorecursive[Either[A, B]]
 }
+
+object either extends EitherInstances

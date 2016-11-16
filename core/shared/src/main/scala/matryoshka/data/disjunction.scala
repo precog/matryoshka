@@ -14,11 +14,18 @@
  * limitations under the License.
  */
 
-package matryoshka
+package matryoshka.data
+
+import matryoshka._
 
 import scalaz._
 
-sealed class FreeOps[F[_], A](self: Free[F, A]) {
-  def interpretCata(φ: Algebra[F, A])(implicit F: Functor[F]): A =
-    matryoshka.interpretCata(self)(φ)
+trait DisjunctionInstances {
+  implicit def disjunctionRecursive[A, B]: Recursive.Aux[A \/ B, Const[A \/ B, ?]] =
+    id.idRecursive[A \/ B]
+
+  implicit def disjunctionCorecursive[A, B]: Corecursive.Aux[A \/ B, Const[A \/ B, ?]] =
+    id.idCorecursive[A \/ B]
 }
+
+object disjunction extends DisjunctionInstances

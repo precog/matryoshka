@@ -19,6 +19,7 @@ package matryoshka.instances.fixedpoint
 import matryoshka._, Recursive.ops._
 import matryoshka.data.Mu
 import matryoshka.helpers._
+import matryoshka.scalacheck.arbitrary._
 
 import scala.Option
 
@@ -35,21 +36,21 @@ class NatSpec extends Specification with ScalazMatchers with Discipline {
   "+" should {
     "sum values" >> prop { (a: Nat, b: Nat) =>
       val (ai, bi) = (a.cata(height), b.cata(height))
-      (a + b).some must equal((ai + bi).anaM[Mu, Option, Option](Nat.fromInt))
+      (a + b).some must equal((ai + bi).anaM[Mu[Option]](Nat.fromInt))
     }
   }
 
   "min" should {
     "pick smaller value" >> prop { (a: Nat, b: Nat) =>
       val (ai, bi) = (a.cata(height), b.cata(height))
-      (a min b).some must equal((ai min bi).anaM[Mu, Option, Option](Nat.fromInt))
+      (a min b).some must equal((ai min bi).anaM[Mu[Option]](Nat.fromInt))
     }
   }
 
   "max" should {
     "pick larger value" >> prop { (a: Nat, b: Nat) =>
       val (ai, bi) = (a.cata(height), b.cata(height))
-      (a max b).some must equal((ai max bi).anaM[Mu, Option, Option](Nat.fromInt))
+      (a max b).some must equal((ai max bi).anaM[Mu[Option]](Nat.fromInt))
     }
   }
 }

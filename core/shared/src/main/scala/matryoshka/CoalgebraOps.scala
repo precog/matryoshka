@@ -20,10 +20,12 @@ import scalaz._
 import scalaz.syntax.monad._
 
 sealed class CoalgebraOps[F[_], A](self: Coalgebra[F, A]) {
-  def generalize[N[_]: Monad](implicit F: Functor[F]): GCoalgebra[N, F, A] =
+  def generalize[N[_]: Applicative](implicit F: Functor[F])
+      : GCoalgebra[N, F, A] =
     self(_).map(_.point[N])
 
-  def generalizeM[M[_]: Monad]: CoalgebraM[M, F, A] = self(_).point[M]
+  def generalizeM[M[_]: Applicative]: CoalgebraM[M, F, A] = self(_).point[M]
 
-  def generalizeElgot[M[_]: Monad]: CoalgebraM[M, F, A] = self.generalizeM
+  def generalizeElgot[N[_]: Applicative]: ElgotCoalgebra[N, F, A] =
+    self(_).point[N]
 }

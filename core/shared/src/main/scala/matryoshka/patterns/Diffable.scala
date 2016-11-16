@@ -19,11 +19,13 @@ package matryoshka.patterns
 import matryoshka._
 
 import scala.Option
+import scala.Predef.implicitly
+
 import scalaz._, Scalaz._
 import simulacrum._
 
 @typeclass trait Diffable[F[_]] { self =>
-  def diffImpl[T[_[_]]: Recursive: Corecursive](l: T[F], r: T[F]):
+  def diffImpl[T[_[_]]: RecursiveT: CorecursiveT](l: T[F], r: T[F]):
       Option[DiffT[T, F]]
 
   /** Useful when a case class has a `List[A]` that isn’t the final `A`. This is
@@ -33,22 +35,20 @@ import simulacrum._
     * Currently also useful when the only list _is_ the final parameter, because
     * it allows you to explicitly use `Similar` rather than `LocallyDifferent`.
     */
-  def diffTraverse[T[_[_]]: Recursive: Corecursive, G[_]: Traverse](
+  def diffTraverse[T[_[_]]: RecursiveT: CorecursiveT, G[_]: Traverse](
     left: G[T[F]], right: G[T[F]])(
     implicit FF: Functor[F], FoldF: Foldable[F], FM: Merge[F]):
       G[DiffT[T, F]] =
     if (left.toList.length < right.toList.length)
       left.zipWithR(right)((l, r) =>
         l.fold(
-          CorecursiveOps[T, Diff[T, F, ?]](Added(r)).embed)(
-          // NB: needed to use `Recursive[T]` to please Scaladoc
-          Recursive[T].paraMerga(_, r)(diff(Recursive[T], Corecursive[T], self, FF, FoldF))))
+          Added[T, F, T[Diff[T, F, ?]]](r).embedT)(
+          RecursiveT.recursive[T, F].paraMerga(_, r)(diff(RecursiveT[T], CorecursiveT[T], self, implicitly, implicitly))))
     else
       left.zipWithL(right)((l, r) =>
         r.fold(
-          CorecursiveOps[T, Diff[T, F, ?]](Removed(l)).embed)(
-          // NB: needed to use `Recursive[T]` to please Scaladoc
-          Recursive[T].paraMerga(l, _)(diff(Recursive[T], Corecursive[T], self, FF, FoldF))))
+          Removed[T, F, T[Diff[T, F, ?]]](l).embedT)(
+          RecursiveT.recursive[T, F].paraMerga(l, _)(diff(RecursiveT[T], CorecursiveT[T], self, implicitly, implicitly))))
 
   // TODO: create something like Equals, but that overrides G[F[_]] (where G
   //       implements Traverse) to always be equal. This should allow us to
@@ -56,9 +56,9 @@ import simulacrum._
   //       only differ on the length of the list. So we can make them `Similar`
   //       rather than `LocallyDifferent`.
 
-  def localDiff[T[_[_]]: Recursive: Corecursive](
+  def localDiff[T[_[_]]: RecursiveT: CorecursiveT](
     left: F[T[F]], right: F[T[F]])(
     implicit FT: Traverse[F], FM: Merge[F]):
       DiffT[T, F] =
-    CorecursiveOps[T, Diff[T, F, ?]](LocallyDifferent[T, F, DiffT[T, F]](diffTraverse(left, right), right.void)).embed
+    LocallyDifferent[T, F, T[Diff[T, F, ?]]](diffTraverse[T, F](left, right), right.void).embedT
 }

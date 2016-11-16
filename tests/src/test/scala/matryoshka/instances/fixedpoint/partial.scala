@@ -17,7 +17,7 @@
 package matryoshka.instances.fixedpoint
 
 import matryoshka._, Recursive.ops._, FunctorT.ops._
-import matryoshka.helpers._
+import matryoshka.scalacheck.arbitrary._
 import matryoshka.specs2.scalacheck.CheckAll
 
 import scala.Predef.{implicitly}

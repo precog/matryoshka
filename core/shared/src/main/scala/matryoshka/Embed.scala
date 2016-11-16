@@ -22,12 +22,13 @@ import scala.Some
 
 import scalaz._
 
-/** An extractor to make it easier to pattern-match on arbitrary Recursive
+/** An extractor to make it easier to pattern-match on arbitrary [[Recursive]]
   * structures.
   *
   * NB: This extractor is irrufutable and doesn’t break exhaustiveness checking.
   */
 object Embed {
-  def unapply[T[_[_]]: Recursive, F[_]: Functor](obj: T[F]): Some[F[T[F]]] =
+  def unapply[T, F[_]](obj: T)(implicit T: Recursive.Aux[T, F], F: Functor[F])
+      : Some[F[T]] =
     Some(obj.project)
 }

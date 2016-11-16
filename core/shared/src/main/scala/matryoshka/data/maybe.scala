@@ -16,24 +16,16 @@
 
 package matryoshka.data
 
-import matryoshka.exp.Exp
-import matryoshka.helpers._
-import matryoshka.patterns.CoEnv
-import matryoshka.scalacheck.arbitrary._
-import matryoshka.specs2.scalacheck._
+import matryoshka._
 
-import scala.Int
+import scalaz._
 
-import org.specs2.mutable._
-import scalaz._, Scalaz._
-import scalaz.scalacheck.ScalazProperties._
+trait MaybeInstances {
+  implicit def maybeRecursive[A]: Recursive.Aux[Maybe[A], Const[Maybe[A], ?]] =
+    id.idRecursive[Maybe[A]]
 
-class FixSpec extends Specification with CheckAll with AlgebraChecks {
-  "Fix" should {
-    "satisfy relevant laws" in {
-      checkAll(equal.laws[Fix[Exp]])
-    }
-  }
-
-  checkFoldIsoLaws[Fix[CoEnv[Int, Exp, ?]], CoEnv[Int, Exp, ?], Free[Exp, Int]]("Fix", CoEnv.freeIso)
+  implicit def maybeCorecursive[A]: Corecursive.Aux[Maybe[A], Const[Maybe[A], ?]] =
+    id.idCorecursive[Maybe[A]]
 }
+
+object maybe extends MaybeInstances

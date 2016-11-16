@@ -14,17 +14,20 @@
  * limitations under the License.
  */
 
-package matryoshka
+package matryoshka.data
+
+import matryoshka._
+
+import scala.Option
 
 import scalaz._
 
-sealed class CofreeOps[F[_], A](self: Cofree[F, A]) {
-  def cofCata[B](φ: ((A, F[B])) => B)(implicit F: Functor[F]): B =
-    matryoshka.cofCata(self)(φ)
+trait OptionInstances {
+  implicit def optionRecursive[A]: Recursive.Aux[Option[A], Const[Option[A], ?]] =
+    id.idRecursive[Option[A]]
 
-  def cofCataM[M[_]: Monad, B](
-    φ: ((A, F[B])) => M[B])(
-    implicit F: Traverse[F]):
-      M[B] =
-    matryoshka.cofCataM(self)(φ)
+  implicit def optionCorecursive[A]: Corecursive.Aux[Option[A], Const[Option[A], ?]] =
+    id.idCorecursive[Option[A]]
 }
+
+object option extends OptionInstances

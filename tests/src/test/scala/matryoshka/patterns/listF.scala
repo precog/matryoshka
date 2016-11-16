@@ -18,6 +18,7 @@ package matryoshka.patterns
 
 import matryoshka._
 import matryoshka.helpers._
+import matryoshka.scalacheck.arbitrary._
 import matryoshka.specs2.scalacheck.CheckAll
 
 import java.lang.String
@@ -31,19 +32,11 @@ import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
 class ListFSpec extends Specification with ScalaCheck with CheckAll with AlgebraChecks {
-  implicit def listFArbitrary[A: Arbitrary]: Delay[Arbitrary, ListF[A, ?]] =
-    new Delay[Arbitrary, ListF[A, ?]] {
-      def apply[B](arb: Arbitrary[B]) =
-        Arbitrary(Gen.oneOf(
-          NilF[A, B]().point[Gen],
-          (Arbitrary.arbitrary[A] ⊛ arb.arbitrary)(ConsF[A, B])))
-    }
-
   "ListF should satisfy relevant laws" >> {
     checkAll(equal.laws[ListF[String, Int]])
     checkAll(bitraverse.laws[ListF])
   }
 
-  checkAlgebraIsoLaws("ListF ⇔ List", ListF.listIso[Int])(imp, Arbitrary(Gen.listOf(Arbitrary.arbInt.arbitrary)), imp, imp)
-  checkAlgebraIsoLaws("ListF ⇔ Seq", ListF.seqIso[Int])(imp, Arbitrary(Gen.listOf(Arbitrary.arbInt.arbitrary).map(_.toSeq)), imp, Equal.equalA[Seq[Int]])
+  checkAlgebraIsoLaws("ListF ⇔ List", ListF.listIso[Int])(Arbitrary(Gen.listOf(Arbitrary.arbInt.arbitrary)), imp, imp, imp)
+  checkAlgebraIsoLaws("ListF ⇔ Seq", ListF.seqIso[Int])(Arbitrary(Gen.listOf(Arbitrary.arbInt.arbitrary).map(_.toSeq)), Equal.equalA[Seq[Int]], imp, imp)
 }

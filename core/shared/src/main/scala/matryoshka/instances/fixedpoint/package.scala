@@ -37,33 +37,36 @@ package object fixedpoint {
 
     // NB: This isn’t defined via `AlgebraPrism` because it only holds across a
     //     recursive structure.
-    def intPrism = Prism[Int, Fix[Option]](_.anaM(fromInt))(_.cata(height))
+    def intPrism =
+      Prism[Int, Fix[Option]](_.anaM[Fix[Option]](fromInt))(_.cata(height))
   }
 
-  implicit class NatOps[T[_[_]]: Recursive: Corecursive](self: T[Option]) {
-    def +(other: T[Option]) = self.cata[T[Option]] {
+  implicit class NatOps[T]
+    (self: T)
+    (implicit TR: Recursive.Aux[T, Option], TC: Corecursive.Aux[T, Option]) {
+    def +(other: T) = self.cata[T] {
       case None => other
       case o    => o.embed
     }
 
-    def min(other: T[Option]) =
-      (self, other).ana(_.bimap(_.project, _.project) match {
+    def min(other: T) =
+      (self, other).ana[T](_.bimap(_.project, _.project) match {
         case (None,    _)       => None
         case (_,       None)    => None
         case (Some(a), Some(b)) => Some((a, b))
     })
 
-    def max(other: T[Option]) =
-      (self, other).apo(_.bimap(_.project, _.project) match {
+    def max(other: T) =
+      (self, other).apo[T](_.bimap(_.project, _.project) match {
         case (None,    b)       => b ∘ (_.left)
         case (a,       None)    => a ∘ (_.left)
         case (Some(a), Some(b)) => Some((a, b).right)
-    })
+      })
 }
 
   type Conat = Nu[Option]
   object Conat {
-    val inf: Conat = ().ana[Nu, Option](_.some)
+    val inf: Conat = ().ana[Nu[Option]](_.some)
   }
 
   type Free[F[_], A]   = Mu[CoEnv[A, F, ?]]
@@ -71,7 +74,7 @@ package object fixedpoint {
   type List[A]         = Mu[ListF[A, ?]]
   object List {
     def apply[A](elems: A*) =
-      elems.ana[Mu, ListF[A, ?]](ListF.seqIso[A].reverseGet)
+      elems.ana[Mu[ListF[A, ?]]](ListF.seqIso[A].reverseGet)
 
     def fillƒ[A](elem: => A): Option ~> ListF[A, ?] =
       new (Option ~> ListF[A, ?]) {
@@ -85,16 +88,21 @@ package object fixedpoint {
       n.hyloM(
         transformToAlgebra[Mu, Id, Option, Option, ListF[A, ?]](fillƒ(elem).apply(_).point[Option]),
         Nat.fromInt)
-        .getOrElse(NilF[A, List[A]]().embed)
+        .getOrElse((NilF[A, List[A]](): ListF[A, List[A]]).embed)
   }
 
   implicit class ListOps[A](self: Mu[ListF[A, ?]]) {
     def length: Int = self.cata(size) - 1
+    def headOption: Option[A] = self.project.headOption
+    def tailOption: Option[List[A]] = self.project.tailOption
   }
 
-  implicit class RecListFOps[T[_[_]]: Recursive, A](self: T[ListF[A, ?]]) {
-    def headOption: Option[A]              = self.project.headOption
-    def tailOption: Option[T[ListF[A, ?]]] = self.project.tailOption
+  implicit class RecListFOps[T, A]
+    (self: T)
+    (implicit T: Recursive.Aux[T, ListF[A, ?]]) {
+    def length: Int = self.cata(size) - 1
+    def headOption: Option[A] = self.project.headOption
+    def tailOption: Option[T] = self.project.tailOption
   }
 
   /** A lazy (potentially-infinite) list.
@@ -111,9 +119,10 @@ package object fixedpoint {
     @tailrec final def drop(n: Int): Nu[(A, ?)] =
       if (n > 0) tail.drop(n - 1) else self
     def take(n: Int): Mu[ListF[A, ?]] =
-      (n, self).ana[Mu, ListF[A, ?]] {
-        case (r, stream) if (r > 0) => ConsF(stream.head, (r - 1, stream.tail))
-        case (_, _)                 => NilF()
+      (n, self).ana[Mu[ListF[A, ?]]] {
+        case (r, stream) if (r > 0) =>
+          ConsF(stream.head, (r - 1, stream.tail)): ListF[A, (Int, Nu[(A, ?)])]
+        case (_, _)                 => NilF(): ListF[A, (Int, Nu[(A, ?)])]
       }
   }
 
@@ -131,7 +140,7 @@ package object fixedpoint {
 
     /** Canonical function that diverges.
       */
-    def never[A]: Partial[A] = ().ana[Nu, A \/ ?](_.right)
+    def never[A]: Partial[A] = ().ana[Nu[A \/ ?]](_.right[A])
 
     /** This instance is not implicit, because it potentially runs forever.
       */
@@ -172,7 +181,7 @@ package object fixedpoint {
       */
     def ≈(that: Partial[A])(implicit A: Equal[A]): Partial[Boolean] =
       // NB: could be defined as `(self ⊛ that)(_ ≟ _)`
-      (self, that).ana[Nu, Boolean \/ ?](_.bimap(_.project, _.project) match {
+      (self, that).ana[Nu[Boolean \/ ?]](_.bimap(_.project, _.project) match {
         case (-\/(a1), -\/(a2)) => (a1 ≟ a2).left
         case (\/-(l1), -\/(a2)) => (l1,      now(a2)).right
         case (-\/(a1), \/-(l2)) => (now(a1), l2).right

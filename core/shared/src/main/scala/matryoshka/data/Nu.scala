@@ -36,16 +36,25 @@ object Nu {
       val unNu = f
     }
 
-  implicit val recursive: Recursive[Nu] = new Recursive[Nu] {
-    def project[F[_]: Functor](t: Nu[F]) = t.unNu(t.a).map(Nu(t.unNu, _))
+  implicit def recursiveT: RecursiveT[Nu] = new RecursiveT[Nu] {
+    def projectT[F[_]: Functor](t: Nu[F]) = t.unNu(t.a).map(Nu(t.unNu, _))
   }
 
-  implicit val corecursive: Corecursive[Nu] = new Corecursive[Nu] {
-    def embed[F[_]: Functor](t: F[Nu[F]]) = colambek(t)
-    override def ana[F[_]: Functor, A](a: A)(f: Coalgebra[F, A]) = Nu(f, a)
+  implicit def corecursiveT: CorecursiveT[Nu] = new CorecursiveT[Nu] {
+    // FIXME: ugh, shouldn’t have to redefine `colambek` in here?
+    def embedT[F[_]: Functor](t: F[Nu[F]]) = anaT(t)(_ ∘ recursiveT.projectT[F])
+    override def anaT[F[_]: Functor, A](a: A)(f: A => F[A]) = Nu(f, a)
   }
 
-  implicit val equalT: EqualT[Nu] = Recursive.equalT[Nu]
+  implicit def recursive[F[_]]: Recursive.Aux[Nu[F], F] =
+    RecursiveT.recursive[Nu, F]
 
-  implicit val showT: ShowT[Nu] = Recursive.showT[Nu]
+  implicit def corecursive[F[_]]: Corecursive.Aux[Nu[F], F] =
+    CorecursiveT.corecursive[Nu, F]
+
+  implicit def equal[F[_]: Functor](implicit F: Delay[Equal, F]): Equal[Nu[F]] =
+    Recursive.equal[Nu[F], F]
+
+  implicit def show[F[_]: Functor](implicit F: Delay[Show, F]): Show[Nu[F]] =
+    Recursive.show[Nu[F], F]
 }

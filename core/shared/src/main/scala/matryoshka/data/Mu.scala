@@ -16,7 +16,7 @@
 
 package matryoshka.data
 
-import matryoshka._, Recursive.ops._
+import matryoshka._
 
 import scalaz._, Scalaz._
 
@@ -25,19 +25,29 @@ import scalaz._, Scalaz._
   */
 final case class Mu[F[_]](unMu: λ[A => Algebra[F, A]] ~> Id)
 object Mu {
-  implicit val recursive: Recursive[Mu] = new Recursive[Mu] {
-    def project[F[_]: Functor](t: Mu[F]) = lambek(t)
-    override def cata[F[_]: Functor, A](t: Mu[F])(f: Algebra[F, A]) = t.unMu(f)
+  implicit def recursiveT: RecursiveT[Mu] = new RecursiveT[Mu] {
+    // FIXME: ugh, shouldn’t have to redefine `lambek` in here?
+    def projectT[F[_]: Functor](t: Mu[F]) =
+      cataT[F, F[Mu[F]]](t)(_ ∘ corecursiveT.embedT[F])
+    override def cataT[F[_]: Functor, A](t: Mu[F])(f: Algebra[F, A]) = t.unMu(f)
   }
 
-  implicit val corecursive: Corecursive[Mu] = new Corecursive[Mu] {
-    def embed[F[_]: Functor](t: F[Mu[F]]) =
-      Mu(new (λ[A => Algebra[F, A]] ~> Id) {
-        def apply[A](fa: Algebra[F, A]): A = fa(t.map(_.cata(fa)))
+  implicit def corecursiveT: CorecursiveT[Mu] = new CorecursiveT[Mu] {
+    def embedT[F[_]: Functor](t: F[Mu[F]]) =
+      Mu(new (λ[A => (F[A] => A)] ~> Id) {
+        def apply[A](fa: F[A] => A): A = fa(t.map(recursiveT.cataT(_)(fa)))
       })
   }
 
-  implicit val equalT: EqualT[Mu] = Recursive.equalT[Mu]
+  implicit def recursive[F[_]]: Recursive.Aux[Mu[F], F] =
+    RecursiveT.recursive[Mu, F]
 
-  implicit val showT: ShowT[Mu] = Recursive.showT[Mu]
+  implicit def corecursive[F[_]]: Corecursive.Aux[Mu[F], F] =
+    CorecursiveT.corecursive[Mu, F]
+
+  implicit def equal[F[_]: Functor](implicit F: Delay[Equal, F]): Equal[Mu[F]] =
+    Recursive.equal[Mu[F], F]
+
+  implicit def show[F[_]: Functor](implicit F: Delay[Show, F]): Show[Mu[F]] =
+    Recursive.show[Mu[F], F]
 }

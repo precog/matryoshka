@@ -17,13 +17,26 @@
 package matryoshka.data
 
 import matryoshka._
+import matryoshka.patterns.CoEnv
 
 import scalaz._, Scalaz._
 
 trait FreeInstances {
-  implicit def freeCorecursive[A]: Corecursive[Free[?[_], A]] =
-    new Corecursive[Free[?[_], A]] {
-      def embed[F[_]: Functor](t: F[Free[F, A]]) = Free.liftF(t).join
+  // TODO: Remove the Functor constraint when we upgrade to Scalaz 7.2
+  implicit def freeRecursive[F[_]: Functor, A]: Recursive.Aux[Free[F, A], CoEnv[A, F, ?]] =
+    new Recursive[Free[F, A]] {
+      type Base[B] = CoEnv[A, F, B]
+
+      def project(t: Free[F, A])(implicit BF: Functor[Base]) =
+        CoEnv(t.resume.swap)
+    }
+
+  implicit def freeCorecursive[F[_]: Functor, A]: Corecursive.Aux[Free[F, A], CoEnv[A, F, ?]] =
+    new Corecursive[Free[F, A]] {
+      type Base[B] = CoEnv[A, F, B]
+
+      def embed(t: CoEnv[A, F, Free[F, A]])(implicit BF: Functor[Base]) =
+        t.run.fold(_.point[Free[F, ?]], Free.liftF(_).join)
     }
 
   implicit def freeTraverseT[A]: TraverseT[Free[?[_], A]] =

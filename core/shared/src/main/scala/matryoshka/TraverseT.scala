@@ -48,9 +48,11 @@ import simulacrum._
 }
 
 object TraverseT {
-  implicit def recCorecTraverseT[T[_[_]]: Recursive: Corecursive]: TraverseT[T] =
+  implicit def birecursiveTTraverseT[T[_[_]]: RecursiveT: CorecursiveT]: TraverseT[T] =
     new TraverseT[T] {
-      def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => M[G[T[G]]]) =
-        f(Recursive[T].project(t)).map(Corecursive[T].embed[G])
+      def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor]
+        (t: T[F])
+        (f: F[T[F]] => M[G[T[G]]]) =
+        f(RecursiveT[T].projectT(t)).map(CorecursiveT[T].embedT[G])
     }
 }

@@ -21,6 +21,7 @@ import matryoshka.data._
 import matryoshka.exp.Exp
 import matryoshka.exp2.Exp2
 import matryoshka.helpers._
+import matryoshka.scalacheck.arbitrary._
 import matryoshka.specs2.scalacheck._
 
 import java.lang.{String}

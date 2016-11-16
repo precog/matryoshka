@@ -14,26 +14,16 @@
  * limitations under the License.
  */
 
-package matryoshka.data
+package matryoshka
 
-import matryoshka.exp.Exp
-import matryoshka.helpers._
-import matryoshka.patterns.CoEnv
-import matryoshka.scalacheck.arbitrary._
-import matryoshka.specs2.scalacheck._
+import simulacrum.typeclass
 
-import scala.Int
-
-import org.specs2.mutable._
-import scalaz._, Scalaz._
-import scalaz.scalacheck.ScalazProperties._
-
-class FixSpec extends Specification with CheckAll with AlgebraChecks {
-  "Fix" should {
-    "satisfy relevant laws" in {
-      checkAll(equal.laws[Fix[Exp]])
-    }
-  }
-
-  checkFoldIsoLaws[Fix[CoEnv[Int, Exp, ?]], CoEnv[Int, Exp, ?], Free[Exp, Int]]("Fix", CoEnv.freeIso)
+/** Provides a type describing the pattern functor of some {co}recursive type
+  * `T`. For standard fixed-point types like [[matryoshka.data.Fix]],
+  * `Patterned[Fix[F]]#Base` is simply `F`. However, directly recursive types
+  * generally have a less obivous pattern functor. E.g., `Patterned[Cofree[F,
+  * A]]#Base` is `EnvT[A, F, ?]`.
+  */
+@typeclass trait Based[T] {
+  type Base[A]
 }
