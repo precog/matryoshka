@@ -17,6 +17,7 @@
 package matryoshka.exp
 
 import matryoshka._
+import matryoshka.implicits._
 
 import java.lang.String
 import scala.{Int, Symbol}

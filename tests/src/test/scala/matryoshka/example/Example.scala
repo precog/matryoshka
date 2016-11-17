@@ -16,8 +16,9 @@
 
 package matryoshka.example
 
-import matryoshka._, RecursiveT.ops._
+import matryoshka._
 import matryoshka.helpers._
+import matryoshka.implicits._
 import matryoshka.patterns._
 import matryoshka.scalacheck.arbitrary._
 import matryoshka.specs2.scalacheck.CheckAll

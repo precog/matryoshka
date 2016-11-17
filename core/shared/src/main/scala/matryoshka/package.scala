@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import matryoshka.Recursive.ops._
+import matryoshka.implicits._
 import matryoshka.patterns.{CoEnv, EnvT}
 
 import scala.{Boolean, Function, Int, None, Option, Unit}
@@ -730,28 +730,4 @@ package object matryoshka {
   implicit def delayShow[F[_], A](implicit A: Show[A], F: Delay[Show, F]):
       Show[F[A]] =
     F(A)
-
-  implicit def toIdOps[A](a: A): IdOps[A] = new IdOps[A](a)
-
-  implicit final class CorecursiveOps[T, F[_], FF[_]](
-    self: F[T])(
-    implicit T: Corecursive.Aux[T, FF], Sub: F[T] <~< FF[T]) {
-
-    def embed(implicit F: Functor[FF]): T = T.embed(Sub(self))
-    def colambek(implicit TR: Recursive.Aux[T, FF], F: Functor[FF]): T =
-      T.colambek(Sub(self))
-  }
-
-  implicit final class CorecursiveTOps[T[_[_]], F[_], FF[_]](
-    self: F[T[FF]])(
-    implicit T: CorecursiveT[T], Sub: F[T[FF]] <~< FF[T[FF]]) {
-
-    def embedT(implicit F: Functor[FF]): T[FF] = T.embedT[FF](Sub(self))
-  }
-
-  implicit def toAlgebraOps[F[_], A](a: Algebra[F, A]): AlgebraOps[F, A] =
-    new AlgebraOps[F, A](a)
-
-  implicit def toCoalgebraOps[F[_], A](a: Coalgebra[F, A]): CoalgebraOps[F, A] =
-    new CoalgebraOps[F, A](a)
 }

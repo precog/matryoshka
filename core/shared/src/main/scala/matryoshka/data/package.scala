@@ -16,7 +16,7 @@
 
 package matryoshka
 
-import matryoshka.Recursive.ops._
+import matryoshka.implicits._
 
 import scalaz._, Scalaz._
 
