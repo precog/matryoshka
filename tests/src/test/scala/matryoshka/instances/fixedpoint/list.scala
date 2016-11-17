@@ -24,7 +24,7 @@ import scala.Int
 
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
-import org.specs2.scalaz.{ScalazMatchers}
+import org.specs2.scalaz.ScalazMatchers
 import scalaz._, Scalaz._
 
 class ListSpec extends Specification with ScalaCheck with ScalazMatchers {
@@ -37,14 +37,15 @@ class ListSpec extends Specification with ScalaCheck with ScalazMatchers {
 
   "fill" should {
     "be equivalent to scala.List.fill" >> prop { (v: Int) =>
-      List.fill(100)(v).cata(ListF.listIso.get) must
-        equal(scala.List.fill(100)(v))
+      100.anaM[Nat](Nat.fromInt) ∘ (List.fill(_)(v).cata(ListF.listIso.get)) must
+        equal(scala.List.fill(100)(v).some)
     }
   }
 
   "length" should {
     "count the number of elements" >> prop { (v: Int) =>
-      List.fill(30)(v).length must equal(30)
+      30.anaM[Nat](Nat.fromInt) ∘ (List.fill(_)(v).length) must
+        equal(30.some)
     }
   }
 

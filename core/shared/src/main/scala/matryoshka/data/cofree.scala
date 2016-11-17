@@ -20,7 +20,6 @@ import matryoshka._
 import matryoshka.patterns.EnvT
 
 import scalaz._
-import scalaz.syntax.functor._
 
 trait CofreeInstances {
   implicit def cofreeRecursive[F[_], A]: Recursive.Aux[Cofree[F, A], EnvT[A, F, ?]] =
@@ -37,12 +36,6 @@ trait CofreeInstances {
 
       def embed(t: EnvT[A, F, Cofree[F, A]])(implicit BF: Functor[Base]) =
         Cofree(t.ask, t.lower)
-    }
-
-  implicit def cofreeTraverseT[A]: TraverseT[Cofree[?[_], A]] =
-    new TraverseT[Cofree[?[_], A]] {
-      def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: Cofree[F, A])(f: F[Cofree[F, A]] => M[G[Cofree[G, A]]]) =
-        f(t.tail).map(Cofree(t.head, _))
     }
 
   implicit def cofreeEqual[F[_]](implicit F: Delay[Equal, F]):

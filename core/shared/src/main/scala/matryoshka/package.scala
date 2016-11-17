@@ -18,7 +18,7 @@ import matryoshka.implicits._
 import matryoshka.patterns.{CoEnv, EnvT}
 
 import scala.{Boolean, Function, Int, None, Option, Unit}
-import scala.collection.immutable.{List, ::}
+import scala.collection.immutable.{List, Nil, ::}
 
 import monocle._
 import scalaz._, Liskov._, Scalaz._
@@ -140,12 +140,26 @@ package object matryoshka {
       : GAlgebraM[W, M, F, T[G]] =
     self(_) ∘ (_.embed)
 
+  /** @group algtrans */
+  def transformToCoalgebra[T[_[_]], N[_], M[_], F[_]: Functor, G[_]]
+    (self: GCoalgebraicTransformM[T, N, M, F, G])
+    (implicit T: Recursive.Aux[T[F], F])
+      : GCoalgebraM[N, M, G, T[F]] =
+    x => self(x.project)
+
   /** An algebra and its dual form an isomorphism.
     */
   type GAlgebraIso[W[_], N[_], F[_], A] = PIso[F[W[A]], F[N[A]], A, A]
   object GAlgebraIso {
-    def apply[W[_], N[_], F[_], A](φ: GAlgebra[W, F, A])(ψ: GCoalgebra[N, F, A]):
-        GAlgebraIso[W, N, F, A] =
+    def apply[W[_], N[_], F[_], A](φ: GAlgebra[W, F, A])(ψ: GCoalgebra[N, F, A])
+        : GAlgebraIso[W, N, F, A] =
+      PIso(φ)(ψ)
+  }
+
+  type ElgotAlgebraIso[W[_], N[_], F[_], A] = PIso[W[F[A]], N[F[A]], A, A]
+  object ElgotAlgebraIso {
+    def apply[W[_], N[_], F[_], A](φ: ElgotAlgebra[W, F, A])(ψ: ElgotCoalgebra[N, F, A])
+        : ElgotAlgebraIso[W, N, F, A] =
       PIso(φ)(ψ)
   }
 
@@ -247,15 +261,14 @@ package object matryoshka {
     *
     * @group refolds
     */
-  def ghylo[W[_]: Comonad, N[_], F[_]: Functor, A, B](
+  def ghylo[W[_]: Comonad, N[_]: Monad, F[_]: Functor, A, B](
     a: A)(
     w: DistributiveLaw[F, W],
     n: DistributiveLaw[N, F],
     f: GAlgebra[W, F, B],
-    g: GCoalgebra[N, F, A])(
-    implicit N: Monad[N]):
+    g: GCoalgebra[N, F, A]):
       B = {
-    def h(x: N[A]): W[B] = w(n(N.lift(g)(x)) ∘ (y => h(y.join).cojoin)) ∘ f
+    def h(x: N[A]): W[B] = w(n(x ∘ g) ∘ (y => h(y.join).cojoin)) ∘ f
     h(a.point[N]).copoint
   }
 
@@ -263,16 +276,15 @@ package object matryoshka {
     *
     * @group refolds
     */
-  def ghyloM[W[_]: Comonad: Traverse, N[_]: Traverse, M[_]: Monad, F[_]: Traverse, A, B](
+  def ghyloM[W[_]: Comonad: Traverse, N[_]: Monad: Traverse, M[_]: Monad, F[_]: Traverse, A, B](
     a: A)(
     w: DistributiveLaw[F, W],
     m: DistributiveLaw[N, F],
     f: GAlgebraM[W, M, F, B],
-    g: GCoalgebraM[N, M, F, A])(
-    implicit N: Monad[N]):
+    g: GCoalgebraM[N, M, F, A]):
       M[B] = {
     def h(x: N[A]): M[W[B]] =
-      (N.lift(g)(x).sequence >>=
+      (x.traverse(g) >>=
         (m(_: N[F[N[A]]]).traverse(y => h(y.join) ∘ (_.cojoin)))) ∘
         (w(_)) >>=
         (_.traverse(f))
@@ -358,6 +370,26 @@ package object matryoshka {
     */
   def distCata[F[_]]: DistributiveLaw[F, Id] = NaturalTransformation.refl
 
+  /** A general [[DistributiveLaw]] for the case where the [[scalaz.Comonad]] is
+    * also [[scalaz.Applicative]].
+    *
+    * @group dist
+    */
+  def distApplicative[F[_]: Traverse, G[_]: Applicative] =
+    new DistributiveLaw[F, G] {
+      def apply[A](fga: F[G[A]]) = fga.sequence
+    }
+
+  /** A general [[DistributiveLaw]] for the case where the [[scalaz.Comonad]] is
+    * also [[scalaz.Distributive]].
+    *
+    * @group dist
+    */
+  def distDistributive[F[_]: Functor, G[_]: Distributive] =
+    new DistributiveLaw[F, G] {
+      def apply[A](fga: F[G[A]]) = fga.cosequence
+    }
+
   /**
     *
     * @group dist
@@ -371,14 +403,11 @@ package object matryoshka {
     *
     * @group dist
     */
-  def distZygoT[F[_], W[_]: Comonad, B](
-    g: Algebra[F, B], k: DistributiveLaw[F, W])(
-    implicit F: Functor[F]) =
+  def distZygoT[F[_]: Functor, W[_]: Comonad, B](
+    g: Algebra[F, B], k: DistributiveLaw[F, W]) =
     new DistributiveLaw[F, EnvT[B, W, ?]] {
       def apply[α](fe: F[EnvT[B, W, α]]) =
-        EnvT((
-          g(F.lift[EnvT[B, W, α], B](_.ask)(fe)),
-          k(F.lift[EnvT[B, W, α], W[α]](_.lower)(fe))))
+        EnvT((g(fe ∘ (_.ask)), k(fe ∘ (_.lower))))
     }
 
   /**
@@ -398,14 +427,10 @@ package object matryoshka {
   // TODO: Should be able to generalize this over `Recursive.Aux[T, EnvT[…]]`
   //       somehow, then it wouldn’t depend on Scalaz and would work with any
   //       `Cofree` representation.
-  def distGHisto[F[_],  H[_]](
-    k: DistributiveLaw[F, H])(
-    implicit F: Functor[F], H: Functor[H]) =
+  def distGHisto[F[_]: Functor,  H[_]: Functor](k: DistributiveLaw[F, H]) =
     new DistributiveLaw[F, Cofree[H, ?]] {
       def apply[α](m: F[Cofree[H, α]]) =
-        Cofree.unfold(m)(as => (
-          F.lift[Cofree[H, α], α](_.copure)(as),
-          k(F.lift[Cofree[H, α], H[Cofree[H, α]]](_.tail)(as))))
+        Cofree.unfold(m)(as => (as ∘ (_.copure), k(as ∘ (_.tail))))
     }
 
   /**
@@ -460,14 +485,15 @@ package object matryoshka {
   // TODO: Should be able to generalize this over `Recursive.Aux[T, CoEnv[…]]`
   //       somehow, then it wouldn’t depend on Scalaz and would work with any
   //       `Free` representation.
-  def distGFutu[H[_], F[_]](
-    k: DistributiveLaw[H, F])(
-    implicit H: Functor[H], F: Functor[F]): DistributiveLaw[Free[H, ?], F] =
+  def distGFutu[H[_]: Functor, F[_]]
+    (k: DistributiveLaw[H, F])
+    (implicit F: Functor[F])
+      : DistributiveLaw[Free[H, ?], F] =
     new DistributiveLaw[Free[H, ?], F] {
       def apply[α](m: Free[H, F[α]]) =
         m.fold(
           F.lift(Free.point[H, α](_)),
-          as => F.lift(Free.liftF(_: H[Free[H, α]]).join)(k(H.lift(distGFutu(k)(H, F)(_: Free[H, F[α]]))(as))))
+          as => k(as ∘ (distGFutu(k).apply)) ∘ (Free.liftF(_).join))
     }
 
   sealed trait Hole
@@ -631,7 +657,7 @@ package object matryoshka {
   def orDefault[A, B](default: B)(f: A => Option[B]): A => B =
     expr => f(expr).getOrElse(default)
 
-  /** Count the instinces of `form` in the structure.
+  /** Count the instances of `form` in the structure.
     *
     * @group algebras
     */
@@ -688,6 +714,24 @@ package object matryoshka {
       (c, (a2, c))
   }
 
+  def partition[A: Order]: Coalgebra[λ[α => Option[(A, (α, α))]], List[A]] = {
+    case Nil    => None
+    case h :: t => (h, (t.filter(_ <= h), t.filter(_ > h))).some
+  }
+
+  def join[A]: Algebra[λ[α => Option[(A, (α, α))]], List[A]] =
+    _.fold[List[A]](Nil) { case (a, (x, y)) => x ++ (a :: y) }
+
+  // NB: not in-place
+  def quicksort[A: Order]: List[A] => List[A] = {
+    implicit val F: Functor[λ[α => Option[(A, (α, α))]]] =
+      new Functor[λ[α => Option[(A, (α, α))]]] {
+        def map[B, C] (fa: Option[(A, (B, B))])(f: B => C) =
+          fa.map(_.map(_.bimap(f, f)))
+      }
+    _.hylo[λ[α => Option[(A, (α, α))]], List[A]](join, partition)
+  }
+
   /** Converts a fixed-point structure into a generic Tree.
     * One use of this is using `.cata(toTree).drawTree` rather than `.show` to
     * get a pretty-printed tree.
@@ -730,4 +774,19 @@ package object matryoshka {
   implicit def delayShow[F[_], A](implicit A: Show[A], F: Delay[Show, F]):
       Show[F[A]] =
     F(A)
+
+  implicit def functorTFunctor[T[_[_]], F[_, _]](implicit T: FunctorT[T], F: Bifunctor[F]): Functor[λ[α => T[F[α, ?]]]] =
+    new Functor[λ[α => T[F[α, ?]]]] {
+      def map[A, B](fa: T[F[A, ?]])(f: A => B) =
+        T.transCata[F[A, ?], F[B, ?]](fa)(_.leftMap[B](f))(F.rightFunctor, F.rightFunctor)
+    }
+
+  implicit def recursiveTFoldable[T[_[_]], F[_, _]](implicit T: RecursiveT[T], FB: Bifoldable[F], FF: Bifunctor[F]): Foldable[λ[α => T[F[α, ?]]]] =
+    new Foldable[λ[α => T[F[α, ?]]]] {
+      def foldMap[A, B: Monoid](fa: T[F[A, ?]])(f: A ⇒ B) =
+        T.cataT[F[A, ?], B](fa)(FB.leftFoldable.foldMap(_)(f))(FF.rightFunctor)
+
+      def foldRight[A, B](fa: T[F[A, ?]], z: ⇒ B)(f: (A, ⇒ B) ⇒ B) =
+        T.cataT[F[A, ?], B](fa)(FB.leftFoldable.foldRight(_, z)(f))(FF.rightFunctor)
+    }
 }

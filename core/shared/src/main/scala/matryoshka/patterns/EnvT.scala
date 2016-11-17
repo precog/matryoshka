@@ -36,14 +36,13 @@ final case class EnvT[E, W[_], A](run: (E, W[A])) { self =>
 }
 
 object EnvT extends EnvTInstances with EnvTFunctions {
-  def hmap[F[_], G[_], E, A](f: F ~> G): EnvT[E, F, ?] ~> EnvT[E, G, ?] =
-    new (EnvT[E, F, ?] ~> EnvT[E, G, ?]) {
-      def apply[A](env: EnvT[E, F, A]) = EnvT((env.ask, f(env.lower)))
-    }
+  def hmap[F[_], G[_], E, A](f: F ~> G) =
+    λ[EnvT[E, F, ?] ~> EnvT[E, G, ?]](env => EnvT((env.ask, f(env.lower))))
 
-  def lower[F[_], E]: EnvT[E, F, ?] ~> F = new (EnvT[E, F, ?] ~> F) {
-    def apply[A](fa: EnvT[E, F, A]): F[A] = fa.lower
-  }
+  def htraverse[G[_]: Applicative, F[_], H[_], A](f: F ~> (G ∘ H)#λ) =
+    λ[EnvT[A, F, ?] ~> (G ∘ EnvT[A, H, ?])#λ](_.run.traverse(f(_)).map(EnvT(_)))
+
+  def lower[F[_], E] = λ[EnvT[E, F, ?] ~> F](_.lower)
 }
 
 sealed abstract class EnvTInstances1 {

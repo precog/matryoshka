@@ -20,6 +20,13 @@ import matryoshka.implicits._
 
 import scalaz._, Scalaz._
 
+/** This packages contains fixed-point operators as well as instances of
+  * recursion schemes for various extant data types.
+  *
+  * The reason these are relegated to their own package is because, in general,
+  * you should eschew using them directly, but rather rely on the type class
+  * constraints, and only require specific types at the boundaries.
+  */
 package object data
     extends CofreeInstances
     with EitherInstances
@@ -27,11 +34,6 @@ package object data
     with IdInstances
     with IListInstances
     with MaybeInstances {
-
-  // final class CofParaMPartiallyApplied[M[_]] { self =>
-  //   def apply[T[_[_]]: Corecursive, S[_]: Traverse, A, B](t: Cofree[S, A])(f: (A, S[(T[S], B)]) => M[B])(implicit M: Monad[M]): M[B] =
-  //     t.tail.traverse(cs => self(cs)(f) ∘ ((Recursive[Cofree[?[_], A]].convertTo[S, T](cs), _))) >>= (f(t.head, _))
-  // }
 
   /** NB: Since Cofree carries the functor, the resulting algebra is a cata, not
     *     a para.

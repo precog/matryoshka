@@ -115,6 +115,18 @@ sealed class IdOps[A](self: A) {
     }
   }
 
+  object ganaM {
+    def apply[T] = new Aux[T]
+
+    final class Aux[T] {
+      def apply[N[_]: Monad: Traverse, M[_]: Monad, F[_]: Traverse]
+        (k: DistributiveLaw[N, F], f: GCoalgebraM[N, M, F, A])
+        (implicit T: Corecursive.Aux[T, F])
+          : M[T] =
+        T.ganaM(self)(k, f)
+    }
+  }
+
   object elgotAna {
     def apply[T] = new Aux[T]
 

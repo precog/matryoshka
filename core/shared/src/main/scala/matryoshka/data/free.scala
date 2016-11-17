@@ -39,14 +39,6 @@ trait FreeInstances {
         t.run.fold(_.point[Free[F, ?]], Free.liftF(_).join)
     }
 
-  implicit def freeTraverseT[A]: TraverseT[Free[?[_], A]] =
-    new TraverseT[Free[?[_], A]] {
-      def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: Free[F, A])(f: F[Free[F, A]] => M[G[Free[G, A]]]) =
-        t.fold(
-          _.point[Free[G, ?]].point[M],
-          f(_).map(Free.liftF(_).join))
-    }
-
   implicit def freeEqual[F[_]: Functor](implicit F: Delay[Equal, F]):
       Delay[Equal, Free[F, ?]] =
     new Delay[Equal, Free[F, ?]] {
