@@ -24,13 +24,13 @@ import scalaz._
   */
 final case class Fix[F[_]](unFix: F[Fix[F]])
 object Fix {
-  implicit def recursiveT: RecursiveT[Fix] = new RecursiveT[Fix] {
+  implicit def birecursiveT: BirecursiveT[Fix] = new BirecursiveT[Fix] {
     def projectT[F[_]: Functor](t: Fix[F]) = t.unFix
-  }
-
-  implicit def corecursiveT: CorecursiveT[Fix] = new CorecursiveT[Fix] {
     def embedT[F[_]: Functor](t: F[Fix[F]]) = Fix(t)
   }
+
+  implicit def birecursive[F[_]]: Birecursive.Aux[Fix[F], F] =
+    BirecursiveT.birecursive[Fix, F]
 
   implicit def recursive[F[_]]: Recursive.Aux[Fix[F], F] =
     RecursiveT.recursive[Fix, F]
