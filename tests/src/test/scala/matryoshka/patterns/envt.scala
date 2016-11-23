@@ -17,6 +17,7 @@
 package matryoshka.patterns
 
 import matryoshka._
+import matryoshka.data.cofree._
 import matryoshka.exp._
 import matryoshka.helpers._
 import matryoshka.scalacheck.arbitrary._
@@ -37,6 +38,5 @@ class EnvTSpec extends Specification with CheckAll with AlgebraChecks {
     }
   }
 
-  // FIXME: enable this
-  // checkAlgebraIsoLaws("EnvT ⇔ Cofree", EnvT.cofreeIso[Int, Exp])
+  checkAlgebraIsoLaws("EnvT ⇔ Cofree", EnvT.cofreeIso[Int, Exp])
 }

@@ -40,6 +40,9 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck with
     "satisfy relevant laws" in {
       checkAll(Props.equal.laws[Partial[Int]](Partial.equal, implicitly))
       checkAll(Props.monad.laws[Partial](implicitly, implicitly, implicitly, implicitly, Partial.equal))
+      // NB: We get Foldable for free due to `RecursiveT[Nu]` and
+      //     `Bifoldable[\/]`
+      checkAll(Props.foldable.laws[Partial])
     }
   }
 

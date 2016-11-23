@@ -1021,6 +1021,13 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     }
   }
 
+  "quicksort" should {
+    "sort an arbitrary list" in {
+      quicksort(List(8, 29, 2002394, 9, 902098, 329123092, 202, 0, 2, 198)) must
+        equal(List(0, 2, 8, 9, 29, 198, 202, 902098, 2002394, 329123092))
+    }
+  }
+
   "find" should {
     val exp = mul(mul(num(10), mul(num(11), num(7))), mul(num(12), num(8)))
 

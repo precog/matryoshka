@@ -40,33 +40,33 @@ trait Corecursive[T] extends Based[T] {
       : M[T] =
     f(a).flatMap(_.traverse(anaM(_)(f))) ∘ (embed(_))
 
-  def gana[N[_], A]
+  def gana[N[_]: Monad, A]
     (a: A)
     (k: DistributiveLaw[N, Base], f: GCoalgebra[N, Base, A])
-    (implicit BF: Functor[Base], N: Monad[N])
+    (implicit BF: Functor[Base])
       : T = {
-    def loop(x: N[Base[N[A]]]): T = embed(k(x) ∘ (x => loop(N.lift(f)(x.join))))
+    def loop(x: N[Base[N[A]]]): T = embed(k(x) ∘ (x => loop(x.join ∘ f)))
 
     loop(f(a).point[N])
   }
 
-  def ganaM[N[_]: Traverse, M[_]: Monad, A](
+  def ganaM[N[_]: Monad: Traverse, M[_]: Monad, A](
     a: A)(
     k: DistributiveLaw[N, Base], f: GCoalgebraM[N, M, Base, A])(
-    implicit BT: Traverse[Base], N: Monad[N]):
+    implicit BT: Traverse[Base]):
       M[T] = {
     def loop(x: N[Base[N[A]]]): M[T] =
-      k(x).traverse(x => N.lift(f)(x.join).sequence >>= loop) ∘ (embed(_))
+      k(x).traverse(_.join.traverse(f) >>= loop) ∘ (embed(_))
 
     f(a) ∘ (_.point[N]) >>= loop
   }
 
-  def elgotAna[N[_], A](
+  def elgotAna[N[_]: Monad, A](
     a: A)(
     k: DistributiveLaw[N, Base], ψ: ElgotCoalgebra[N, Base, A])(
-    implicit BF: Functor[Base], N: Monad[N]):
+    implicit BF: Functor[Base]):
       T = {
-    def loop(x: N[Base[A]]): T = embed(k(x) ∘ (x => loop(N.lift(ψ)(x).join)))
+    def loop(x: N[Base[A]]): T = embed(k(x) ∘ (x => loop(x >>= ψ)))
 
     loop(ψ(a))
   }
@@ -117,7 +117,7 @@ trait Corecursive[T] extends Based[T] {
     implicit T: Recursive.Aux[T, Base], BF: Functor[Base], N: Monad[N]):
       T = {
     def loop(ma: N[A]): T =
-      embed(k(N.lift(ψ)(ma)) ∘ (x => ana(loop(x.join))(x => e(T.project(x)))))
+      embed(k(ma ∘ ψ) ∘ (x => ana(loop(x.join))(x => e(T.project(x)))))
 
     loop(a.point[N])
   }

@@ -20,37 +20,49 @@ import scalaz._, Scalaz._
 import simulacrum._
 
 @typeclass trait TraverseT[T[_[_]]] extends FunctorT[T] {
-  def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => M[G[T[G]]]):
-      M[T[G]]
+  def traverseT[M[_]: Applicative, F[_]: Functor, G[_]: Functor]
+    (t: T[F])
+    (f: F[T[F]] => M[G[T[G]]])
+      : M[T[G]]
 
-  def map[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[G]]) = traverse[Id, F, G](t)(f)
+  override def mapT[F[_]: Functor, G[_]: Functor]
+    (t: T[F])
+    (f: F[T[F]] => G[T[G]]) =
+    traverseT[Id, F, G](t)(f)
 
-  def transCataTM[F[_]: Traverse, M[_]: Monad](t: T[F])(f: T[F] => M[T[F]]): M[T[F]] =
-    traverse(t)(_.traverse(transCataTM(_)(f))).flatMap(f)
+  def transCataTM[F[_]: Traverse, M[_]: Monad](t: T[F])(f: T[F] => M[T[F]])
+      : M[T[F]] =
+    traverseT(t)(_.traverse(transCataTM(_)(f))).flatMap(f)
 
-  def transAnaTM[F[_]: Traverse, M[_]: Monad](t: T[F])(f: T[F] => M[T[F]]):
-      M[T[F]] =
-    f(t).flatMap(traverse(_)(_.traverse(transAnaTM(_)(f))))
+  def transAnaTM[F[_]: Traverse, M[_]: Monad](t: T[F])(f: T[F] => M[T[F]])
+      : M[T[F]] =
+    f(t).flatMap(traverseT(_)(_.traverse(transAnaTM(_)(f))))
 
-  def transCataM[M[_]: Monad, F[_]: Traverse, G[_]: Functor](t: T[F])(f: AlgebraicTransformM[T, M, F, G]): M[T[G]] =
-    traverse(t)(_.traverse(transCataM(_)(f)).flatMap(f))
+  def transCataM[M[_]: Monad, F[_]: Traverse, G[_]: Functor]
+    (t: T[F])
+    (f: AlgebraicTransformM[T, M, F, G])
+      : M[T[G]] =
+    traverseT(t)(_.traverse(transCataM(_)(f)).flatMap(f))
 
-  def transAnaM[M[_]: Monad, F[_]: Functor, G[_]: Traverse](t: T[F])(f: CoalgebraicTransformM[T, M, F, G]): M[T[G]] =
-    traverse(t)(f(_).flatMap(_.traverse(transAnaM(_)(f))))
+  def transAnaM[M[_]: Monad, F[_]: Functor, G[_]: Traverse]
+    (t: T[F])
+    (f: CoalgebraicTransformM[T, M, F, G])
+      : M[T[G]] =
+    traverseT(t)(f(_).flatMap(_.traverse(transAnaM(_)(f))))
 
   def topDownCataM[F[_]: Traverse, M[_]: Monad, A](
     t: T[F], a: A)(
     f: (A, T[F]) => M[(A, T[F])]):
       M[T[F]] =
     f(a, t).flatMap { case (a, tf) =>
-      traverse(tf)(_.traverse(topDownCataM(_, a)(f)))
+      traverseT(tf)(_.traverse(topDownCataM(_, a)(f)))
     }
 }
 
 object TraverseT {
-  implicit def birecursiveTTraverseT[T[_[_]]: RecursiveT: CorecursiveT]: TraverseT[T] =
+  implicit def birecursiveT[T[_[_]]: RecursiveT: CorecursiveT]: TraverseT[T] =
     new TraverseT[T] {
-      def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor]
+      def traverseT[M[_]: Applicative, F[_]: Functor, G[_]: Functor]
         (t: T[F])
         (f: F[T[F]] => M[G[T[G]]]) =
         f(RecursiveT[T].projectT(t)).map(CorecursiveT[T].embedT[G])

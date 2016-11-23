@@ -23,7 +23,7 @@ import scalaz._, Scalaz._
 /** This is for inductive (finite) recursive structures, models the concept of
   * “data”, aka, the “least fixed point”.
   */
-final case class Mu[F[_]](unMu: λ[A => Algebra[F, A]] ~> Id)
+final case class Mu[F[_]](unMu: Algebra[F, ?] ~> Id)
 object Mu {
   implicit def recursiveT: RecursiveT[Mu] = new RecursiveT[Mu] {
     // FIXME: ugh, shouldn’t have to redefine `lambek` in here?
@@ -34,8 +34,8 @@ object Mu {
 
   implicit def corecursiveT: CorecursiveT[Mu] = new CorecursiveT[Mu] {
     def embedT[F[_]: Functor](t: F[Mu[F]]) =
-      Mu(new (λ[A => (F[A] => A)] ~> Id) {
-        def apply[A](fa: F[A] => A): A = fa(t.map(recursiveT.cataT(_)(fa)))
+      Mu(new (Algebra[F, ?] ~> Id) {
+        def apply[A](fa: Algebra[F, A]): A = fa(t.map(recursiveT.cataT(_)(fa)))
       })
   }
 

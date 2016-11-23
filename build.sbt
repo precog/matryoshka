@@ -32,6 +32,7 @@ lazy val standardSettings = Seq[Setting[_]](
   headers := Map(
     "scala" -> Apache2_0("2014–2016", "SlamData Inc."),
     "java"  -> Apache2_0("2014–2016", "SlamData Inc.")),
+  scalaOrganization := "org.typelevel",
   scalaVersion := "2.11.8",
   logBuffered in Compile := false,
   logBuffered in Test := false,
@@ -47,9 +48,8 @@ lazy val standardSettings = Seq[Setting[_]](
     "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/",
     "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
     "bintray/non" at "http://dl.bintray.com/non/maven"),
-  addCompilerPlugin("org.spire-math" %% "kind-projector"   % "0.9.2"),
+  addCompilerPlugin("org.spire-math" %% "kind-projector"   % "0.9.3"),
   addCompilerPlugin("org.scalamacros" % "paradise"         % "2.1.0" cross CrossVersion.full),
-  addCompilerPlugin("com.milessabin"  % "si2712fix-plugin" % "1.2.0" cross CrossVersion.full),
   ScoverageKeys.coverageHighlighting := true,
 
   scalacOptions ++= Seq(
@@ -67,9 +67,11 @@ lazy val standardSettings = Seq[Setting[_]](
     "-Yno-imports",
     "-Ywarn-dead-code", // N.B. doesn't work well with the ??? hole
     "-Ywarn-numeric-widen",
+    "-Ypartial-unification",
     "-Ywarn-unused-import",
     "-Ywarn-value-discard"),
-  scalacOptions in (Compile,doc) ++= Seq("-groups", "-implicits"),
+  scalacOptions in (Compile, doc) ++= Seq("-groups", "-implicits"),
+  scalacOptions in (Compile, doc) -= "-Xfatal-warnings",
   scalacOptions in (Test, console) --= Seq(
     "-Yno-imports",
     "-Ywarn-unused-import"),
@@ -85,7 +87,7 @@ lazy val standardSettings = Seq[Setting[_]](
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
 
   checkHeaders := {
-    if ((createHeaders in Compile).value.nonEmpty) error("headers not all present")
+    if ((createHeaders in Compile).value.nonEmpty) sys.error("headers not all present")
   })
 
 // Using a Seq of desired warts instead of Warts.allBut due to an incremental compilation issue.

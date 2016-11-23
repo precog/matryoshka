@@ -22,8 +22,16 @@ import scalaz._, Scalaz._
 
 /** The pattern functor for Free. */
 final case class CoEnv[E, F[_], A](run: E \/ F[A])
+
 object CoEnv extends CoEnvInstances {
   def coEnv[E, F[_], A](v: E \/ F[A]): CoEnv[E, F, A] = CoEnv(v)
+
+  def hmap[F[_], G[_], A](f: F ~> G) =
+    λ[CoEnv[A, F, ?] ~> CoEnv[A, G, ?]](fa => CoEnv(fa.run.map(f(_))))
+
+  def htraverse[G[_]: Applicative, F[_], H[_], A](f: F ~> (G ∘ H)#λ) =
+    λ[CoEnv[A, F, ?] ~> (G ∘ CoEnv[A, H, ?])#λ](
+      _.run.traverse(f(_)).map(CoEnv(_)))
 
   def freeIso[E, F[_]: Functor] = AlgebraIso[CoEnv[E, F, ?], Free[F, E]](
     coe => coe.run.fold(_.point[Free[F, ?]], Free.roll))(

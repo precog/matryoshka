@@ -1,0 +1,2 @@
+- renamed `FunctorT#map` and `TraverseT#traverse` to `mapT` and `traverseT`
+- added a bunch of new operations (many pulled from Quasar)

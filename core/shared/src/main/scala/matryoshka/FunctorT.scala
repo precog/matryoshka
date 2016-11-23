@@ -47,49 +47,70 @@ import simulacrum._
   * - `transCata` – akin to Fixplate’s `restructure`
   */
 @typeclass trait FunctorT[T[_[_]]] {
-  @op("∘") def map[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[G]]):
+  def mapT[F[_]: Functor, G[_]: Functor](t: T[F])(f: F[T[F]] => G[T[G]]):
       T[G]
 
   def transCataT[F[_]: Functor](t: T[F])(f: T[F] => T[F]): T[F] =
-    f(map(t)(_.map(transCataT(_)(f))))
+    f(mapT(t)(_.map(transCataT(_)(f))))
+
+  /** This behaves like [[matryoshka.Recursive.elgotPara]]`, but it’s harder to
+    * see from the types that in the tuple, `_2` is the result so far and `_1`
+    * is the original structure.
+    */
+  def transParaT[F[_]: Functor](t: T[F])(f: ((T[F], T[F])) => T[F]): T[F] =
+    f((t, mapT(t)(_.map(transParaT(_)(f)))))
 
   def transAnaT[F[_]: Functor](t: T[F])(f: T[F] => T[F]): T[F] =
-    map(f(t))(_.map(transAnaT(_)(f)))
+    mapT(f(t))(_.map(transAnaT(_)(f)))
 
+  /** This behaves like [[matryoshka.Corecursive.elgotApo]]`, but it’s harder to
+    * see from the types that in the disjunction, `-\/` is the final result for
+    * this node, while `\/-` means to keep processing the children.
+    */
   def transApoT[F[_]: Functor](t: T[F])(f: T[F] => T[F] \/ T[F]): T[F] =
-    f(t).fold(Predef.identity, map(_)(_.map(transApoT(_)(f))))
+    f(t).fold(Predef.identity, mapT(_)(_.map(transApoT(_)(f))))
+
+  def transHyloT[F[_]: Functor](t: T[F])(φ: T[F] => T[F], ψ: T[F] => T[F]):
+      T[F] =
+    φ(mapT(ψ(t))(_ ∘ (transHyloT(_)(φ, ψ))))
 
   def transCata[F[_]: Functor, G[_]: Functor](t: T[F])(f: AlgebraicTransform[T, F, G]): T[G] =
-    map(t)(ft => f(ft.map(transCata(_)(f))))
+    mapT(t)(ft => f(ft.map(transCata(_)(f))))
 
   def transAna[F[_]: Functor, G[_]: Functor](t: T[F])(f: CoalgebraicTransform[T, F, G]): T[G] =
-    map(t)(f(_).map(transAna(_)(f)))
+    mapT(t)(f(_).map(transAna(_)(f)))
 
   def transPrepro[F[_]: Functor, G[_]: Functor](t: T[F])(e: F ~> F, f: AlgebraicTransform[T, F, G]): T[G] =
-    map(t)(ft => f(ft ∘ (x => transPrepro(transCata[F, F](x)(e(_)))(e, f))))
+    mapT(t)(ft => f(ft ∘ (x => transPrepro(transCata[F, F](x)(e(_)))(e, f))))
 
   def transPostpro[F[_]: Functor, G[_]: Functor](t: T[F])(e: G ~> G, f: CoalgebraicTransform[T, F, G]): T[G] =
-    map(t)(f(_) ∘ (x => transAna(transPostpro(x)(e, f))(e)))
+    mapT(t)(f(_) ∘ (x => transAna(transPostpro(x)(e, f))(e)))
 
   def transPara[F[_]: Functor, G[_]: Functor](t: T[F])(f: GAlgebraicTransform[T, (T[F], ?), F, G]):
       T[G] =
-    map(t)(ft => f(ft.map(tf => (tf, transPara(tf)(f)))))
+    mapT(t)(ft => f(ft.map(tf => (tf, transPara(tf)(f)))))
 
   def transApo[F[_]: Functor, G[_]: Functor](t: T[F])(f: GCoalgebraicTransform[T, (T[G] \/ ?), F, G]):
       T[G] =
-    map(t)(f(_).map(_.fold(Predef.identity, transApo(_)(f))))
+    mapT(t)(f(_).map(_.fold(Predef.identity, transApo(_)(f))))
+
+  def transHylo[F[_]: Functor, G[_]: Functor, H[_]: Functor](
+    t: T[F])(
+    φ: G[T[H]] => H[T[H]], ψ: F[T[F]] => G[T[F]]):
+      T[H] =
+    mapT(t)(ft => φ(ψ(ft) ∘ (transHylo(_)(φ, ψ))))
 
   def topDownCata[F[_]: Functor, A](t: T[F], a: A)(f: (A, T[F]) => (A, T[F])):
       T[F] = {
     val (a0, tf) = f(a, t)
-    map(tf)(_.map(topDownCata(_, a0)(f)))
+    mapT(tf)(_.map(topDownCata(_, a0)(f)))
   }
 }
 
 object FunctorT {
-  implicit def birecursiveTFunctorT[T[_[_]]: RecursiveT: CorecursiveT]: FunctorT[T] =
+  implicit def birecursiveT[T[_[_]]: RecursiveT: CorecursiveT]: FunctorT[T] =
     new FunctorT[T] {
-      def map[F[_], G[_]](t: T[F])(f: F[T[F]] => G[T[G]])(implicit F: Functor[F], G: Functor[G]) =
+      def mapT[F[_], G[_]](t: T[F])(f: F[T[F]] => G[T[G]])(implicit F: Functor[F], G: Functor[G]) =
         CorecursiveT[T].embedT(f(RecursiveT[T].projectT(t)))
     }
 }
