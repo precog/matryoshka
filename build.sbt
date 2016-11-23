@@ -87,7 +87,7 @@ lazy val standardSettings = Seq[Setting[_]](
   licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
 
   checkHeaders := {
-    if ((createHeaders in Compile).value.nonEmpty) error("headers not all present")
+    if ((createHeaders in Compile).value.nonEmpty) sys.error("headers not all present")
   })
 
 // Using a Seq of desired warts instead of Warts.allBut due to an incremental compilation issue.

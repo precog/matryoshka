@@ -723,13 +723,13 @@ package object matryoshka {
     _.fold[List[A]](Nil) { case (a, (x, y)) => x ++ (a :: y) }
 
   // NB: not in-place
-  def quicksort[A: Order]: List[A] => List[A] = {
+  def quicksort[A: Order](as: List[A]): List[A] = {
     implicit val F: Functor[λ[α => Option[(A, (α, α))]]] =
       new Functor[λ[α => Option[(A, (α, α))]]] {
         def map[B, C] (fa: Option[(A, (B, B))])(f: B => C) =
           fa.map(_.map(_.bimap(f, f)))
       }
-    _.hylo[λ[α => Option[(A, (α, α))]], List[A]](join, partition)
+    as.hylo[λ[α => Option[(A, (α, α))]], List[A]](join, partition)
   }
 
   /** Converts a fixed-point structure into a generic Tree.

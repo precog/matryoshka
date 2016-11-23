@@ -83,9 +83,7 @@ package object fixedpoint {
     def apply[A](elems: A*) =
       elems.ana[Mu[ListF[A, ?]]](ListF.seqIso[A].reverseGet)
 
-    // TODO: Needs a better name. Something that evokes `A => B => (A, B)`,
-    //       maybe like `tuple` or `uncurry`?
-    def fillƒ[A](elem: => A) = λ[Option ~> ListF[A, ?]] {
+    def tuple[A](elem: => A) = λ[Option ~> ListF[A, ?]] {
       case None    => NilF()
       case Some(b) => ConsF(elem, b)
     }
@@ -95,7 +93,7 @@ package object fixedpoint {
       case ConsF(_, t) => t.some
     }
 
-    def fill[A](n: Nat)(elem: => A): List[A] = n.transAna(fillƒ(elem))
+    def fill[A](n: Nat)(elem: => A): List[A] = n.transAna(tuple(elem))
   }
 
   // FIXME: This implicit conversion seems to not get found, so we specialize
