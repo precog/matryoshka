@@ -1,4 +1,4 @@
-<img align="right" src="https://cdn.rawgit.com/slamdata/matryoshka/master/resources/matryoshka.svg" height="200px" style="padding-left: 20px"/>
+<img align="right" src="resources/matryoshka.svg" height="200px" style="padding-left: 20px"/>
 
 # Matryoshka
 
