@@ -8,7 +8,7 @@ Generalized folds, unfolds, and traversals for fixed point data structures in Sc
 [![codecov.io](https://codecov.io/github/slamdata/matryoshka/coverage.svg?branch=master)](https://codecov.io/github/slamdata/matryoshka?branch=master)
 [![Join the chat at https://gitter.im/slamdata/matryoshka](https://badges.gitter.im/slamdata/matryoshka.svg)](https://gitter.im/slamdata/matryoshka?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-![logo](resources/matryoshka.svg)
+![logo](resources/matryoshka.png)
 
 ## External Resources
 
