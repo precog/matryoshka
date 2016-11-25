@@ -1,3 +1,5 @@
+<img align="right" src="resources/matryoshka.png" height="200px" style="padding-left: 20px"/>
+
 # Matryoshka
 
 Generalized folds, unfolds, and traversals for fixed point data structures in Scala.
