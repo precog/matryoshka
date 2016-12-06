@@ -36,90 +36,90 @@ import scalaz._, Liskov._, Scalaz._
   */
 package object matryoshka {
 
-  /** Fold a structure `F` containing values in `W`, to a value `A`, 
+  /** Fold a structure `F` containing values in `W`, to a value `A`,
     * accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
   type GAlgebraM[W[_], M[_], F[_], A] = F[W[A]] => M[A]
   /** Fold a structure `F` containing values in `W`, to a value `A`.
-    * @group algebras 
+    * @group algebras
     */
   type GAlgebra[W[_], F[_], A]        = F[W[A]] => A    // GAlgebraM[W, Id, F, A]
   /** Fold a structure `F` to a value `A`, accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
   type AlgebraM[M[_], F[_], A]        = F[A]    => M[A] // GAlgebraM[Id, M, F, A]
   /** Fold a structure `F` to a value `A`.
-    * @group algebras 
+    * @group algebras
     */
   type Algebra[F[_], A]               = F[A] => A       // GAlgebra[Id, F, A]
-  /** Fold a structure `F` (usually a `Functor`) contained in `W` (usually a 
+  /** Fold a structure `F` (usually a `Functor`) contained in `W` (usually a
     * `Comonad`), to a value `A`, accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
   type ElgotAlgebraM[W[_], M[_], F[_], A] =                        W[F[A]] => M[A]
-  /** Fold a structure `F` (usually a `Functor`) contained in `W` (usually a 
+  /** Fold a structure `F` (usually a `Functor`) contained in `W` (usually a
     * `Comonad`), to a value `A`.
-    * @group algebras 
+    * @group algebras
     */
   type ElgotAlgebra[W[_], F[_], A] = ElgotAlgebraM[W, Id, F, A] // W[F[A]] => A
 
-  /** Unfold a value `A` to a structure `F` containing values in `N`, 
+  /** Unfold a value `A` to a structure `F` containing values in `N`,
     * accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
   type GCoalgebraM[N[_], M[_], F[_], A] = A => M[F[N[A]]]
   /** Unfold a value `A` to a structure `F` containing values in `N`.
-    * @group algebras 
+    * @group algebras
     */
   type GCoalgebra[N[_], F[_], A]        = A => F[N[A]] // GCoalgebraM[N, Id, F, A]
-  /** Unfold a value `A` to a structure `F`, accumulating effects in the monad 
+  /** Unfold a value `A` to a structure `F`, accumulating effects in the monad
     * `M`.
-    * @group algebras 
+    * @group algebras
     */
   type CoalgebraM[M[_], F[_], A]        = A => M[F[A]] // GCoalgebraM[Id, M, F, A]
   /** Unfold a value `A` to a structure `F`.
-    * @group algebras 
+    * @group algebras
     */
   type Coalgebra[F[_], A]               = A => F[A]    // GCoalgebra[Id, F, A]
-  /** Unfold a value `A` to a structure `F` (usually a `Functor`), contained in 
+  /** Unfold a value `A` to a structure `F` (usually a `Functor`), contained in
     * `E`, accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
   type ElgotCoalgebraM[E[_], M[_], F[_], A] = A => M[E[F[A]]]
-  /** Unfold a value `A` to a structure `F` (usually a `Functor`), contained in 
+  /** Unfold a value `A` to a structure `F` (usually a `Functor`), contained in
     * `E`.
-    * @group algebras 
+    * @group algebras
     */
   type ElgotCoalgebra[E[_], F[_], A]        = A => E[F[A]] // ElgotCoalgebraM[E, Id, F, A]
 
-  /** Transform a structure `F` containing values in `W`, to a structure `G`, 
+  /** Transform a structure `F` containing values in `W`, to a structure `G`,
     * in bottom-up fashion.
-    * @group algebras 
+    * @group algebras
     */
   type AlgebraicGTransformM[W[_], M[_], T, F[_], G[_]] = F[W[T]] => M[G[T]]
 
-  /** Transform a structure `F` containing values in `W`, to a structure `G`, 
+  /** Transform a structure `F` containing values in `W`, to a structure `G`,
     * in bottom-up fashion.
-    * @group algebras 
+    * @group algebras
     */
   type AlgebraicGTransform[W[_], T, F[_], G[_]]        = F[W[T]] => G[T]
 
   /** Transform a structure `F` to a structure `G` containing values in `N`,
     * in top-down fashion, accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
   type CoalgebraicGTransformM[N[_], M[_], T, F[_], G[_]] = F[T] => M[G[N[T]]]
 
-  /** Transform a structure `F` to a structure `G`, in top-down fashion, 
+  /** Transform a structure `F` to a structure `G`, in top-down fashion,
     * accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
   type CoalgebraicGTransform[N[_], T, F[_], G[_]]        = F[T] => G[N[T]]
 
-  /** Transform a structure `F` to a structure `G`, in top-down fashion, 
+  /** Transform a structure `F` to a structure `G`, in top-down fashion,
     * accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
   type CoalgebraicElgotTransform[N[_], T, F[_], G[_]]    = F[T] => N[G[T]]
 
@@ -756,12 +756,6 @@ package object matryoshka {
     find[T](_ ≟ original)(_).leftMap(_ => replacement)
 
   sealed abstract class ∘[F[_], G[_]] { type λ[A] = F[G[A]] }
-
-  /** To avoid diverging implicits with fixed-point types, we need to defer the
-    * lookup. We do this with a `NaturalTransformation` (although there
-    * are more type class-y solutions available now).
-    */
-  type Delay[F[_], G[_]] = F ~> (F ∘ G)#λ
 
   /** This implicit allows Delay implicits to be found when searching for a
     * traditionally-defined instance.
