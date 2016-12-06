@@ -87,13 +87,13 @@ val eval: Algebra[Expr, Long] = { // i.e. Expr[Long] => Long
   case Mul(x, y) => x * y
 }
  
-def someExpr[T[_[_]]: CorecursiveT]: T[Expr] =
-  Mul(Num[T[Expr]](2).embedT, Mul(Num[T[Expr]](3).embedT,
-      Num[T[Expr]](4).embedT).embedT).embedT
+def someExpr[T](implicit T: Corecursive.Aux[T, Expr]): T =
+  Mul(Num[T](2).embed, Mul(Num[T](3).embed,
+      Num[T](4).embed).embed).embed
 
 import matryoshka.data.Mu 
 
-someExpr[Mu].cata(eval) // ⇒ 24
+someExpr[Mu[Expr]].cata(eval) // ⇒ 24
 ```
 
 The `.embed` calls in `someExpr` wrap the nodes in the fixed point type. `embed` is generic, and we abstract `someExpr` over the fixed point type (only requiring that it has an instance of `Corecursive`), so we can postpone the choice of the fixed point as long as possible.
