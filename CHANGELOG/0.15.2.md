@@ -1,0 +1,1 @@
+- fixed example in README.md

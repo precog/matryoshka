@@ -73,16 +73,26 @@ This diagram covers the major classes of transformations. The most basic ones ar
 Here is a very simple example of an algebra (`eval`) and how to apply it to a recursive structure.
 
 ```scala
+// we will need a Functor[Expr] in order to call embed bellow
+implicit val exprFunctor = new scalaz.Functor[Expr] {
+  override def map[A, B](fa: Expr[A])(f: (A) => B) = fa match{
+    case Num(value) => Num[B](value)
+    case Mul(l, r) => Mul(f(l), f(r))
+  }
+}
+
 val eval: Algebra[Expr, Long] = { // i.e. Expr[Long] => Long
   case Num(x)    => x
   case Mul(x, y) => x * y
 }
+ 
+def someExpr[T](implicit T: Corecursive.Aux[T, Expr]): T =
+  Mul(Num[T](2).embed, Mul(Num[T](3).embed,
+      Num[T](4).embed).embed).embed
 
-def someExpr[T[_[_]]: Corecursive]: T[Expr] =
-  Mul(Num[T[Expr]](2).embed, Mul(Num[T[Expr]](3).embed,
-      Num[T[Expr]](4).embed).embed).embed
+import matryoshka.data.Mu 
 
-someExpr[Mu].cata(eval) // ⇒ 24
+someExpr[Mu[Expr]].cata(eval) // ⇒ 24
 ```
 
 The `.embed` calls in `someExpr` wrap the nodes in the fixed point type. `embed` is generic, and we abstract `someExpr` over the fixed point type (only requiring that it has an instance of `Corecursive`), so we can postpone the choice of the fixed point as long as possible.
