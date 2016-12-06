@@ -73,14 +73,25 @@ This diagram covers the major classes of transformations. The most basic ones ar
 Here is a very simple example of an algebra (`eval`) and how to apply it to a recursive structure.
 
 ```scala
+
+// we will need a Functor[Expr] in order to call embedT bellow
+implicit val exprFunctor = new scalaz.Functor[Expr] {
+  override def map[A, B](fa: Expr[A])(f: (A) => B) = fa match{
+    case Num(value) => Num[B](value)
+    case Mul(l, r) => Mul(f(l), f(r))
+  }
+}
+
 val eval: Algebra[Expr, Long] = { // i.e. Expr[Long] => Long
   case Num(x)    => x
   case Mul(x, y) => x * y
 }
+ 
+def someExpr[T[_[_]]: CorecursiveT]: T[Expr] =
+  Mul(Num[T[Expr]](2).embedT, Mul(Num[T[Expr]](3).embedT,
+      Num[T[Expr]](4).embedT).embedT).embedT
 
-def someExpr[T[_[_]]: Corecursive]: T[Expr] =
-  Mul(Num[T[Expr]](2).embed, Mul(Num[T[Expr]](3).embed,
-      Num[T[Expr]](4).embed).embed).embed
+import matryoshka.data.Mu 
 
 someExpr[Mu].cata(eval) // ⇒ 24
 ```
