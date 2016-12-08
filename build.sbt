@@ -157,7 +157,7 @@ def noPublishSettings = Seq(
 lazy val root = Project("root", file("."))
   .settings(name := "matryoshka")
   .settings(standardSettings ++ noPublishSettings: _*)
-  .aggregate(coreJVM, coreJS, scalacheck, tests)
+  .aggregate(coreJVM, coreJS, scalacheck, tests, docs)
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val core = crossProject.in(file("core"))
@@ -181,3 +181,25 @@ lazy val tests = project
   .settings(standardSettings ++ noPublishSettings: _*)
   .settings(testsDependencies)
   .enablePlugins(AutomateHeaderPlugin)
+
+lazy val docs = project
+  .settings(name := "matryoshka-docs")
+  .dependsOn(coreJVM)
+  .settings(standardSettings ++ noPublishSettings: _*)
+  .settings(
+    tutScalacOptions --= Seq(
+      "-Yno-imports",
+      "-Ywarn-unused-import"
+    )
+  )
+  .enablePlugins(MicrositesPlugin)
+  .settings(
+    micrositeName             := "Matryoshka",
+    micrositeDescription      := "A library for doing bad-ass computer shit.",
+    micrositeAuthor           := "SlamData",
+    micrositeGithubOwner      := "slamdata",
+    micrositeGithubRepo       := "matryoshka",
+    micrositeBaseUrl          := "/matryoshka",
+    micrositeDocumentationUrl := "/matryoshka/docs/01-Index.html",
+    micrositeHighlightTheme   := "color-brewer"
+  )
