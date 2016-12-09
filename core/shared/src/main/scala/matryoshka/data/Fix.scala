@@ -23,24 +23,15 @@ import scalaz._
 /** This is the simplest fixpoint type, implemented with general recursion.
   */
 final case class Fix[F[_]](unFix: F[Fix[F]])
-object Fix {
-  implicit def recursiveT: RecursiveT[Fix] = new RecursiveT[Fix] {
-    def projectT[F[_]: Functor](t: Fix[F]) = t.unFix
-  }
 
-  implicit def corecursiveT: CorecursiveT[Fix] = new CorecursiveT[Fix] {
+object Fix {
+  implicit def birecursiveT: BirecursiveT[Fix] = new BirecursiveT[Fix] {
+    def projectT[F[_]: Functor](t: Fix[F]) = t.unFix
+
     def embedT[F[_]: Functor](t: F[Fix[F]]) = Fix(t)
   }
 
-  implicit def recursive[F[_]]: Recursive.Aux[Fix[F], F] =
-    RecursiveT.recursive[Fix, F]
+  implicit val equalT: EqualT[Fix] = EqualT.recursiveT
 
-  implicit def corecursive[F[_]]: Corecursive.Aux[Fix[F], F] =
-    CorecursiveT.corecursive[Fix, F]
-
-  implicit def equal[F[_]: Functor](implicit F: Delay[Equal, F]): Equal[Fix[F]] =
-    Recursive.equal[Fix[F], F]
-
-  implicit def show[F[_]: Functor](implicit F: Delay[Show, F]): Show[Fix[F]] =
-    Recursive.show[Fix[F], F]
+  implicit val showT: ShowT[Fix] = ShowT.recursiveT
 }

@@ -93,7 +93,8 @@ package object fixedpoint {
       case ConsF(_, t) => t.some
     }
 
-    def fill[A](n: Nat)(elem: => A): List[A] = n.transAna(tuple(elem))
+    def fill[A](n: Nat)(elem: => A): List[A] =
+      n.transAna[List[A]](tuple(elem))
   }
 
   // FIXME: This implicit conversion seems to not get found, so we specialize
@@ -171,7 +172,8 @@ package object fixedpoint {
     /** Colists are simply streams that may terminate, so a stream is easily
       * converted to a Colist that doesn’t terminate.
       */
-    def toColist: Nu[ListF[A, ?]] = self.transAna(Stream.toListF(_))
+    def toColist[T](implicit T: Corecursive.Aux[T, ListF[A, ?]]): T =
+      self.transAna[T](Stream.toListF(_))
   }
 
   /** Encodes a function that may diverge.

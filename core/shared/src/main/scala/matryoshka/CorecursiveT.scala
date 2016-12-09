@@ -28,14 +28,3 @@ import simulacrum.typeclass
   def anaT[F[_]: Functor, A](a: A)(f: Coalgebra[F, A]): T[F] =
     embedT(f(a) ∘ (anaT(_)(f)))
 }
-
-object CorecursiveT {
-  def corecursive[T[_[_]]: CorecursiveT, F[_]]: Corecursive.Aux[T[F], F] =
-    new Corecursive[T[F]] {
-      type Base[A] = F[A]
-      def embed(t: F[T[F]])(implicit F: Functor[F]) =
-        CorecursiveT[T].embedT[F](t)
-      override def ana[A](a: A)(f: Coalgebra[F, A])(implicit F: Functor[F]) =
-        CorecursiveT[T].anaT[F, A](a)(f)
-    }
-}

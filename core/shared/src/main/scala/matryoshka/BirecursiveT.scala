@@ -16,20 +16,14 @@
 
 package matryoshka
 
-import scalaz._, Scalaz._
-
 /** This is a workaround for a certain use case (e.g.,
   * [[matryoshka.patterns.Diff]] and [[matryoshka.patterns.PotentialFailure]]).
-  * Define an instance of this rather than [[Recursive]] when possible.
+  * Define an instance of this rather than [[Recursive]] and [[Corecursive]]
+  * when possible.
   */
 // NB: Not a `@typeclass` because we don’t want to inject these operations.
-trait RecursiveT[T[_[_]]] {
-  def projectT[F[_]: Functor](t: T[F]): F[T[F]]
+trait BirecursiveT[T[_[_]]] extends RecursiveT[T] with CorecursiveT[T]
 
-  def cataT[F[_]: Functor, A](t: T[F])(f: Algebra[F, A]): A =
-    f(projectT(t) ∘ (cataT(_)(f)))
-}
-
-object RecursiveT {
-  def apply[T[_[_]]](implicit instance: RecursiveT[T]) = instance
+object BirecursiveT {
+  def apply[T[_[_]]](implicit instance: BirecursiveT[T]) = instance
 }

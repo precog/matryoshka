@@ -69,7 +69,7 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck with
     "return after multiple runs" >> prop { (a: Conat, b: Conat) =>
       val (ai, bi) = (a.cata(height), b.cata(height))
       bi > 0 ==> {
-        val first = (a + b).transAna(Partial.delay(27)).runFor(ai)
+        val first = (a + b).transAna[Partial[Int]](Partial.delay(27)).runFor(ai)
         first must beRightDisjunction
         first.flatMap(_.runFor(bi)) must beLeftDisjunction(27)
       }
@@ -78,14 +78,14 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck with
     "still pending one short" >> prop { (a: Conat) =>
       val ai = a.cata(height)
       ai > 0 ==> {
-        val first = a.transAna(Partial.delay(27)).runFor(ai - 1)
+        val first = a.transAna[Partial[Int]](Partial.delay(27)).runFor(ai - 1)
         first must beRightDisjunction
         first.flatMap(_.runFor(1)) must beLeftDisjunction(27)
       }
     }
 
     "return exactly at the end" >> prop { (i: Conat) =>
-      i.transAna(Partial.delay(4)).runFor(i.cata(height)) must
+      i.transAna[Partial[Int]](Partial.delay(4)).runFor(i.cata(height)) must
         beLeftDisjunction(4)
     }
   }

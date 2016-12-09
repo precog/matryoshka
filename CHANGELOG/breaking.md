@@ -1,0 +1,4 @@
+- [#45] eliminate `FunctorT` and `TraverseT` type classes, moving their ops to `Recursive`
+- add `Birecursive` and `BirecursiveT` type classes
+- fix various issues with implicits
+- update `Transform` types

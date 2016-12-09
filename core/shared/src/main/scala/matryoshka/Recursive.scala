@@ -20,6 +20,7 @@ import matryoshka.implicits._
 import matryoshka.patterns.EnvT
 
 import scala.{Boolean, Option, PartialFunction}
+import scala.Predef.identity
 import scala.collection.immutable.{List, Nil}
 
 import scalaz._, Scalaz._
@@ -30,13 +31,6 @@ trait Recursive[T] extends Based[T] {
   type BaseT[A] = Base[A]
 
   def project(t: T)(implicit BF: Functor[Base]): BaseT[T]
-
-  /** Roughly a default impl of `project`, given a [[matryoshka.Corecursive]]
-    * instance and an overridden `cata`.
-    */
-  def lambek(tf: T)(implicit T: Corecursive.Aux[T, Base], BF: Functor[Base])
-      : Base[T] =
-    cata[Base[T]](tf)(_ ∘ (_.embed))
 
   def cata[A](t: T)(f: Algebra[Base, A])(implicit BF: Functor[Base]): A =
     f(project(t) ∘ (cata(_)(f)))
@@ -101,13 +95,6 @@ trait Recursive[T] extends Based[T] {
       M[A] =
     project(t).traverse(v => paraM(v)(f) ∘ ((v, _))).flatMap(f)
 
-  def gpara[W[_]: Comonad, A](
-    t: T)(
-    e: DistributiveLaw[Base, W], f: GAlgebra[EnvT[T, W, ?], Base, A])(
-    implicit T: Corecursive.Aux[T, Base], BF: Functor[Base]):
-      A =
-    gzygo[W, A, T](t)(T.embed(_), e, f)
-
   def zygo[A, B]
     (t: T)
     (f: Algebra[Base, B], g: GAlgebra[(B, ?), Base, A])
@@ -143,24 +130,6 @@ trait Recursive[T] extends Based[T] {
     (implicit BF: Functor[Base])
       : A =
     g(project(t) ∘ (x => (mutu(x)(g, f), mutu(x)(f, g))))
-
-  def prepro[A]
-    (t: T)
-    (e: Base ~> Base, f: Algebra[Base, A])
-    (implicit T: Corecursive.Aux[T, Base], BF: Functor[Base])
-      : A =
-    f(project(t) ∘ (x => prepro(cata[T](x)(c => T.embed(e(c))))(e, f)))
-
-  def gprepro[W[_]: Comonad, A](
-    t: T)(
-    k: DistributiveLaw[Base, W], e: Base ~> Base, f: GAlgebra[W, Base, A])(
-    implicit T: Corecursive.Aux[T, Base], BF: Functor[Base]):
-      A = {
-    def loop(t: T): W[A] =
-      k(project(t) ∘ (x => loop(cata[T](x)(c => T.embed(e(c)))).cojoin)) ∘ f
-
-    loop(t).copoint
-  }
 
   def histo[A]
     (t: T)
@@ -217,20 +186,6 @@ trait Recursive[T] extends Based[T] {
 
   def universe(t: T)(implicit BF: Functor[Base], B: Foldable[Base]): List[T] =
     t :: children(t).flatMap(universe)
-
-  def topDownCataM[M[_]: Monad, A](
-    t: T, a: A)(
-    f: (A, T) => M[(A, T)])(
-    implicit T: Corecursive.Aux[T, Base], BT: Traverse[Base]):
-      M[T] = {
-    def loop(a: A, term: T): M[T] = for {
-      tuple   <- f(a, term)
-      (a, tf) =  tuple
-      rec     <- project(tf).traverse(loop(a, _))
-    } yield T.embed(rec)
-
-    loop(a, t)
-  }
 
   /** Attribute a tree via an algebra starting from the root. */
   def attributeTopDown[A]
@@ -301,6 +256,185 @@ trait Recursive[T] extends Based[T] {
     (implicit R: Corecursive.Aux[R, Base], BF: Functor[Base])
       : R =
     cata[R](t)(R.embed(_))
+
+  def mapR[U, G[_]: Functor]
+    (t: T)
+    (f: Base[T] => G[U])
+    (implicit U: Corecursive.Aux[U, G], BF: Functor[Base])
+      : U =
+    f(project(t)).embed
+
+  def traverseR[M[_]: Functor, U, G[_]: Functor]
+    (t: T)
+    (f: Base[T] => M[G[U]])
+    (implicit U: Corecursive.Aux[U, G], BF: Functor[Base])
+      : M[U] =
+    f(project(t)) ∘ (_.embed)
+
+  def transCata[U, G[_]: Functor]
+    (t: T)
+    (f: Base[U] => G[U])
+    (implicit U: Corecursive.Aux[U, G], BF: Functor[Base])
+      : U =
+    mapR(t)(ft => f(ft.map(transCata(_)(f))))
+
+  def transAna[U, G[_]: Functor]
+    (t: T)
+    (f: Base[T] => G[T])
+    (implicit U: Corecursive.Aux[U, G], BF: Functor[Base])
+      : U =
+    mapR(t)(f(_).map(transAna(_)(f)))
+
+  def transPostpro[U, G[_]: Functor]
+    (t: T)
+    (e: G ~> G, f: Transform[T, Base, G])
+    (implicit UR: Recursive.Aux[U, G], UC: Corecursive.Aux[U, G], BF: Functor[Base])
+      : U =
+    mapR(t)(f(_) ∘ (x => UR.transAna(transPostpro(x)(e, f))(e)))
+
+  def transPara[U, G[_]: Functor]
+    (t: T)
+    (f: AlgebraicGTransform[(T, ?), U, Base, G])
+    (implicit U: Corecursive.Aux[U, G], BF: Functor[Base])
+      : U =
+    mapR(t)(ft => f(ft.map(tf => (tf, transPara(tf)(f)))))
+
+  def transApo[U, G[_]: Functor]
+    (t: T)
+    (f: CoalgebraicGTransform[(U \/ ?), T, Base, G])
+    (implicit U: Corecursive.Aux[U, G], BF: Functor[Base])
+      : U =
+    mapR(t)(f(_).map(_.fold(identity, transApo(_)(f))))
+
+  def transHylo[G[_]: Functor, U, H[_]: Functor]
+    (t: T)
+    (φ: G[U] => H[U], ψ: Base[T] => G[T])
+    (implicit U: Corecursive.Aux[U, H], BF: Functor[Base])
+      : U =
+    mapR(t)(ft => φ(ψ(ft) ∘ (transHylo(_)(φ, ψ))))
+
+  def transCataM[M[_]: Monad, U, G[_]: Functor]
+    (t: T)
+    (f: TransformM[M, U, Base, G])
+    (implicit U: Corecursive.Aux[U, G], BT: Traverse[Base])
+      : M[U] =
+    traverseR(t)(_.traverse(transCataM(_)(f)).flatMap(f))
+
+  def transAnaM[M[_]: Monad, U, G[_]: Traverse]
+    (t: T)
+    (f: TransformM[M, T, Base, G])
+    (implicit U: Corecursive.Aux[U, G], BF: Functor[Base])
+      : M[U] =
+    traverseR(t)(f(_).flatMap(_.traverse(transAnaM(_)(f))))
+
+  // TODO: Move these operations to `Birecursive` once #44 is fixed.
+
+  /** Roughly a default impl of `project`, given a [[matryoshka.Corecursive]]
+    * instance and an overridden `cata`.
+    */
+  def lambek(tf: T)(implicit T: Corecursive.Aux[T, Base], BF: Functor[Base])
+      : Base[T] =
+    cata[Base[T]](tf)(_ ∘ (_.embed))
+
+  def gpara[W[_]: Comonad, A](
+    t: T)(
+    e: DistributiveLaw[Base, W], f: GAlgebra[EnvT[T, W, ?], Base, A])(
+    implicit T: Corecursive.Aux[T, Base], BF: Functor[Base]):
+      A =
+    gzygo[W, A, T](t)(T.embed(_), e, f)
+
+  def prepro[A]
+    (t: T)
+    (e: Base ~> Base, f: Algebra[Base, A])
+    (implicit T: Corecursive.Aux[T, Base], BF: Functor[Base])
+      : A =
+    f(project(t) ∘ (x => prepro(cata[T](x)(c => T.embed(e(c))))(e, f)))
+
+  def gprepro[W[_]: Comonad, A](
+    t: T)(
+    k: DistributiveLaw[Base, W], e: Base ~> Base, f: GAlgebra[W, Base, A])(
+    implicit T: Corecursive.Aux[T, Base], BF: Functor[Base]):
+      A = {
+    def loop(t: T): W[A] =
+      k(project(t) ∘ (x => loop(cata[T](x)(c => T.embed(e(c)))).cojoin)) ∘ f
+
+    loop(t).copoint
+  }
+
+  def topDownCata[A]
+    (t: T, a: A)
+    (f: (A, T) => (A, T))
+    (implicit T: Corecursive.Aux[T, Base], BF: Functor[Base])
+      : T = {
+    val (a0, tf) = f(a, t)
+    mapR(tf)(_.map(topDownCata(_, a0)(f)))
+  }
+
+  def topDownCataM[M[_]: Monad, A](
+    t: T, a: A)(
+    f: (A, T) => M[(A, T)])(
+    implicit T: Corecursive.Aux[T, Base], BT: Traverse[Base]):
+      M[T] =
+    f(a, t).flatMap { case (a, tf) =>
+      traverseR(tf)(_.traverse(topDownCataM(_, a)(f)))
+    }
+
+  def transPrepro[U, G[_]: Functor]
+    (t: T)
+    (e: Base ~> Base, f: Transform[U, Base, G])
+    (implicit T: Corecursive.Aux[T, Base], U: Corecursive.Aux[U, G], BF: Functor[Base])
+      : U =
+    mapR(t)(ft => f(ft ∘ (x => transPrepro(transCata[T, Base](x)(e(_)))(e, f))))
+
+  def transCataT
+    (t: T)
+    (f: T => T)
+    (implicit T: Corecursive.Aux[T, Base], BF: Functor[Base])
+      : T =
+    f(mapR(t)(_.map(transCataT(_)(f))))
+
+  /** This behaves like [[matryoshka.Recursive.elgotPara]]`, but it’s harder to
+    * see from the types that in the tuple, `_2` is the result so far and `_1`
+    * is the original structure.
+    */
+  def transParaT
+    (t: T)
+    (f: ((T, T)) => T)
+    (implicit T: Corecursive.Aux[T, Base], BF: Functor[Base])
+      : T =
+    f((t, mapR(t)(_.map(transParaT(_)(f)))))
+
+  def transAnaT
+    (t: T)
+    (f: T => T)
+    (implicit T: Corecursive.Aux[T, Base], BF: Functor[Base])
+      : T =
+    mapR(f(t))(_.map(transAnaT(_)(f)))
+
+  /** This behaves like [[matryoshka.Corecursive.elgotApo]]`, but it’s harder to
+    * see from the types that in the disjunction, `-\/` is the final result for
+    * this node, while `\/-` means to keep processing the children.
+    */
+  def transApoT
+    (t: T)
+    (f: T => T \/ T)
+    (implicit T: Corecursive.Aux[T, Base], BF: Functor[Base])
+      : T =
+    f(t).fold(identity, mapR(_)(_.map(transApoT(_)(f))))
+
+  def transCataTM[M[_]: Monad]
+    (t: T)
+    (f: T => M[T])
+    (implicit T: Corecursive.Aux[T, Base], BF: Traverse[Base])
+      : M[T] =
+    traverseR(t)(_.traverse(transCataTM(_)(f))).flatMap(f)
+
+  def transAnaTM[M[_]: Monad]
+    (t: T)
+    (f: T => M[T])
+    (implicit T: Corecursive.Aux[T, Base], BF: Traverse[Base])
+      : M[T] =
+    f(t).flatMap(traverseR(_)(_.traverse(transAnaTM(_)(f))))
 }
 
 object Recursive {
@@ -435,6 +569,12 @@ object Recursive {
       typeClassInstance.children(self)
     def universe(implicit BT: Traverse[F]): List[T] =
       typeClassInstance.universe(self)
+    def topDownCata[A]
+      (a: A)
+      (f: (A, T) => (A, T))
+      (implicit T: Corecursive.Aux[T, F], BF: Functor[F])
+        : T =
+      typeClassInstance.topDownCata[A](self, a)(f)
     def topDownCataM[M[_]: Monad, A]
       (a: A)
       (f: (A, T) => M[(A, T)])
@@ -482,6 +622,112 @@ object Recursive {
     def convertTo[R](implicit R: Corecursive.Aux[R, F], BF: Functor[F])
         : R =
       typeClassInstance.convertTo[R](self)
+    def mapR[U, G[_]: Functor]
+      (f: F[T] => G[U])
+      (implicit U: Corecursive.Aux[U, G], BF: Functor[F])
+        : U =
+      typeClassInstance.mapR(self)(f)
+    def traverseR[M[_]: Functor, U, G[_]: Functor]
+      (f: F[T] => M[G[U]])
+      (implicit U: Corecursive.Aux[U, G], BF: Functor[F])
+        : M[U] =
+      typeClassInstance.traverseR(self)(f)
+
+    object transCata {
+      def apply[U] = new PartiallyApplied[U]
+      final class PartiallyApplied[U] {
+        def apply[G[_]: Functor]
+          (f: F[U] => G[U])
+          (implicit U: Corecursive.Aux[U, G], BF: Functor[F])
+            : U =
+          typeClassInstance.transCata(self)(f)
+      }
+    }
+
+    object transAna {
+      def apply[U] = new PartiallyApplied[U]
+      final class PartiallyApplied[U] {
+        def apply[G[_]: Functor]
+          (f: F[T] => G[T])
+          (implicit U: Corecursive.Aux[U, G], BF: Functor[F])
+            : U =
+          typeClassInstance.transAna(self)(f)
+      }
+    }
+
+    object transPrepro {
+      def apply[U] = new PartiallyApplied[U]
+      final class PartiallyApplied[U] {
+        def apply[G[_]: Functor]
+          (e: F ~> F, f: Transform[U, F, G])
+          (implicit T: Corecursive.Aux[T, F], U: Corecursive.Aux[U, G], BF: Functor[F])
+            : U =
+          typeClassInstance.transPrepro(self)(e, f)
+      }
+    }
+
+    object transPostpro {
+      def apply[U] = new PartiallyApplied[U]
+      final class PartiallyApplied[U] {
+        def apply[G[_]: Functor]
+          (e: G ~> G, f: Transform[T, F, G])
+          (implicit UR: Recursive.Aux[U, G], UC: Corecursive.Aux[U, G], BF: Functor[F])
+            : U =
+          typeClassInstance.transPostpro(self)(e, f)
+      }
+    }
+
+    object transPara {
+      def apply[U] = new PartiallyApplied[U]
+      final class PartiallyApplied[U] {
+        def apply[G[_]: Functor]
+          (f: AlgebraicGTransform[(T, ?), U, F, G])
+          (implicit U: Corecursive.Aux[U, G], BF: Functor[F])
+            : U =
+          typeClassInstance.transPara(self)(f)
+      }
+    }
+
+    def transApo[U, G[_]: Functor]
+      (f: CoalgebraicGTransform[(U \/ ?), T, F, G])
+      (implicit U: Corecursive.Aux[U, G], BF: Functor[F])
+        : U =
+      typeClassInstance.transApo(self)(f)
+    def transHylo[G[_]: Functor, U, H[_]: Functor]
+      (φ: G[U] => H[U], ψ: F[T] => G[T])
+      (implicit U: Corecursive.Aux[U, H], BF: Functor[F])
+        : U =
+      typeClassInstance.transHylo(self)(φ, ψ)
+    def transCataM[M[_]: Monad, U, G[_]: Functor]
+      (f: TransformM[M, U, F, G])
+      (implicit U: Corecursive.Aux[U, G], BT: Traverse[F])
+        : M[U] =
+      typeClassInstance.transCataM(self)(f)
+    def transAnaM[M[_]: Monad, U, G[_]: Traverse]
+      (f: TransformM[M, T, F, G])
+      (implicit U: Corecursive.Aux[U, G], BF: Functor[F])
+        : M[U] =
+      typeClassInstance.transAnaM(self)(f)
+    def transCataT(f: T => T)(implicit T: Corecursive.Aux[T, F], BF: Functor[F]): T =
+      typeClassInstance.transCataT(self)(f)
+
+    def transParaT(f: ((T, T)) => T)(implicit T: Corecursive.Aux[T, F], BF: Functor[F]): T =
+      typeClassInstance.transParaT(self)(f)
+
+    def transAnaT(f: T => T)(implicit T: Corecursive.Aux[T, F], BF: Functor[F]): T =
+      typeClassInstance.transAnaT(self)(f)
+
+    def transApoT(f: T => T \/ T)(implicit T: Corecursive.Aux[T, F], BF: Functor[F]): T =
+      typeClassInstance.transApoT(self)(f)
+
+    def transCataTM[M[_]: Monad](f: T => M[T])(implicit T: Corecursive.Aux[T, F], BF: Traverse[F])
+        : M[T] =
+      typeClassInstance.transCataTM(self)(f)
+
+    def transAnaTM[M[_]: Monad](f: T => M[T])(implicit T: Corecursive.Aux[T, F], BF: Traverse[F])
+        : M[T] =
+      typeClassInstance.transAnaTM(self)(f)
+
   }
 
   trait ToRecursiveOps {

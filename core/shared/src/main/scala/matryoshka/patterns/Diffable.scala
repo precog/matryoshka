@@ -43,13 +43,13 @@ import simulacrum._
     if (left.toList.length < right.toList.length)
       left.zipWithR(right)((l, r) =>
         l.fold(
-          Added[T, F, T[Diff[T, F, ?]]](r).embedT)(
-          RecursiveT.recursive[T, F].paraMerga(_, r)(diff(RecursiveT[T], CorecursiveT[T], self, implicitly, implicitly))))
+          Added[T, F, T[Diff[T, F, ?]]](r).embed)(
+          _.paraMerga(r)(diff(RecursiveT[T], CorecursiveT[T], self, implicitly, implicitly))))
     else
       left.zipWithL(right)((l, r) =>
         r.fold(
-          Removed[T, F, T[Diff[T, F, ?]]](l).embedT)(
-          RecursiveT.recursive[T, F].paraMerga(l, _)(diff(RecursiveT[T], CorecursiveT[T], self, implicitly, implicitly))))
+          Removed[T, F, T[Diff[T, F, ?]]](l).embed)(
+          l.paraMerga(_)(diff(RecursiveT[T], CorecursiveT[T], self, implicitly, implicitly))))
 
   // TODO: create something like Equals, but that overrides G[F[_]] (where G
   //       implements Traverse) to always be equal. This should allow us to
@@ -61,5 +61,5 @@ import simulacrum._
     left: F[T[F]], right: F[T[F]])(
     implicit FT: Traverse[F], FM: Merge[F]):
       DiffT[T, F] =
-    LocallyDifferent[T, F, T[Diff[T, F, ?]]](diffTraverse[T, F](left, right), right.void).embedT
+    LocallyDifferent[T, F, T[Diff[T, F, ?]]](diffTraverse[T, F](left, right), right.void).embed
 }
