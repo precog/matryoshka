@@ -90,7 +90,7 @@ object Example {
   }
 
   implicit val diffable: Diffable[Example] = new Diffable[Example] {
-    def diffImpl[T[_[_]]: RecursiveT: CorecursiveT](l: T[Example], r: T[Example]):
+    def diffImpl[T[_[_]]: BirecursiveT](l: T[Example], r: T[Example]):
         Option[DiffT[T, Example]] =
       (l.project, r.project) match {
         case (l @ Empty(),        r @ Empty())        => localDiff(l, r).some

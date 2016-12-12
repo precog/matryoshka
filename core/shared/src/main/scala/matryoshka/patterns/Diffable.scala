@@ -20,13 +20,14 @@ import matryoshka._
 import matryoshka.implicits._
 
 import scala.Option
-import scala.Predef.implicitly
 
 import scalaz._, Scalaz._
 import simulacrum._
 
 @typeclass trait Diffable[F[_]] { self =>
-  def diffImpl[T[_[_]]: RecursiveT: CorecursiveT](l: T[F], r: T[F]):
+  private implicit def self0 = self
+
+  def diffImpl[T[_[_]]: BirecursiveT](l: T[F], r: T[F]):
       Option[DiffT[T, F]]
 
   /** Useful when a case class has a `List[A]` that isn’t the final `A`. This is
@@ -36,7 +37,7 @@ import simulacrum._
     * Currently also useful when the only list _is_ the final parameter, because
     * it allows you to explicitly use `Similar` rather than `LocallyDifferent`.
     */
-  def diffTraverse[T[_[_]]: RecursiveT: CorecursiveT, G[_]: Traverse](
+  def diffTraverse[T[_[_]]: BirecursiveT, G[_]: Traverse](
     left: G[T[F]], right: G[T[F]])(
     implicit FF: Functor[F], FoldF: Foldable[F], FM: Merge[F]):
       G[DiffT[T, F]] =
@@ -44,12 +45,12 @@ import simulacrum._
       left.zipWithR(right)((l, r) =>
         l.fold(
           Added[T, F, T[Diff[T, F, ?]]](r).embed)(
-          _.paraMerga(r)(diff(RecursiveT[T], CorecursiveT[T], self, implicitly, implicitly))))
+          _.paraMerga(r)(diff[T, F])))
     else
       left.zipWithL(right)((l, r) =>
         r.fold(
           Removed[T, F, T[Diff[T, F, ?]]](l).embed)(
-          l.paraMerga(_)(diff(RecursiveT[T], CorecursiveT[T], self, implicitly, implicitly))))
+          l.paraMerga(_)(diff[T, F])))
 
   // TODO: create something like Equals, but that overrides G[F[_]] (where G
   //       implements Traverse) to always be equal. This should allow us to
@@ -57,7 +58,7 @@ import simulacrum._
   //       only differ on the length of the list. So we can make them `Similar`
   //       rather than `LocallyDifferent`.
 
-  def localDiff[T[_[_]]: RecursiveT: CorecursiveT](
+  def localDiff[T[_[_]]: BirecursiveT](
     left: F[T[F]], right: F[T[F]])(
     implicit FT: Traverse[F], FM: Merge[F]):
       DiffT[T, F] =
