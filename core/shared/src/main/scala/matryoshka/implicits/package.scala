@@ -19,11 +19,9 @@ package matryoshka
 import scalaz._, Liskov._
 
 package object implicits
-    extends FunctorT.ToFunctorTOps
+    extends Birecursive.ToBirecursiveOps
     with Merge.ToMergeOps
-    with Recursive.ToRecursiveOps
-    with RecursiveT.ToRecursiveTOps
-    with TraverseT.ToTraverseTOps {
+    with Recursive.ToRecursiveOps {
 
   implicit def toIdOps[A](a: A): IdOps[A] = new IdOps[A](a)
 
@@ -34,13 +32,6 @@ package object implicits
     def embed(implicit F: Functor[FF]): T = T.embed(Sub(self))
     def colambek(implicit TR: Recursive.Aux[T, FF], F: Functor[FF]): T =
       T.colambek(Sub(self))
-  }
-
-  implicit final class CorecursiveTOps[T[_[_]], F[_], FF[_]](
-    self: F[T[FF]])(
-    implicit T: CorecursiveT[T], Sub: F[T[FF]] <~< FF[T[FF]]) {
-
-    def embedT(implicit F: Functor[FF]): T[FF] = T.embedT[FF](Sub(self))
   }
 
   implicit def toAlgebraOps[F[_], A](a: Algebra[F, A]): AlgebraOps[F, A] =

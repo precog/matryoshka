@@ -112,12 +112,12 @@ class DiffSpec extends Specification with DiffArb with ScalazMatchers {
       equal(
         Similar[Mu, Example, Mu[Diff[Mu, Example, ?]]](TwoLists(
           List(
-            Different[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed, NonRec[Mu[Example]]("x", 3).embed).embedT,
-            Removed[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embedT),
+            Different[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed, NonRec[Mu[Example]]("x", 3).embed).embed,
+            Removed[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embed),
           List(
-            Same[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embedT,
-            Added[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embedT,
-            Added[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embedT))).embedT)
+            Same[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embed,
+            Added[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embed,
+            Added[Mu, Example, Mu[Diff[Mu, Example, ?]]](Empty[Mu[Example]]().embed).embed))).embed)
     }
   }
 
@@ -156,7 +156,8 @@ class DiffSpec extends Specification with DiffArb with ScalazMatchers {
             Empty[Mu[Example]]().embed,
             Empty[Mu[Example]]().embed)).embed
 
-      (left paraMerga right)(diff).cata(toTree).drawTree must
+      // TODO: Eliminate this type annotation
+      ((left paraMerga right)(diff): Mu[Diff[Mu, Example, ?]]).cata(toTree).drawTree must
         equal("""TwoLists([(),(),(),()], [(),(),()])
                 ||
                 |+- NonRec("foo", 3) <=/=> NonRec("bar", 3)

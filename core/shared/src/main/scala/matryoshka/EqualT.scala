@@ -16,7 +16,10 @@
 
 package matryoshka
 
+import matryoshka.implicits._
+
 import scala.Boolean
+
 import scalaz._
 import simulacrum._
 
@@ -26,4 +29,13 @@ import simulacrum._
 
   def equalT[F[_]: Functor](delay: Delay[Equal, F]): Equal[T[F]] =
     Equal.equal[T[F]](equal[F](_, _)(Functor[F], delay))
+}
+
+object EqualT {
+  def recursiveT[T[_[_]]: RecursiveT]: EqualT[T] = new EqualT[T] {
+    def equal[F[_]: Functor]
+      (tf1: T[F], tf2: T[F])
+      (implicit del: Delay[Equal, F]) =
+      del(equalT[F](del)).equal(tf1.project, tf2.project)
+  }
 }

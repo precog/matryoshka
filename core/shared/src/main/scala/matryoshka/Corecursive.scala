@@ -24,12 +24,6 @@ import scalaz._, Scalaz._
 trait Corecursive[T] extends Based[T] {
   def embed(t: Base[T])(implicit BF: Functor[Base]): T
 
-  /** Roughly a default impl of `embed`, given a [[matryoshka.Recursive]]
-    * instance and an overridden `ana`.
-    */
-  def colambek(ft: Base[T])(implicit TR: Recursive.Aux[T, Base], BF: Functor[Base]): T =
-    ana(ft)(_ ∘ (TR.project(_)))
-
   def ana[A](a: A)(f: Coalgebra[Base, A])(implicit BF: Functor[Base]): T =
     embed(f(a) ∘ (ana(_)(f)))
 
@@ -104,24 +98,6 @@ trait Corecursive[T] extends Based[T] {
       M[T] =
     f(a).flatMap(_.traverse(_.fold(_.point[M], apoM(_)(f)))) ∘ embed
 
-  def postpro[A](
-    a: A)(
-    e: Base ~> Base, g: Coalgebra[Base, A])(
-    implicit T: Recursive.Aux[T, Base], BF: Functor[Base]):
-      T =
-    gpostpro[Id, A](a)(distAna, e, g)
-
-  def gpostpro[N[_], A](
-    a: A)(
-    k: DistributiveLaw[N, Base], e: Base ~> Base, ψ: GCoalgebra[N, Base, A])(
-    implicit T: Recursive.Aux[T, Base], BF: Functor[Base], N: Monad[N]):
-      T = {
-    def loop(ma: N[A]): T =
-      embed(k(ma ∘ ψ) ∘ (x => ana(loop(x.join))(x => e(T.project(x)))))
-
-    loop(a.point[N])
-  }
-
   // Futu should probably be library-specific, so not part of the typeclass. Can
   // just use `gana` explicitly, or maybe handle injecting them somehow else.
   def futu[A]
@@ -145,7 +121,34 @@ trait Corecursive[T] extends Based[T] {
       free.fold(futuM(_)(f), _.traverse(loop) ∘ (embed))
     f(a).flatMap(_.traverse(loop)) ∘ (embed(_))
   }
+
+  // TODO: Move these operations to `Birecursive` once #44 is fixed.
+
+  /** Roughly a default impl of `embed`, given a [[matryoshka.Recursive]]
+    * instance and an overridden `ana`.
+    */
+  def colambek(ft: Base[T])(implicit TR: Recursive.Aux[T, Base], BF: Functor[Base]): T =
+    ana(ft)(_ ∘ (TR.project(_)))
+
+  def postpro[A](
+    a: A)(
+    e: Base ~> Base, g: Coalgebra[Base, A])(
+    implicit T: Recursive.Aux[T, Base], BF: Functor[Base]):
+      T =
+    gpostpro[Id, A](a)(distAna, e, g)
+
+  def gpostpro[N[_], A](
+    a: A)(
+    k: DistributiveLaw[N, Base], e: Base ~> Base, ψ: GCoalgebra[N, Base, A])(
+    implicit T: Recursive.Aux[T, Base], BF: Functor[Base], N: Monad[N]):
+      T = {
+    def loop(ma: N[A]): T =
+      embed(k(ma ∘ ψ) ∘ (x => ana(loop(x.join))(x => e(T.project(x)))))
+
+    loop(a.point[N])
+  }
 }
+
 object Corecursive {
   type Aux[T, F[_]] = Corecursive[T] { type Base[A] = F[A] }
 

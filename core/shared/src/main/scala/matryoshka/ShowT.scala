@@ -16,7 +16,10 @@
 
 package matryoshka
 
+import matryoshka.implicits._
+
 import java.lang.String
+
 import scalaz._
 import simulacrum._
 
@@ -29,4 +32,11 @@ import simulacrum._
 
   def showT[F[_]: Functor](delay: Delay[Show, F]): Show[T[F]] =
     Show.show[T[F]](show[F](_)(Functor[F], delay))
+}
+
+object ShowT {
+  def recursiveT[T[_[_]]: RecursiveT]: ShowT[T] = new ShowT[T] {
+    override def show[F[_]: Functor](tf: T[F])(implicit del: Delay[Show, F]) =
+      tf.cata(del(Cord.CordShow).show)
+  }
 }

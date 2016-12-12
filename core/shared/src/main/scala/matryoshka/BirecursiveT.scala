@@ -16,19 +16,14 @@
 
 package matryoshka
 
-import scalaz._, Scalaz._
-
 /** This is a workaround for a certain use case (e.g.,
   * [[matryoshka.patterns.Diff]] and [[matryoshka.patterns.PotentialFailure]]).
-  * Define an instance of this rather than [[Corecursive]] when possible.
+  * Define an instance of this rather than [[Recursive]] and [[Corecursive]]
+  * when possible.
   */
 // NB: Not a `@typeclass` because we don’t want to inject these operations.
-trait CorecursiveT[T[_[_]]] {
-  def embedT[F[_]: Functor](t: F[T[F]]): T[F]
-  def anaT[F[_]: Functor, A](a: A)(f: Coalgebra[F, A]): T[F] =
-    embedT(f(a) ∘ (anaT(_)(f)))
-}
+trait BirecursiveT[T[_[_]]] extends RecursiveT[T] with CorecursiveT[T]
 
-object CorecursiveT {
-  def apply[T[_[_]]](implicit instance: CorecursiveT[T]) = instance
+object BirecursiveT {
+  def apply[T[_[_]]](implicit instance: BirecursiveT[T]) = instance
 }

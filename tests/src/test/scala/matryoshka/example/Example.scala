@@ -90,17 +90,17 @@ object Example {
   }
 
   implicit val diffable: Diffable[Example] = new Diffable[Example] {
-    def diffImpl[T[_[_]]: RecursiveT: CorecursiveT](l: T[Example], r: T[Example]):
+    def diffImpl[T[_[_]]: BirecursiveT](l: T[Example], r: T[Example]):
         Option[DiffT[T, Example]] =
-      (l.projectT, r.projectT) match {
+      (l.project, r.project) match {
         case (l @ Empty(),        r @ Empty())        => localDiff(l, r).some
         case (l @ NonRec(_, _),   r @ NonRec(_, _))   => localDiff(l, r).some
         case (l @ SemiRec(_, _),  r @ SemiRec(_, _))  => localDiff(l, r).some
         case (l @ MultiRec(_, _), r @ MultiRec(_, _)) => localDiff(l, r).some
         case (OneList(l),         OneList(r))         =>
-          Similar[T, Example, T[Diff[T, Example, ?]]](OneList[DiffT[T, Example]](diffTraverse(l, r))).embedT.some
+          Similar[T, Example, T[Diff[T, Example, ?]]](OneList[DiffT[T, Example]](diffTraverse(l, r))).embed.some
         case (TwoLists(l1, l2),   TwoLists(r1, r2))   =>
-          Similar[T, Example, T[Diff[T, Example, ?]]](TwoLists[DiffT[T, Example]](diffTraverse(l1, r1), diffTraverse(l2, r2))).embedT.some
+          Similar[T, Example, T[Diff[T, Example, ?]]](TwoLists[DiffT[T, Example]](diffTraverse(l1, r1), diffTraverse(l2, r2))).embed.some
         case (_,                  _)                  => None
       }
   }
