@@ -26,6 +26,12 @@ trait Delay[F[_], G[_]] {
 }
 
 object Delay {
+  /** Delay used to be a type alias for a natural transformation:
+   *    type Delay[F[_], G[_]] = F ~> (F ∘ G)#λ
+   *  As an interim measure, this implicit lifts natural
+   *  transformations of the above form into the Delay type class.
+   *  But the end goal is to be unconnected to NaturalTransformation.
+   */
   implicit def fromNT[F[_], G[_]](nt: F ~> (F ∘ G)#λ): Delay[F, G] =
     new Delay[F, G] { def apply[A](fa: F[A]): F[G[A]] = nt(fa) }
 }
