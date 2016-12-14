@@ -8,7 +8,7 @@ jdk:
 sudo: false
 script:
   - sbt checkHeaders
-  - sbt coverage doc test
+  - sbt coverage doc test tut
   - sbt coverageReport
 after_success:
   - pip install --user codecov && codecov
