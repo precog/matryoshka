@@ -438,6 +438,11 @@ trait Recursive[T] extends Based[T] {
 }
 
 object Recursive {
+  def fromCoalgebra[T, F[_]](ψ: Coalgebra[F, T]): Aux[T, F] = new Recursive[T] {
+    type Base[A] = F[A]
+    def project(t: T)(implicit BF: Functor[Base]) = ψ(t)
+  }
+
   def equal[T, F[_]: Functor]
     (implicit T: Recursive.Aux[T, F], F: Delay[Equal, F])
       : Equal[T] =

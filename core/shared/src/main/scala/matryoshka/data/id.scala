@@ -26,17 +26,11 @@ trait IdInstances {
     */
   // NB: This should really be available even without an additional dependency,
   //     but [[scalaz.Const]] only exists in Scalaz (and Cats).
-  def idRecursive[A]: Recursive.Aux[A, Const[A, ?]] = new Recursive[A] {
-    type Base[B] = Const[A, B]
+  def idRecursive[A]: Recursive.Aux[A, Const[A, ?]] =
+    Recursive.fromCoalgebra(Const(_))
 
-    def project(t: A)(implicit BF: Functor[Base]) = Const(t)
-  }
-
-  def idCorecursive[A]: Corecursive.Aux[A, Const[A, ?]] = new Corecursive[A] {
-    type Base[B] = Const[A, B]
-
-    def embed(t: Const[A, A])(implicit BF: Functor[Base]) = t.getConst
-  }
+  def idCorecursive[A]: Corecursive.Aux[A, Const[A, ?]] =
+    Corecursive.fromAlgebra(_.getConst)
 }
 
 object id extends IdInstances

@@ -150,6 +150,11 @@ trait Corecursive[T] extends Based[T] {
 }
 
 object Corecursive {
+  def fromAlgebra[T, F[_]](φ: Algebra[F, T]): Aux[T, F] = new Corecursive[T] {
+    type Base[A] = F[A]
+    def embed(ft: F[T])(implicit BF: Functor[Base]) = φ(ft)
+  }
+
   type Aux[T, F[_]] = Corecursive[T] { type Base[A] = F[A] }
 
   def apply[T, F[_]](implicit instance: Aux[T, F]): Aux[T, F] = instance

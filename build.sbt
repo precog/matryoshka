@@ -189,17 +189,14 @@ lazy val docs = project
   .settings(
     tutScalacOptions --= Seq(
       "-Yno-imports",
-      "-Ywarn-unused-import"
-    )
-  )
+      "-Ywarn-unused-import"))
   .enablePlugins(MicrositesPlugin)
   .settings(
     micrositeName             := "Matryoshka",
-    micrositeDescription      := "A library for doing bad-ass computer shit.",
+    micrositeDescription      := "Generalized folds, unfolds, and traversals for fixed point data structures in Scala.",
     micrositeAuthor           := "SlamData",
     micrositeGithubOwner      := "slamdata",
     micrositeGithubRepo       := "matryoshka",
     micrositeBaseUrl          := "/matryoshka",
     micrositeDocumentationUrl := "/matryoshka/docs/01-Index.html",
-    micrositeHighlightTheme   := "color-brewer"
-  )
+    micrositeHighlightTheme   := "color-brewer")

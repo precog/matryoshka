@@ -33,7 +33,7 @@ object Birecursive {
   /** Create a [[Birecursive]] instance from the mappings to/from the
     * fixed-point.
     */
-  def algebraIso[T, F[_]](φ: Algebra[F, T], ψ: Coalgebra[F, T])
+  def fromAlgebraIso[T, F[_]](φ: Algebra[F, T], ψ: Coalgebra[F, T])
       : Birecursive.Aux[T, F] =
     new Birecursive[T] {
       type Base[A] = F[A]
