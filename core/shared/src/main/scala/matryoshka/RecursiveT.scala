@@ -16,6 +16,7 @@
 
 package matryoshka
 
+import scala.Serializable
 import scalaz._, Scalaz._
 
 /** This is a workaround for a certain use case (e.g.,
@@ -23,7 +24,9 @@ import scalaz._, Scalaz._
   * Define an instance of this rather than [[Recursive]] when possible.
   */
 // NB: Not a `@typeclass` because we don’t want to inject these operations.
-trait RecursiveT[T[_[_]]] {
+// Changed Serializable because Quassar connector for Apache Spark needs it to be Serializable
+// We can alow above since this trait will be removed once we have mutual recursion
+trait RecursiveT[T[_[_]]] extends Serializable {
   def projectT[F[_]: Functor](t: T[F]): F[T[F]]
 
   def cataT[F[_]: Functor, A](t: T[F])(f: Algebra[F, A]): A =
