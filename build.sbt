@@ -7,33 +7,14 @@ import org.scalajs.sbtplugin.cross.CrossProject
 
 lazy val checkHeaders = taskKey[Unit]("Fail the build if createHeaders is not up-to-date")
 
-val monocleVersion = "1.2.2"
-val scalazVersion = "7.2.1"
-// Latest version built against scalacheck 1.12.5
-// doesn't support scala.js yet, until then tests are JVM-only
-val specs2Version = "3.7"
-val scalacheckVersion = "1.12.5"
-
-// `scalaz-scalack-binding` is built with `scalacheck` 1.12.5 so we are stuck
-// with that version
-def scalacheckDependencies = Seq(
-  "org.scalacheck" %% "scalacheck"                % scalacheckVersion,
-  "org.scalaz"     %% "scalaz-scalacheck-binding" % scalazVersion
-)
-def testsDependencies = libraryDependencies ++= scalacheckDependencies ++ Seq(
-  "org.typelevel"              %% "discipline"        % "0.4"          % "test",
-  "com.github.julien-truffaut" %% "monocle-law"       % monocleVersion % "test",
-  "org.typelevel"              %% "scalaz-specs2"     % "0.4.0"        % "test",
-  "org.specs2"                 %% "specs2-core"       % specs2Version  % "test" force(),
-  "org.specs2"                 %% "specs2-scalacheck" % specs2Version  % "test" force()
-)
+val monocleVersion = "1.4.0"
+val scalazVersion = "7.2.8"
 
 lazy val standardSettings = Seq[Setting[_]](
   headers := Map(
     "scala" -> Apache2_0("2014–2016", "SlamData Inc."),
     "java"  -> Apache2_0("2014–2016", "SlamData Inc.")),
   scalaOrganization := "org.typelevel",
-  scalaVersion := "2.11.8",
   logBuffered in Compile := false,
   logBuffered in Test := false,
   outputStrategy := Some(StdoutOutput),
@@ -48,8 +29,8 @@ lazy val standardSettings = Seq[Setting[_]](
     "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/",
     "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
     "bintray/non" at "http://dl.bintray.com/non/maven"),
-  addCompilerPlugin("org.spire-math" %% "kind-projector"   % "0.9.3"),
-  addCompilerPlugin("org.scalamacros" % "paradise"         % "2.1.0" cross CrossVersion.full),
+  addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.3"),
+  addCompilerPlugin("org.scalamacros" % "paradise"       % "2.1.0" cross CrossVersion.full),
   ScoverageKeys.coverageHighlighting := true,
 
   scalacOptions ++= Seq(
@@ -76,8 +57,6 @@ lazy val standardSettings = Seq[Setting[_]](
     "-Yno-imports",
     "-Ywarn-unused-import"),
   wartremoverErrors in (Compile, compile) ++= warts, // Warts.all,
-
-  console <<= console in Test, // console alias test:console
 
   libraryDependencies ++= Seq(
     "com.github.julien-truffaut" %%% "monocle-core" % monocleVersion % "compile, test",
@@ -157,7 +136,10 @@ def noPublishSettings = Seq(
 lazy val root = Project("root", file("."))
   .settings(name := "matryoshka")
   .settings(standardSettings ++ noPublishSettings: _*)
-  .aggregate(coreJVM, coreJS, scalacheck, tests, docs)
+  .aggregate(
+    coreJS,  scalacheckJS,  testsJS,
+    coreJVM, scalacheckJVM, testsJVM,
+    docs)
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val core = crossProject.in(file("core"))
@@ -165,33 +147,32 @@ lazy val core = crossProject.in(file("core"))
   .settings(standardSettings ++ publishSettings: _*)
   .enablePlugins(AutomateHeaderPlugin)
 
-lazy val coreJVM = core.jvm
-lazy val coreJS = core.js
-
-lazy val scalacheck = project
-  .dependsOn(coreJVM)
+lazy val scalacheck = crossProject
+  .dependsOn(core)
   .settings(name := "matryoshka-scalacheck")
   .settings(standardSettings ++ publishSettings: _*)
-  .settings(libraryDependencies ++= scalacheckDependencies)
+  .settings(libraryDependencies ++= Seq(
+    // NB: Needs a version of Scalacheck with rickynils/scalacheck#301.
+    "org.scalacheck" %% "scalacheck"                % "1.14.0-861f58e-SNAPSHOT",
+    "org.scalaz"     %% "scalaz-scalacheck-binding" % (scalazVersion + "-scalacheck-1.13")))
   .enablePlugins(AutomateHeaderPlugin)
 
-lazy val tests = project
+lazy val tests = crossProject
   .settings(name := "matryoshka-tests")
-  .dependsOn(coreJVM, scalacheck)
+  .dependsOn(core, scalacheck)
   .settings(standardSettings ++ noPublishSettings: _*)
-  .settings(testsDependencies)
+  .settings(libraryDependencies ++= Seq(
+    "org.typelevel"              %% "discipline"    % "0.7.1"        % Test,
+    "com.github.julien-truffaut" %% "monocle-law"   % monocleVersion % Test,
+    "org.typelevel"              %% "scalaz-specs2" % "0.5.0"        % Test,
+    "org.specs2"                 %% "specs2-core"   % "3.8.6"        % Test))
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val docs = project
   .settings(name := "matryoshka-docs")
   .dependsOn(coreJVM)
   .settings(standardSettings ++ noPublishSettings: _*)
-  .settings(
-    tutScalacOptions --= Seq(
-      "-Yno-imports",
-      "-Ywarn-unused-import"
-    )
-  )
+  .settings(tutScalacOptions --= Seq("-Yno-imports", "-Ywarn-unused-import"))
   .enablePlugins(MicrositesPlugin)
   .settings(
     micrositeName             := "Matryoshka",
@@ -201,5 +182,23 @@ lazy val docs = project
     micrositeGithubRepo       := "matryoshka",
     micrositeBaseUrl          := "/matryoshka",
     micrositeDocumentationUrl := "/matryoshka/docs/01-Index.html",
-    micrositeHighlightTheme   := "color-brewer"
-  )
+    micrositeHighlightTheme   := "color-brewer")
+
+/** A project just for the console.
+  * Applies only the settings necessary for that purpose.
+  */
+lazy val repl = crossProject dependsOn (core % "test->test;compile->compile") settings standardSettings settings (
+  console := (console in Test).value,
+  initialCommands in console := """
+    import matryoshka._,
+    import matryoshka.data._
+    import matryoshka.implicits._
+    import scalaz._, Scalaz._
+  """)
+
+lazy val coreJS  = core.js
+lazy val coreJVM = core.jvm
+lazy val scalacheckJS  = scalacheck.js
+lazy val scalacheckJVM = scalacheck.jvm
+lazy val testsJS  = tests.js
+lazy val testsJVM = tests.jvm

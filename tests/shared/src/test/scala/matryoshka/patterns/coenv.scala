@@ -1,0 +1,51 @@
+/*
+ * Copyright 2014–2016 SlamData Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package matryoshka.patterns
+
+import matryoshka._
+import matryoshka.data._
+import matryoshka.exp.Exp
+import matryoshka.exp2.Exp2
+import matryoshka.helpers._
+import matryoshka.scalacheck.arbitrary._
+import matryoshka.scalacheck.cogen._
+
+import java.lang.{String}
+import scala.{Int}
+
+import org.specs2.mutable._
+import scalaz._, Scalaz._
+import scalaz.scalacheck.ScalazProperties._
+
+class CoEnvSpec extends Specification with AlgebraChecks {
+  "CoEnv should satisfy relevant laws" in {
+    addFragments(equal.laws[CoEnv[String, Exp, Int]])
+    addFragments(bitraverse.laws[CoEnv[?, Exp, ?]])
+    addFragments(traverse.laws[CoEnv[Int, Exp, ?]])
+    // NB: This is to test the low-prio Bi-functor/-foldable instances, so if
+    //     Exp2 gets a Traverse instance, this needs to change.
+    addFragments(bifunctor.laws[CoEnv[?, Exp2, ?]])
+    addFragments(functor.laws[CoEnv[Int, Exp2, ?]])
+    addFragments(bifoldable.laws[CoEnv[?, Exp2, ?]])
+    addFragments(foldable.laws[CoEnv[Int, Exp2, ?]])
+    // FIXME: These instances don’t fulfill the laws
+    // addFragments(monad.laws[CoEnv[String, Option, ?]])
+    // addFragments(monad.laws[CoEnv[String, NonEmptyList, ?]])
+  }
+
+  checkAlgebraIsoLaws("CoEnv ⇔ Free", CoEnv.freeIso[Int, Exp])
+}
