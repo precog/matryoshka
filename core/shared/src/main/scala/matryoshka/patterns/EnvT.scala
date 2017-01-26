@@ -57,7 +57,7 @@ sealed abstract class EnvTInstances0 extends EnvTInstances1 {
   implicit def cobind[E, W[_]](implicit W0: Cobind[W]):
       Cobind[EnvT[E, W, ?]] =
     new EnvTCobind[E, W] {
-      implicit def W = W0
+      implicit def W: Cobind[W] = W0
     }
 }
 

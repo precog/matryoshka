@@ -28,7 +28,7 @@ sealed trait ShrinkInstancesʹ {
     F(A)
 }
 
-trait ShrinkInstances extends ShrinkInstancesʹ {
+sealed trait ShrinkInstances extends ShrinkInstancesʹ {
   /** An instance for [[matryoshka.Recursive]] types where the [[Base]] is
     * [[scalaz.Foldable]].
     */

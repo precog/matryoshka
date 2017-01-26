@@ -34,7 +34,7 @@ sealed trait ArbitraryInstances0 {
     F(A)
 }
 
-trait ArbitraryInstances extends ArbitraryInstances0 {
+sealed trait ArbitraryInstances extends ArbitraryInstances0 {
   def corecursiveArbitrary[T, F[_]: Functor]
     (implicit T: Corecursive.Aux[T, F], fArb: Delay[Arbitrary, F])
       : Arbitrary[T] =

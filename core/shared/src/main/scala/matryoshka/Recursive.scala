@@ -731,8 +731,7 @@ object Recursive {
   }
 
   trait ToRecursiveOps {
-    implicit def toRecursiveOps[T, F[_]](target: T)(implicit tc: Aux[T, F])
-        : Ops[T, F] =
+    implicit def toRecursiveOps[T, F[_]](target: T)(implicit tc: Aux[T, F]): Ops[T, F] =
       new Ops[T, F] {
         val self = target
         val typeClassInstance = tc
@@ -746,8 +745,7 @@ object Recursive {
   }
 
   object ops {
-    implicit def toAllRecursiveOps[T, F[_]](target: T)(implicit tc: Aux[T, F])
-        : AllOps[T, F] =
+    implicit def toAllRecursiveOps[T, F[_]](target: T)(implicit tc: Aux[T, F]): AllOps[T, F] =
       new AllOps[T, F] {
         val self = target
         val typeClassInstance = tc

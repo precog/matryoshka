@@ -65,9 +65,7 @@ sealed abstract class DiffInstances extends DiffInstances0 {
         }
     }
 
-  implicit def equal[T[_[_]], F[_]](
-    implicit T: Equal[T[F]], F: Delay[Equal, F]):
-      Delay[Equal, Diff[T, F, ?]] =
+  implicit def equal[T[_[_]], F[_]](implicit T: Equal[T[F]], F: Delay[Equal, F]): Delay[Equal, Diff[T, F, ?]] =
     new Delay[Equal, Diff[T, F, ?]] {
       def apply[α](eq: Equal[α]) =
         Equal.equal((a, b) => (a, b) match {

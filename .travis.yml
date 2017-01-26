@@ -19,4 +19,4 @@ script:
   - sbt coverage doc test tut
   - sbt coverageReport
 after_success:
-  - pip install --user codecov && codecov
+  - bash <(curl -s https://codecov.io/bash)

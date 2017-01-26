@@ -10,6 +10,7 @@ lazy val checkHeaders = taskKey[Unit]("Fail the build if createHeaders is not up
 val monocleVersion = "1.4.0"
 val scalazVersion = "7.2.8"
 
+
 lazy val standardSettings = Seq[Setting[_]](
   headers := Map(
     "scala" -> Apache2_0("2014–2016", "SlamData Inc."),
@@ -43,7 +44,7 @@ lazy val standardSettings = Seq[Setting[_]](
     "-unchecked",
     "-Xfatal-warnings",
     "-Xfuture",
-    // "-Xlint",
+    "-Xlint",
     "-Yno-adapted-args",
     "-Yno-imports",
     "-Ywarn-dead-code", // N.B. doesn't work well with the ??? hole
@@ -56,7 +57,11 @@ lazy val standardSettings = Seq[Setting[_]](
   scalacOptions in (Test, console) --= Seq(
     "-Yno-imports",
     "-Ywarn-unused-import"),
-  wartremoverErrors in (Compile, compile) ++= warts, // Warts.all,
+  wartremoverErrors in (Compile, compile) ++= Warts.allBut(
+    Wart.Any,                   // – see wartremover/wartremover#263
+    Wart.ExplicitImplicitTypes, // – see mpilquist/simulacrum#35
+    Wart.ImplicitConversion,    // – see wartremover/wartremover#267
+    Wart.Nothing),              // – see wartremover/wartremover#263
 
   libraryDependencies ++= Seq(
     "com.github.julien-truffaut" %%% "monocle-core" % monocleVersion % "compile, test",
@@ -68,36 +73,6 @@ lazy val standardSettings = Seq[Setting[_]](
   checkHeaders := {
     if ((createHeaders in Compile).value.nonEmpty) sys.error("headers not all present")
   })
-
-// Using a Seq of desired warts instead of Warts.allBut due to an incremental compilation issue.
-// https://github.com/puffnfresh/wartremover/issues/202
-// omissions:
-//   Wart.Any
-//   Wart.ExplicitImplicitTypes - see mpilquist/simulacrum#35
-//   Wart.Nothing
-//   Wart.Throw
-val warts = Seq(
-  Wart.Any2StringAdd,
-  Wart.AsInstanceOf,
-  Wart.DefaultArguments,
-  Wart.EitherProjectionPartial,
-  Wart.Enumeration,
-  Wart.FinalCaseClass,
-  Wart.IsInstanceOf,
-  Wart.JavaConversions,
-  Wart.ListOps,
-  Wart.MutableDataStructures,
-  Wart.NoNeedForMonad,
-  Wart.NonUnitStatements,
-  Wart.Null,
-  Wart.Option2Iterable,
-  Wart.OptionPartial,
-  Wart.Product,
-  Wart.Serializable,
-  Wart.Return,
-  Wart.ToString,
-  Wart.TryPartial,
-  Wart.Var)
 
 lazy val publishSettings = Seq[Setting[_]](
   organizationName := "SlamData Inc.",
@@ -162,7 +137,6 @@ lazy val tests = crossProject
   .dependsOn(core, scalacheck)
   .settings(standardSettings ++ noPublishSettings: _*)
   .settings(libraryDependencies ++= Seq(
-    "org.typelevel"              %% "discipline"    % "0.7.1"        % Test,
     "com.github.julien-truffaut" %% "monocle-law"   % monocleVersion % Test,
     "org.typelevel"              %% "scalaz-specs2" % "0.5.0"        % Test,
     "org.specs2"                 %% "specs2-core"   % "3.8.6"        % Test))

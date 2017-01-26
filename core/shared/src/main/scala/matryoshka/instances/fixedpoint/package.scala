@@ -113,7 +113,8 @@ package object fixedpoint {
       (i, self).ana[T](ListF.takeUpTo)
   }
 
-  implicit def ListOps[A](self: List[A]) = new RecListFOps[List[A], A](self)
+  implicit def ListOps[A](self: List[A]): RecListFOps[List[A], A] =
+    new RecListFOps[List[A], A](self)
 
   /** A lazy (potentially-infinite) list.
     */
@@ -228,7 +229,7 @@ package object fixedpoint {
     }
 
     // TODO: Would be nice to have this in ApplicativeOps
-    def almostEqual[F[_]: Applicative, A: Equal](a: F[A], b: F[A]): F[Boolean] =
+    def almostEqual[F[_]: Applicative, B: Equal](a: F[B], b: F[B]): F[Boolean] =
       (a ⊛ b)(_ ≟ _)
 
     /** If two `Partial`s eventually have the same value, then they are

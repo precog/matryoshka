@@ -25,7 +25,7 @@ import scalaz._, Scalaz._
 import simulacrum._
 
 @typeclass trait Diffable[F[_]] { self =>
-  private implicit def self0 = self
+  private implicit def selfʹ: Diffable[F] = self
 
   def diffImpl[T[_[_]]: BirecursiveT](l: T[F], r: T[F]):
       Option[DiffT[T, F]]

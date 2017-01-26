@@ -54,8 +54,7 @@ object Birecursive {
   }
 
   trait ToBirecursiveOps {
-    implicit def toBirecursiveOps[T, F[_]](target: T)(implicit tc: Aux[T, F])
-        : Ops[T, F] =
+    implicit def toBirecursiveOps[T, F[_]](target: T)(implicit tc: Aux[T, F]): Ops[T, F] =
       new Ops[T, F] {
         val self = target
         val typeClassInstance = tc
@@ -69,8 +68,7 @@ object Birecursive {
   }
 
   object ops {
-    implicit def toAllBirecursiveOps[T, F[_]](target: T)(implicit tc: Aux[T, F])
-        : AllOps[T, F] =
+    implicit def toAllBirecursiveOps[T, F[_]](target: T)(implicit tc: Aux[T, F]): AllOps[T, F] =
       new AllOps[T, F] {
         val self = target
         val typeClassInstance = tc

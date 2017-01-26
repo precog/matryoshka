@@ -50,7 +50,7 @@ object ListF {
   def seqIso[A] = AlgebraIso[ListF[A, ?], Seq[A]] {
     case ConsF(h, t) => h +: t
     case NilF()      => Seq.empty
-  } (s => s.headOption.fold[ListF[A, Seq[A]]](NilF())(ConsF(_, s.tail)))
+  } (s => s.headOption.fold[ListF[A, Seq[A]]](NilF())(ConsF(_, s.drop(1))))
 
   def takeUpTo[N, T, A](implicit N: Recursive.Aux[N, Option], T: Recursive.Aux[T, ListF[A, ?]]): Coalgebra[ListF[A, ?], (N, T)] =
     pair => pair._1.project.fold[ListF[A, (N, T)]](NilF())(p => pair._2.project.map((p, _)))

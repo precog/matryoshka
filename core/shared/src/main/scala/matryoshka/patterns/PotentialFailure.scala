@@ -34,9 +34,7 @@ final case class PartialFailure[T[_[_]], F[_], E, A] private[patterns](v: F[A])
     extends PotentialFailure[T, F, E, A]
 
 object PotentialFailure {
-  implicit def potentialFailureEqual[T[_[_]], F[_], E: Equal](
-    implicit T: Equal[T[F]], F: Delay[Equal, F]):
-      Delay[Equal, PotentialFailure[T, F, E, ?]] =
+  implicit def potentialFailureEqual[T[_[_]], F[_], E: Equal](implicit T: Equal[T[F]], F: Delay[Equal, F]): Delay[Equal, PotentialFailure[T, F, E, ?]] =
     new Delay[Equal, PotentialFailure[T, F, E, ?]] {
       def apply[α](eq: Equal[α]) =
         Equal.equal {
