@@ -6,6 +6,13 @@ jdk:
   - oraclejdk8
   - oraclejdk7
   - openjdk7
+matrix:
+  exclude: # NB: Scala 2.12 requires JDK 8
+  - scala: 2.12.0
+    jdk: oraclejdk7
+  - scala: 2.12.0
+    jdk: openjdk7
+
 sudo: false
 script:
   - sbt checkHeaders
