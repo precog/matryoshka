@@ -333,12 +333,17 @@ package object matryoshka {
     *
     * @group refolds
     */
-  def coelgotM[M[_]] = new CoelgotMPartiallyApplied[M]
-  final class CoelgotMPartiallyApplied[M[_]] {
-    def apply[F[_]: Traverse, A, B](a: A)(φ: ElgotAlgebraM[(A, ?), M, F, B], ψ: CoalgebraM[M, F, A])(implicit M: Monad[M]):
-        M[B] = {
-      def h(a: A): M[B] = ψ(a) >>= (_.traverse(h)) >>= (x => φ((a, x)))
-      h(a)
+  object coelgotM {
+    def apply[M[_]] = new PartiallyApplied[M]
+    final class PartiallyApplied[M[_]] {
+      def apply[F[_]: Traverse, A, B]
+        (a: A)
+        (φ: ElgotAlgebraM[(A, ?), M, F, B], ψ: CoalgebraM[M, F, A])
+        (implicit M: Monad[M])
+          : M[B] = {
+        def h(a: A): M[B] = ψ(a) >>= (_.traverse(h)) >>= (x => φ((a, x)))
+        h(a)
+      }
     }
   }
 
@@ -491,9 +496,6 @@ package object matryoshka {
           F.lift(Free.point[H, α](_)),
           as => k(as ∘ (distGFutu(k).apply)) ∘ (Free.liftF(_).join))
     }
-
-  sealed trait Hole
-  val Hole = new Hole{}
 
   def holes[F[_]: Traverse, A](fa: F[A]): F[(A, Coalgebra[F, A])] =
     (fa.mapAccumL(0) {
@@ -754,8 +756,6 @@ package object matryoshka {
     */
   def substitute[T: Equal](original: T, replacement: T): T => T \/ T =
     find[T](_ ≟ original)(_).leftMap(_ => replacement)
-
-  sealed abstract class ∘[F[_], G[_]] { type λ[A] = F[G[A]] }
 
   /** This implicit allows Delay implicits to be found when searching for a
     * traditionally-defined instance.

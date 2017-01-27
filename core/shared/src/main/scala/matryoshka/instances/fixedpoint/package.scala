@@ -81,7 +81,7 @@ package object fixedpoint {
   type List[A]         = Mu[ListF[A, ?]]
   object List {
     def apply[A](elems: A*) =
-      elems.ana[Mu[ListF[A, ?]]](ListF.seqIso[A].reverseGet)
+      elems.toList.ana[Mu[ListF[A, ?]]](ListF.listIso[A].reverseGet)
 
     def tuple[A](elem: => A) = λ[Option ~> ListF[A, ?]] {
       case None    => NilF()
@@ -113,7 +113,8 @@ package object fixedpoint {
       (i, self).ana[T](ListF.takeUpTo)
   }
 
-  implicit def ListOps[A](self: List[A]) = new RecListFOps[List[A], A](self)
+  implicit def ListOps[A](self: List[A]): RecListFOps[List[A], A] =
+    new RecListFOps[List[A], A](self)
 
   /** A lazy (potentially-infinite) list.
     */
@@ -212,7 +213,7 @@ package object fixedpoint {
       fa.project.fold(f, l => Partial.later(bind(l)(f)))
   }
 
-  implicit class PartialOps[A](self: Nu[A \/ ?]) {
+  implicit class PartialOps[A](self: Partial[A]) {
     def step: A \/ Partial[A] = self.project
 
     /** Returns `left` if the result was found within the given number of steps.
@@ -228,13 +229,10 @@ package object fixedpoint {
     }
 
     // TODO: Would be nice to have this in ApplicativeOps
-    def almostEqual[F[_]: Applicative, A: Equal](a: F[A], b: F[A]): F[Boolean] =
-      (a ⊛ b)(_ ≟ _)
-
     /** If two `Partial`s eventually have the same value, then they are
       * equivalent.
       */
     def ≈(that: Partial[A])(implicit A: Equal[A]): Partial[Boolean] =
-      almostEqual[Partial, A](self, that)
+      (self ⊛ that)(_ ≟ _)
   }
 }
