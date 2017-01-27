@@ -18,7 +18,7 @@ package matryoshka.patterns
 
 import matryoshka._, Recursive.ops._
 
-import scala.{Boolean, List, Nil, None, Option, Seq, ::}
+import scala.{Boolean, List, Nil, None, Option, ::}
 
 import scalaz._, Scalaz._
 
@@ -44,13 +44,6 @@ object ListF {
     case h :: t => ConsF(h, t)
     case Nil    => NilF()
   }
-
-  /** Because sometimes you have to deal with `_*`.
-    */
-  def seqIso[A] = AlgebraIso[ListF[A, ?], Seq[A]] {
-    case ConsF(h, t) => h +: t
-    case NilF()      => Seq.empty
-  } (s => s.headOption.fold[ListF[A, Seq[A]]](NilF())(ConsF(_, s.drop(1))))
 
   def takeUpTo[N, T, A](implicit N: Recursive.Aux[N, Option], T: Recursive.Aux[T, ListF[A, ?]]): Coalgebra[ListF[A, ?], (N, T)] =
     pair => pair._1.project.fold[ListF[A, (N, T)]](NilF())(p => pair._2.project.map((p, _)))

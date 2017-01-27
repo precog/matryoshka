@@ -23,12 +23,12 @@ import matryoshka.implicits._
 import org.scalacheck._
 import scalaz._, Scalaz._
 
-sealed trait ShrinkInstancesʹ {
+trait ShrinkInstancesʹ {
   implicit def delayShrink[F[_], A](implicit A: Shrink[A], F: Delay[Shrink, F]): Shrink[F[A]] =
     F(A)
 }
 
-sealed trait ShrinkInstances extends ShrinkInstancesʹ {
+trait ShrinkInstances extends ShrinkInstancesʹ {
   /** An instance for [[matryoshka.Recursive]] types where the [[Base]] is
     * [[scalaz.Foldable]].
     */

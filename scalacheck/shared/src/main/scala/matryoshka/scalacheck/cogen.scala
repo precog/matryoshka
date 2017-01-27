@@ -24,12 +24,12 @@ import matryoshka.patterns._
 import org.scalacheck._
 import scalaz._
 
-trait CogenInstances0 {
+trait CogenInstancesʹ {
   implicit def delayCogen[F[_], A](implicit F: Delay[Cogen, F], A: Cogen[A]): Cogen[F[A]] =
     F(A)
 }
 
-trait CogenInstances extends CogenInstances0 {
+trait CogenInstances extends CogenInstancesʹ {
   // TODO: Define this using a fold rather than `project`
   def recursiveCogen[T, F[_]: Functor]
     (implicit T: Recursive.Aux[T, F], F: Delay[Cogen, F])

@@ -27,14 +27,14 @@ import org.scalacheck._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalaCheckBinding._
 
-sealed trait ArbitraryInstances0 {
+trait ArbitraryInstancesʹ {
   implicit def delayArbitrary[F[_], A](
     implicit A: Arbitrary[A], F: Delay[Arbitrary, F]):
       Arbitrary[F[A]] =
     F(A)
 }
 
-sealed trait ArbitraryInstances extends ArbitraryInstances0 {
+trait ArbitraryInstances extends ArbitraryInstancesʹ {
   def corecursiveArbitrary[T, F[_]: Functor]
     (implicit T: Corecursive.Aux[T, F], fArb: Delay[Arbitrary, F])
       : Arbitrary[T] =

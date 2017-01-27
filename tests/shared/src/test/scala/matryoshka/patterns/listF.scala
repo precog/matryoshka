@@ -21,7 +21,7 @@ import matryoshka.helpers._
 import matryoshka.scalacheck.arbitrary._
 
 import java.lang.String
-import scala.{Int, Seq}
+import scala.Int
 import scala.Predef.{implicitly => imp}
 
 import org.scalacheck._
@@ -31,15 +31,10 @@ import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
 class ListFSpec extends Specification with ScalaCheck with AlgebraChecks {
-  "ListF should satisfy relevant laws" >> {
-    addFragments(equal.laws[ListF[String, Int]])
-    addFragments(bitraverse.laws[ListF])
-  }
+  equal.laws[ListF[String, Int]].check(Test.Parameters.default)
+  bitraverse.laws[ListF].check(Test.Parameters.default)
 
   checkAlgebraIsoLaws(
     "ListF ⇔ List", ListF.listIso[Int])(
     Arbitrary(Gen.listOf(Arbitrary.arbInt.arbitrary)), imp, imp, imp, imp)
-  checkAlgebraIsoLaws(
-    "ListF ⇔ Seq", ListF.seqIso[Int])(
-    Arbitrary(Gen.listOf(Arbitrary.arbInt.arbitrary).map(_.toSeq)), Equal.equalA[Seq[Int]], imp, imp, imp)
 }
