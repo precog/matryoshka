@@ -139,7 +139,7 @@ lazy val tests = crossProject
   .settings(libraryDependencies ++= Seq(
     "com.github.julien-truffaut" %% "monocle-law"   % monocleVersion % Test,
     "org.typelevel"              %% "scalaz-specs2" % "0.5.0"        % Test,
-    "org.specs2"                 %% "specs2-core"   % "3.8.6"        % Test))
+    "org.specs2"                 %% "specs2-core"   % "3.8.7"        % Test))
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val docs = project
