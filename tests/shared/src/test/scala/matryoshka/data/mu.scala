@@ -24,13 +24,14 @@ import matryoshka.scalacheck.cogen._
 
 import scala.Int
 
-import org.scalacheck.Test
 import org.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
 class MuSpec extends Specification with AlgebraChecks {
-  equal.laws[Mu[Exp]].check(Test.Parameters.default)
+  "Mu" >> {
+    addFragments(properties(equal.laws[Mu[Exp]]))
 
-  checkFoldIsoLaws[Mu[CoEnv[Int, Exp, ?]], CoEnv[Int, Exp, ?], Free[Exp, Int]]("Mu", CoEnv.freeIso)
+    checkFoldIsoLaws[Mu[CoEnv[Int, Exp, ?]], CoEnv[Int, Exp, ?], Free[Exp, Int]]("Mu", CoEnv.freeIso)
+  }
 }

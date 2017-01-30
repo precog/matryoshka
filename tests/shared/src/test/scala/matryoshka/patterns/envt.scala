@@ -26,14 +26,15 @@ import matryoshka.scalacheck.cogen._
 import java.lang.{String}
 import scala.{Int}
 
-import org.scalacheck.Test
 import org.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
 class EnvTSpec extends Specification with AlgebraChecks {
-  equal.laws[EnvT[String, Exp, Int]].check(Test.Parameters.default)
-  comonad.laws[EnvT[String, NonEmptyList, ?]].check(Test.Parameters.default)
+  "EnvT" >> {
+    addFragments(properties(equal.laws[EnvT[String, Exp, Int]]))
+    addFragments(properties(comonad.laws[EnvT[String, NonEmptyList, ?]]))
 
-  checkAlgebraIsoLaws("EnvT ⇔ Cofree", EnvT.cofreeIso[Int, Exp])
+    checkAlgebraIsoLaws("EnvT ⇔ Cofree", EnvT.cofreeIso[Int, Exp])
+  }
 }

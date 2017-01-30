@@ -24,13 +24,14 @@ import matryoshka.scalacheck.cogen._
 
 import scala.Int
 
-import org.scalacheck.Test
 import org.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
 class NuSpec extends Specification with AlgebraChecks {
-  equal.laws[Nu[Exp]].check(Test.Parameters.default)
+  "Nu" >> {
+    addFragments(properties(equal.laws[Nu[Exp]]))
 
-  checkFoldIsoLaws[Nu[CoEnv[Int, Exp, ?]], CoEnv[Int, Exp, ?], Free[Exp, Int]]("Nu", CoEnv.freeIso)
+    checkFoldIsoLaws[Nu[CoEnv[Int, Exp, ?]], CoEnv[Int, Exp, ?], Free[Exp, Int]]("Nu", CoEnv.freeIso)
+  }
 }

@@ -122,6 +122,8 @@ object Example {
 }
 
 class ExampleSpec extends Specification with ScalaCheck {
-  equal.laws[Example[Int]].check(Test.Parameters.default)
-  traverse.laws[Example].check(Test.Parameters.default)
+  "Example" >> {
+    addFragments(properties(equal.laws[Example[Int]]))
+    addFragments(properties(traverse.laws[Example]))
+  }
 }

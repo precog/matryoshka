@@ -31,10 +31,12 @@ import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
 class ListFSpec extends Specification with ScalaCheck with AlgebraChecks {
-  equal.laws[ListF[String, Int]].check(Test.Parameters.default)
-  bitraverse.laws[ListF].check(Test.Parameters.default)
+  "ListF" >> {
+    addFragments(properties(equal.laws[ListF[String, Int]]))
+    addFragments(properties(bitraverse.laws[ListF]))
 
-  checkAlgebraIsoLaws(
-    "ListF ⇔ List", ListF.listIso[Int])(
-    Arbitrary(Gen.listOf(Arbitrary.arbInt.arbitrary)), imp, imp, imp, imp)
+    checkAlgebraIsoLaws(
+      "ListF ⇔ List", ListF.listIso[Int])(
+      Arbitrary(Gen.listOf(Arbitrary.arbInt.arbitrary)), imp, imp, imp, imp)
+  }
 }
