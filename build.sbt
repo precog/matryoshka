@@ -13,8 +13,8 @@ val scalazVersion = "7.2.8"
 
 lazy val standardSettings = Seq[Setting[_]](
   headers := Map(
-    "scala" -> Apache2_0("2014–2016", "SlamData Inc."),
-    "java"  -> Apache2_0("2014–2016", "SlamData Inc.")),
+    "scala" -> Apache2_0("2014–2017", "SlamData Inc."),
+    "java"  -> Apache2_0("2014–2017", "SlamData Inc.")),
   scalaOrganization := "org.typelevel",
   logBuffered in Compile := false,
   logBuffered in Test := false,
