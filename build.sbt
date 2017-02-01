@@ -57,6 +57,8 @@ lazy val standardSettings = Seq[Setting[_]](
   scalacOptions in (Test, console) --= Seq(
     "-Yno-imports",
     "-Ywarn-unused-import"),
+  // For specs2
+  scalacOptions in Test += "-Yrangepos",
   wartremoverErrors in (Compile, compile) ++= Warts.allBut(
     Wart.Any,                   // – see wartremover/wartremover#263
     Wart.ExplicitImplicitTypes, // – see mpilquist/simulacrum#35

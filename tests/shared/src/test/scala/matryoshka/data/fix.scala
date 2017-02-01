@@ -24,14 +24,16 @@ import matryoshka.scalacheck.cogen._
 
 import scala.Int
 
-import org.scalacheck.Test
 import org.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
 class FixSpec extends Specification with AlgebraChecks {
 
-  equal.laws[Fix[Exp]].check(Test.Parameters.default)
+  "Fix" >> {
 
-  checkFoldIsoLaws[Fix[CoEnv[Int, Exp, ?]], CoEnv[Int, Exp, ?], Free[Exp, Int]]("Fix", CoEnv.freeIso)
+    addFragments(properties(equal.laws[Fix[Exp]]))
+
+    checkFoldIsoLaws[Fix[CoEnv[Int, Exp, ?]], CoEnv[Int, Exp, ?], Free[Exp, Int]]("Fix", CoEnv.freeIso)
+  }
 }

@@ -40,15 +40,19 @@ import scalaz.scalacheck.ScalazProperties._
 class ExpSpec extends Specification {
   // NB: These are just a sanity check that the data structure created for the
   //     tests is lawful.
-  equal.laws[Exp[Int]].check(Test.Parameters.default)
-  traverse.laws[Exp].check(Test.Parameters.default)
+  "Exp" >> {
+    addFragments(properties(equal.laws[Exp[Int]]))
+    addFragments(properties(traverse.laws[Exp]))
+  }
 }
 
-class Exp2Spec extends Specification {
+class Exp2Spec extends Specification with ScalaCheck {
   // NB: These are just a sanity check that the data structure created for the
   //     tests is lawful.
-  equal.laws[Exp2[Int]].check(Test.Parameters.default)
-  functor.laws[Exp2].check(Test.Parameters.default)
+  "Exp2" >> {
+    addFragments(properties(equal.laws[Exp2[Int]]))
+    addFragments(properties(functor.laws[Exp2]))
+  }
 }
 
 class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers with Discipline with AlgebraChecks {

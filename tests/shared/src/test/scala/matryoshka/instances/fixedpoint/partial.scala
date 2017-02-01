@@ -35,12 +35,14 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck {
   def sometimesNeverGen[A: Arbitrary]: Gen[Partial[A]] =
     Gen.oneOf(Arbitrary.arbitrary[Partial[A]], Gen.const(Partial.never[A]))
 
-  Props.equal.laws[Partial[Int]](Partial.equal, implicitly).check(Test.Parameters.default)
-  Props.monad.laws[Partial](implicitly, implicitly, implicitly, implicitly, Partial.equal)
-    .check(Test.Parameters.default)
-  // NB: We get Foldable for free due to `RecursiveT[Nu]` and
-  //     `Bifoldable[\/]`
-  Props.foldable.laws[Partial].check(Test.Parameters.default)
+  "Partial laws" >> {
+
+    addFragments(properties(Props.equal.laws[Partial[Int]](Partial.equal, implicitly)))
+    addFragments(properties(Props.monad.laws[Partial](implicitly, implicitly, implicitly, implicitly, Partial.equal)))
+    // NB: We get Foldable for free due to `RecursiveT[Nu]` and
+    //     `Bifoldable[\/]`
+    addFragments(properties(Props.foldable.laws[Partial]))
+  }
 
   // https://en.wikipedia.org/wiki/McCarthy_91_function
   def mc91(n: Int): Partial[Int] =

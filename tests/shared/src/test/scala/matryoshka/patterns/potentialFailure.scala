@@ -42,10 +42,9 @@ class PotentialFailureSpec extends Specification with ScalaCheck {
           F(arb).arbitrary.map(PartialFailure[T, F, E, α](_))))
     }
 
-  equal.laws[PotentialFailure[Fix, Exp, String, Int]]
-    .check(Test.Parameters.default)
-  bitraverse.laws[PotentialFailure[Fix, Exp, ?, ?]]
-    .check(Test.Parameters.default)
-  traverse.laws[PotentialFailure[Fix, Exp, String, ?]]
-    .check(Test.Parameters.default)
+  "PotentialFailure" >> {
+    addFragments(properties(equal.laws[PotentialFailure[Fix, Exp, String, Int]]))
+    addFragments(properties(bitraverse.laws[PotentialFailure[Fix, Exp, ?, ?]]))
+    addFragments(properties(traverse.laws[PotentialFailure[Fix, Exp, String, ?]]))
+  }
 }

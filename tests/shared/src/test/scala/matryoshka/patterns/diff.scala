@@ -57,8 +57,10 @@ trait DiffArb {
 //     ScalazProperties.equal. There is probably a better way to disambiguate
 //     them.
 class DiffLaws extends Specification with DiffArb with ScalaCheck {
-  equal.laws[Diff[Mu, Exp, Int]].check(Test.Parameters.default)
-  traverse.laws[Diff[Mu, Exp, ?]].check(Test.Parameters.default)
+  "Diff" >> {
+    addFragments(properties(equal.laws[Diff[Mu, Exp, Int]]))
+    addFragments(properties(traverse.laws[Diff[Mu, Exp, ?]]))
+  }
 }
 
 class DiffSpec extends Specification with DiffArb with ScalazMatchers {
