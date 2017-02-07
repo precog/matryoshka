@@ -16,13 +16,12 @@
 
 package matryoshka.instances.fixedpoint
 
+import slamdata.Predef._
 import matryoshka._
 import matryoshka.data.Mu
 import matryoshka.helpers._
 import matryoshka.implicits._
 import matryoshka.scalacheck.arbitrary._
-
-import scala.Option
 
 // import monocle.law.discipline._
 import org.specs2.mutable._

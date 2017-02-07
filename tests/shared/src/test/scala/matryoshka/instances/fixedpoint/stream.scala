@@ -16,10 +16,9 @@
 
 package matryoshka.instances.fixedpoint
 
+import slamdata.Predef._
 import matryoshka._
 import matryoshka.implicits._
-
-import scala.Int
 
 import org.specs2.ScalaCheck
 import org.specs2.mutable._

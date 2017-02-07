@@ -16,9 +16,8 @@
 
 package matryoshka.patterns
 
+import slamdata.Predef._
 import matryoshka._
-
-import scala.Unit
 
 import scalaz._, Scalaz._
 

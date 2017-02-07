@@ -16,10 +16,9 @@
 
 package matryoshka.patterns
 
+import slamdata.Predef._
 import matryoshka._
 import matryoshka.implicits._
-
-import scala.Option
 
 import scalaz._, Scalaz._
 import simulacrum._

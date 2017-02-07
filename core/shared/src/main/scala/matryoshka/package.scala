@@ -14,11 +14,9 @@
  * limitations under the License.
  */
 
+import slamdata.Predef._
 import matryoshka.implicits._
 import matryoshka.patterns.{CoEnv, EnvT}
-
-import scala.{Boolean, Function, Int, None, Option, Unit}
-import scala.collection.immutable.{List, Nil, ::}
 
 import monocle._
 import scalaz._, Liskov._, Scalaz._

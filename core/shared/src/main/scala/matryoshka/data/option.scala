@@ -16,9 +16,8 @@
 
 package matryoshka.data
 
+import slamdata.Predef._
 import matryoshka._
-
-import scala.Option
 
 import scalaz._
 

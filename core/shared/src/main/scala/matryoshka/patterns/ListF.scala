@@ -16,9 +16,8 @@
 
 package matryoshka.patterns
 
+import slamdata.Predef._
 import matryoshka._, Recursive.ops._
-
-import scala.{Boolean, List, Nil, None, Option, ::}
 
 import scalaz._, Scalaz._
 

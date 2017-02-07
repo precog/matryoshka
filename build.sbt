@@ -1,118 +1,41 @@
 import de.heikoseeberger.sbtheader.HeaderPlugin
 import de.heikoseeberger.sbtheader.license.Apache2_0
+import org.scalajs.sbtplugin.ScalaJSCrossVersion
 import scoverage._
 import sbt._
 import Keys._
-import org.scalajs.sbtplugin.cross.CrossProject
+import slamdata.CommonDependencies
+import slamdata.SbtSlamData.transferPublishAndTagResources
 
-lazy val checkHeaders = taskKey[Unit]("Fail the build if createHeaders is not up-to-date")
-
-val monocleVersion = "1.4.0"
-val scalazVersion = "7.2.8"
-
-
-lazy val standardSettings = Seq[Setting[_]](
-  headers := Map(
-    "scala" -> Apache2_0("2014–2017", "SlamData Inc."),
-    "java"  -> Apache2_0("2014–2017", "SlamData Inc.")),
-  scalaOrganization := "org.typelevel",
+lazy val standardSettings = commonBuildSettings ++ Seq(
   logBuffered in Compile := false,
   logBuffered in Test := false,
-  outputStrategy := Some(StdoutOutput),
   updateOptions := updateOptions.value.withCachedResolution(true),
-  autoCompilerPlugins := true,
-  autoAPIMappings := true,
   exportJars := true,
   organization := "com.slamdata",
-  resolvers ++= Seq(
-    Resolver.sonatypeRepo("releases"),
-    Resolver.sonatypeRepo("snapshots"),
-    "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/",
-    "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
-    "bintray/non" at "http://dl.bintray.com/non/maven"),
-  addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.3"),
-  addCompilerPlugin("org.scalamacros" % "paradise"       % "2.1.0" cross CrossVersion.full),
   ScoverageKeys.coverageHighlighting := true,
-
-  scalacOptions ++= Seq(
-    "-deprecation",
-    "-encoding", "UTF-8",
-    "-feature",
-    "-language:existentials",
-    "-language:higherKinds",
-    "-language:implicitConversions",
-    "-unchecked",
-    "-Xfatal-warnings",
-    "-Xfuture",
-    "-Xlint",
-    "-Yno-adapted-args",
-    "-Yno-imports",
-    "-Ywarn-dead-code", // N.B. doesn't work well with the ??? hole
-    "-Ywarn-numeric-widen",
-    "-Ypartial-unification",
-    "-Ywarn-unused-import",
-    "-Ywarn-value-discard"),
   scalacOptions in (Compile, doc) ++= Seq("-groups", "-implicits"),
-  scalacOptions in (Compile, doc) -= "-Xfatal-warnings",
-  scalacOptions in (Test, console) --= Seq(
-    "-Yno-imports",
-    "-Ywarn-unused-import"),
-  // For specs2
-  scalacOptions in Test += "-Yrangepos",
-  wartremoverErrors in (Compile, compile) ++= Warts.allBut(
-    Wart.Any,                   // – see wartremover/wartremover#263
-    Wart.ExplicitImplicitTypes, // – see mpilquist/simulacrum#35
-    Wart.ImplicitConversion,    // – see wartremover/wartremover#267
-    Wart.Nothing),              // – see wartremover/wartremover#263
+  wartremoverWarnings in (Compile, compile) --= Seq(
+    Wart.PublicInference,  // TODO: enable incrementally — currently results in many errors
+    Wart.ImplicitParameter // TODO: enable incrementally — currently results in many errors
+  ),
 
   libraryDependencies ++= Seq(
-    "com.github.julien-truffaut" %%% "monocle-core" % monocleVersion % "compile, test",
-    "org.scalaz"                 %%% "scalaz-core"  % scalazVersion  % "compile, test",
-    "com.github.mpilquist"       %%% "simulacrum"   % "0.10.0"       % "compile, test"),
+    CommonDependencies.slamdata.predef,
+    CommonDependencies.monocle.core.cross(ScalaJSCrossVersion.binary)          % "compile, test",
+    CommonDependencies.scalaz.core.cross(ScalaJSCrossVersion.binary)           % "compile, test",
+    CommonDependencies.simulacrum.simulacrum.cross(ScalaJSCrossVersion.binary) % "compile, test")
+)
 
-  licenses += ("Apache 2", url("http://www.apache.org/licenses/LICENSE-2.0")),
-
-  checkHeaders := {
-    if ((createHeaders in Compile).value.nonEmpty) sys.error("headers not all present")
-  })
-
-lazy val publishSettings = Seq[Setting[_]](
+lazy val publishSettings = commonPublishSettings ++ Seq(
   organizationName := "SlamData Inc.",
   organizationHomepage := Some(url("http://slamdata.com")),
-  homepage := Some(url("https://github.com/slamdata/matryoshka")),
-  licenses := Seq("Apache 2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0")),
-  publishTo := {
-    val nexus = "https://oss.sonatype.org/"
-    if (isSnapshot.value)
-      Some("snapshots" at nexus + "content/repositories/snapshots")
-    else
-      Some("releases"  at nexus + "service/local/staging/deploy/maven2")
-  },
-  publishMavenStyle := true,
-  publishArtifact in Test := false,
-  pomIncludeRepository := { _ => false },
-  releasePublishArtifactsAction := PgpKeys.publishSigned.value,
-  releaseCrossBuild := true,
-  autoAPIMappings := true,
-  scmInfo := Some(
-    ScmInfo(
-      url("https://github.com/slamdata/matryoshka"),
-      "scm:git@github.com:slamdata/matryoshka.git")),
-  developers := List(
-    Developer(
-      id = "slamdata",
-      name = "SlamData Inc.",
-      email = "contact@slamdata.com",
-      url = new URL("http://slamdata.com"))))
-
-def noPublishSettings = Seq(
-  publish := (),
-  publishLocal := (),
-  publishArtifact := false)
+  homepage := Some(url("https://github.com/slamdata/matryoshka")))
 
 lazy val root = Project("root", file("."))
   .settings(name := "matryoshka")
   .settings(standardSettings ++ noPublishSettings: _*)
+  .settings(transferPublishAndTagResources)
   .aggregate(
     coreJS,  scalacheckJS,  testsJS,
     coreJVM, scalacheckJVM, testsJVM,
@@ -131,7 +54,7 @@ lazy val scalacheck = crossProject
   .settings(libraryDependencies ++= Seq(
     // NB: Needs a version of Scalacheck with rickynils/scalacheck#301.
     "org.scalacheck" %% "scalacheck"                % "1.14.0-861f58e-SNAPSHOT",
-    "org.scalaz"     %% "scalaz-scalacheck-binding" % (scalazVersion + "-scalacheck-1.13")))
+    "org.scalaz"     %% "scalaz-scalacheck-binding" % (CommonDependencies.scalazVersion + "-scalacheck-1.13")))
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val tests = crossProject
@@ -139,9 +62,9 @@ lazy val tests = crossProject
   .dependsOn(core, scalacheck)
   .settings(standardSettings ++ noPublishSettings: _*)
   .settings(libraryDependencies ++= Seq(
-    "com.github.julien-truffaut" %% "monocle-law"   % monocleVersion % Test,
-    "org.typelevel"              %% "scalaz-specs2" % "0.5.0"        % Test,
-    "org.specs2"                 %% "specs2-core"   % "3.8.7"        % Test))
+    CommonDependencies.monocle.law            % Test,
+    CommonDependencies.typelevel.scalazSpecs2 % Test,
+    CommonDependencies.specs2.core            % Test))
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val docs = project

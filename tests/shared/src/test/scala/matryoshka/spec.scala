@@ -16,6 +16,7 @@
 
 package matryoshka
 
+import slamdata.Predef._
 import matryoshka.data._
 import matryoshka.exp._
 import matryoshka.exp2._
@@ -24,10 +25,6 @@ import matryoshka.implicits._
 import matryoshka.runners._
 import matryoshka.scalacheck.arbitrary._
 import matryoshka.scalacheck.cogen._
-
-import java.lang.String
-import scala.{Boolean, Function, Int, None, Option, Predef, Symbol, Unit}
-import scala.collection.immutable.{List, Map, Nil, ::}
 
 import org.scalacheck._
 import org.specs2.ScalaCheck
@@ -140,7 +137,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
   val eval: Algebra[Exp, Int] = {
     case Num(x)    => x
     case Mul(x, y) => x * y
-    case _         => Predef.???
+    case _         => ???
   }
 
   checkAlgebraIsoLaws("recCorec", birecursiveIso[Mu[Exp], Exp])
@@ -480,7 +477,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         case Mul((Embed(Num(0)), _), (Embed(Num(0)), _)) => -1
         case Mul((_,             x), (_,             y)) => x * y
         case Num(x)                                      => x
-        case _                                           => Predef.???
+        case _                                           => ???
       }
 
     "attributePara" >> {
@@ -756,7 +753,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       case Num(x) => x.toString
       case Mul((x, xs), (y, ys)) =>
         xs + " (" + x + ")" + ", " + ys + " (" + y + ")"
-      case _ => Predef.???
+      case _ => ???
     }
 
     "zygo" >> {
