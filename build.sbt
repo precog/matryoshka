@@ -30,7 +30,13 @@ lazy val standardSettings = commonBuildSettings ++ Seq(
 lazy val publishSettings = commonPublishSettings ++ Seq(
   organizationName := "SlamData Inc.",
   organizationHomepage := Some(url("http://slamdata.com")),
-  homepage := Some(url("https://github.com/slamdata/matryoshka")))
+  homepage := Some(url("https://github.com/slamdata/matryoshka")),
+  scmInfo := Some(
+    ScmInfo(
+      url("https://github.com/slamdata/matryoshka"),
+      "scm:git@github.com:slamdata/matryoshka.git"
+    )
+  ))
 
 lazy val root = Project("root", file("."))
   .settings(name := "matryoshka")
