@@ -34,9 +34,7 @@ lazy val publishSettings = commonPublishSettings ++ Seq(
   scmInfo := Some(
     ScmInfo(
       url("https://github.com/slamdata/matryoshka"),
-      "scm:git@github.com:slamdata/matryoshka.git"
-    )
-  ))
+      "scm:git@github.com:slamdata/matryoshka.git")))
 
 lazy val root = Project("root", file("."))
   .settings(name := "matryoshka")

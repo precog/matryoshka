@@ -17,11 +17,10 @@
 package matryoshka
 
 import slamdata.Predef._
-
-import scala.Predef.identity
-
 import matryoshka.implicits._
 import matryoshka.patterns.EnvT
+
+import scala.Predef.identity
 
 import scalaz._, Scalaz._
 
