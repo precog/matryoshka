@@ -18,7 +18,7 @@ script:
   - sbt checkHeaders
   - sbt coverage doc test tut
   - sbt coverageReport
-  - sbt clean
+  - sbt clean transferPublishAndTagResources
   - scripts/publishAndTag 'slamdata/matryoshka'
 after_success:
   - bash <(curl -s https://codecov.io/bash)
