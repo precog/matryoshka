@@ -20,5 +20,8 @@ script:
   - sbt coverageReport
   - sbt clean transferPublishAndTagResources
   - scripts/publishAndTag 'slamdata/matryoshka'
+branches:
+  except:
+  - "/^v\\d+\\.\\d+\\.\\d+$/"
 after_success:
   - bash <(curl -s https://codecov.io/bash)
