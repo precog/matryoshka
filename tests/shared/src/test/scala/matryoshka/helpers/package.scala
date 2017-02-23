@@ -16,7 +16,7 @@
 
 package matryoshka
 
-import scala.{None, Option, Some}
+import slamdata.Predef._
 
 import org.scalacheck._
 import org.specs2.mutable._

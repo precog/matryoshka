@@ -16,13 +16,12 @@
 
 package matryoshka.data
 
+import slamdata.Predef._
 import matryoshka.exp.Exp
 import matryoshka.helpers._
 import matryoshka.patterns.CoEnv
 import matryoshka.scalacheck.arbitrary._
 import matryoshka.scalacheck.cogen._
-
-import scala.Int
 
 import org.specs2.mutable._
 import scalaz._, Scalaz._

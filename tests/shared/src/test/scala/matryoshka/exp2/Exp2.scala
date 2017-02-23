@@ -16,9 +16,8 @@
 
 package matryoshka.exp2
 
+import slamdata.Predef._
 import matryoshka._
-
-import scala.Int
 
 import org.scalacheck._
 import scalaz.{Apply => _, _}, Scalaz._

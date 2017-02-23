@@ -16,9 +16,8 @@
 
 package matryoshka
 
+import slamdata.Predef._
 import matryoshka.data.Fix
-
-import scala.Int
 
 package object exp2 {
   def const = Fix[Exp2](Const())

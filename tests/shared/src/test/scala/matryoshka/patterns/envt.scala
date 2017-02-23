@@ -16,15 +16,13 @@
 
 package matryoshka.patterns
 
+import slamdata.Predef._
 import matryoshka._
 import matryoshka.data.cofree._
 import matryoshka.exp._
 import matryoshka.helpers._
 import matryoshka.scalacheck.arbitrary._
 import matryoshka.scalacheck.cogen._
-
-import java.lang.{String}
-import scala.{Int}
 
 import org.specs2.mutable._
 import scalaz._, Scalaz._

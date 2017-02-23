@@ -16,14 +16,12 @@
 
 package matryoshka.example
 
+import slamdata.Predef._
 import matryoshka._
 import matryoshka.helpers._
 import matryoshka.implicits._
 import matryoshka.patterns._
 import matryoshka.scalacheck.arbitrary._
-
-import java.lang.String
-import scala.{Int, List, None, Option}
 
 import org.scalacheck._
 import org.specs2.ScalaCheck

@@ -16,12 +16,11 @@
 
 package matryoshka.scalacheck
 
+import slamdata.Predef._
 import matryoshka._
 import matryoshka.data._
 import matryoshka.implicits._
 import matryoshka.patterns._
-
-import scala.{Option, None}
 
 import org.scalacheck._
 import scalaz._, Scalaz._

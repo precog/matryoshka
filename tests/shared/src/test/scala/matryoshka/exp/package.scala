@@ -16,9 +16,8 @@
 
 package matryoshka
 
+import slamdata.Predef._
 import matryoshka.data.Fix
-
-import scala.{Int, Symbol}
 
 package object exp {
   def num(v: Int) = Fix[Exp](Num(v))

@@ -16,13 +16,11 @@
 
 package matryoshka.patterns
 
+import slamdata.Predef._
 import matryoshka._
 import matryoshka.data.Fix
 import matryoshka.exp._
 import matryoshka.scalacheck.arbitrary._
-
-import java.lang.String
-import scala.Int
 
 import org.scalacheck._
 import org.specs2.ScalaCheck

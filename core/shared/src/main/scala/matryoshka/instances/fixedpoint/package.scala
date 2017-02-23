@@ -16,14 +16,13 @@
 
 package matryoshka.instances
 
+import slamdata.Predef._
 import matryoshka._
 import matryoshka.data._
 import matryoshka.implicits._
 import matryoshka.patterns._
 
 import monocle.Prism
-import scala.{Boolean, Int, None, Option, Some}
-import scala.annotation.{tailrec}
 
 import scalaz._, Scalaz._
 
@@ -201,7 +200,7 @@ package object fixedpoint {
 
     def fromOption[A](opt: Option[A]): Partial[A] = opt.fold(never[A])(now)
 
-    def fromPartialFunction[A, B](pf: scala.PartialFunction[A, B]):
+    def fromPartialFunction[A, B](pf: PartialFunction[A, B]):
         A => Partial[B] =
       pf.lift ⋙ fromOption
   }

@@ -16,11 +16,9 @@
 
 package matryoshka.exp
 
+import slamdata.Predef._
 import matryoshka._
 import matryoshka.implicits._
-
-import java.lang.String
-import scala.{Int, Symbol}
 
 import org.scalacheck._
 import scalaz._, Scalaz._

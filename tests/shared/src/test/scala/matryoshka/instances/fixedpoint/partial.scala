@@ -16,12 +16,12 @@
 
 package matryoshka.instances.fixedpoint
 
+import slamdata.Predef._
 import matryoshka._
 import matryoshka.implicits._
 import matryoshka.scalacheck.arbitrary._
 
-import scala.Predef.{implicitly}
-import scala.{Int}
+import scala.Predef.implicitly
 
 import org.scalacheck._
 import org.specs2.ScalaCheck

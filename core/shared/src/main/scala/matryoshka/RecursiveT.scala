@@ -16,7 +16,8 @@
 
 package matryoshka
 
-import scala.Serializable
+import slamdata.Predef._
+
 import scalaz._, Scalaz._
 
 /** This is a workaround for a certain use case (e.g.,

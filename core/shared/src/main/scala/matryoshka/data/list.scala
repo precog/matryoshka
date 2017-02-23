@@ -16,10 +16,9 @@
 
 package matryoshka.data
 
+import slamdata.Predef._
 import matryoshka._
 import matryoshka.patterns._
-
-import scala.collection.immutable.{::, List, Nil}
 
 import scalaz._
 

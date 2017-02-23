@@ -16,7 +16,8 @@
 
 package matryoshka
 
-import scala.{None, Option, Unit}
+import slamdata.Predef._
+
 import simulacrum._
 import scalaz._, Scalaz._
 
