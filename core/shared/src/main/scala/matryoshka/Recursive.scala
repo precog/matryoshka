@@ -73,6 +73,20 @@ trait Recursive[T] extends Based[T] {
     g(loop(t))
   }
 
+  def elgotCataM[W[_]: Comonad : Traverse, M[_]: Monad, A]
+    (t: T)
+    (k: DistributiveLaw[Base, (M ∘ W)#λ], g: ElgotAlgebraM[W, M, Base, A])
+    (implicit BT: Traverse[Base])
+      : M[A] = {
+    def loop(t: T): M[Base[W[Base[A]]]] = {
+      project(t).traverse(loop(_) >>= { fwfa => k(fwfa ∘ (_.cojoin.traverse(g))) })
+    }
+
+    loop(t) >>= { fwfa =>
+      k(fwfa ∘ { wfa => g(wfa) ∘ (a => wfa.cobind(_ => a)) })
+    } >>= g
+  }
+
   def para[A](t: T)(f: GAlgebra[(T, ?), Base, A])(implicit BF: Functor[Base])
       : A =
     // NB: This is not implemented with [[matryoshka.distPara]] because that
@@ -102,12 +116,26 @@ trait Recursive[T] extends Based[T] {
       : A =
     gcata[(B, ?), A](t)(distZygo(f), g)
 
+  def zygoM[A, B, M[_]: Monad]
+    (t: T)
+    (f: AlgebraM[M, Base, B], g: GAlgebraM[(B, ?), M, Base, A])
+    (implicit BT: Traverse[Base])
+      : M[A] =
+    gcataM[(B, ?), M, A](t)(distZygoM(f, distApplicative[Base, M]), g)
+
   def elgotZygo[A, B]
     (t: T)
     (f: Algebra[Base, B], g: ElgotAlgebra[(B, ?), Base, A])
     (implicit BF: Functor[Base])
       : A =
     elgotCata[(B, ?), A](t)(distZygo(f), g)
+
+  def elgotZygoM[A, B, M[_]: Monad]
+    (t: T)
+    (f: AlgebraM[M, Base, B], g: ElgotAlgebraM[(B, ?), M, Base, A])
+    (implicit BT: Traverse[Base])
+      : M[A] =
+    elgotCataM[(B, ?), M, A](t)(distZygoM(f, distApplicative[Base, M]), g)
 
   def gzygo[W[_]: Comonad, A, B](
     t: T)(
@@ -481,6 +509,11 @@ object Recursive {
       (implicit BF: Functor[F])
         : A =
       typeClassInstance.elgotCata[W, A](self)(k, g)
+    def elgotCataM[W[_]: Comonad : Traverse, M[_]: Monad, A]
+      (k: DistributiveLaw[F, (M ∘ W)#λ], g: ElgotAlgebraM[W, M, F, A])
+      (implicit BT: Traverse[F])
+        : M[A] =
+      typeClassInstance.elgotCataM[W, M, A](self)(k, g)
     def para[A](f: GAlgebra[(T, ?), F, A])(implicit BF: Functor[F]): A =
       typeClassInstance.para[A](self)(f)
     def elgotPara[A]
@@ -503,11 +536,21 @@ object Recursive {
       (implicit BF: Functor[F])
         : A =
       typeClassInstance.zygo[A, B](self)(f, g)
+    def zygoM[A, B, M[_]: Monad]
+      (f: AlgebraM[M, F, B], g: GAlgebraM[(B, ?), M, F, A])
+      (implicit BT: Traverse[F])
+        : M[A] =
+      typeClassInstance.zygoM[A, B, M](self)(f, g)
     def elgotZygo[A, B]
       (f: Algebra[F, B], g: ElgotAlgebra[(B, ?), F, A])
       (implicit BF: Functor[F])
         : A =
       typeClassInstance.elgotZygo[A, B](self)(f, g)
+    def elgotZygoM[A, B, M[_]: Monad]
+      (f: AlgebraM[M, F, B], g: ElgotAlgebraM[(B, ?), M, F, A])
+      (implicit BT: Traverse[F])
+        : M[A] =
+      typeClassInstance.elgotZygoM[A, B, M](self)(f, g)
     def gzygo[W[_]: Comonad, A, B]
       (f: Algebra[F, B],
         w: DistributiveLaw[F, W],

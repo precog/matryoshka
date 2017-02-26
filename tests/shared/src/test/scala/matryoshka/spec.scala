@@ -134,12 +134,6 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       case _ => t.map(_.head).embed
     }
 
-  val eval: Algebra[Exp, Int] = {
-    case Num(x)    => x
-    case Mul(x, y) => x * y
-    case _         => ???
-  }
-
   checkAlgebraIsoLaws("recCorec", birecursiveIso[Mu[Exp], Exp])
   checkAlgebraIsoLaws("lambek", bilambekIso[Mu[Exp], Exp])
 
@@ -434,10 +428,6 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         i.elgot(eval, extractFactors.generalizeElgot[Int \/ ?]) must equal(x)
       }
     }
-
-    def extractFactors: Coalgebra[Exp, Int] = x =>
-      if (x > 2 && x % 2 == 0) Mul(2, x/2)
-      else Num(x)
 
     "generalizeCoalgebra" >> {
       "behave like ana" ! prop { (i: Int) =>
@@ -746,25 +736,6 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         i.ghylo[Cofree[Exp, ?], Free[Exp, ?]](
           distHisto, distFutu, partialEval[Fix[Exp]], extract2and3) must
           equal(i.chrono(partialEval[Fix[Exp]], extract2and3))
-      }
-    }
-
-    def strings(t: Exp[(Int, String)]): String = t match {
-      case Num(x) => x.toString
-      case Mul((x, xs), (y, ys)) =>
-        xs + " (" + x + ")" + ", " + ys + " (" + y + ")"
-      case _ => ???
-    }
-
-    "zygo" >> {
-      "eval and strings" in {
-        testRec(
-          mul(mul(num(0), num(0)), mul(num(2), num(5))),
-          new RecRunner[Exp, String] {
-            def run[T](implicit TR: Recursive.Aux[T, Exp], TC: Corecursive.Aux[T, Exp]) =
-              _.zygo(eval, strings) must
-                equal("0 (0), 0 (0) (0), 2 (2), 5 (5) (10)")
-          })
       }
     }
 
