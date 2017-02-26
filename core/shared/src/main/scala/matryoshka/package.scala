@@ -229,6 +229,24 @@ package object matryoshka {
       M[B] =
     g(a) >>= (_.traverse(hyloM(_)(f, g)) >>= f)
 
+  /** Composition of an elgot-anamorphism and an elgot-catamorphism that avoids
+    * building the intermediate recursive data structure.
+    *
+    * @group refolds
+    */
+  def elgotHylo[M[_]: Monad, W[_]: Comonad, F[_]: Functor, A, B](
+    f: ElgotAlgebra[W, F, B],
+    g: ElgotCoalgebra[M, F, A],
+    kf: DistributiveLaw[F, W],
+    kg: DistributiveLaw[M, F]
+  ): A => B = {
+    lazy val loop: M[F[A]] => W[F[B]] = {
+      val trans: M[A] => W[B] = ma => loop(ma >>= g) cobind f
+      (kg[A] _) ⋙ (_ map trans) ⋙ kf[B]
+    }
+    g ⋙ loop ⋙ f
+  }
+
   /** `histo ⋘ ana`
     *
     * @group refolds
