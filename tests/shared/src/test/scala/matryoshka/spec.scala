@@ -435,6 +435,74 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
+    val freeVars: Exp[List[Symbol]] => List[Symbol] = {
+      case Var(name) => name :: Nil
+      case Lambda(param, body) => body.filterNot(_ == param)
+      case t         => t.fold
+    }
+
+    val freeVarsNumber: ElgotAlgebra[(List[Symbol], ?), Exp, Int] = {
+      case (vars, _) => vars.size
+    }
+
+    val generateVars: Int => Exp[Int] = n => Var(Symbol("x" + ((n * 13) % n)))
+
+    val generateTerm: ElgotCoalgebra[Int \/ ?, Exp, (Int, Int)] = {
+      case (n, 0)     if n <= 0 => Num(42).right
+      case (n, bound) if n <= 0 => bound.left
+      case (n, bound) if n % 2 == 0 => Lambda(Symbol("x" + bound), (n - 1, bound + 1)).right
+      case (n, bound) if n % 2 == 1 => \/-(Mul((n / 2, bound), ((n / 2) - 1, bound)))
+    }
+
+    "elgotCata" >> {
+
+      "find no free vars in closed term" in {
+        val t = lam('sym, mul(num(5), vari('sym)))
+        t.elgotCata(distZygo(freeVars), freeVarsNumber) must equal(0)
+      }
+
+      "find some free vars in open term" in {
+        val t1 = lam('bound, mul(vari('open), vari('bound)))
+        val t2 = lam('x, mul(vari('y), lam('y, mul(vari('open), mul(vari('y), vari('x))))))
+        t1.elgotCata(distZygo(freeVars), freeVarsNumber) must equal(1)
+        t2.elgotCata(distZygo(freeVars), freeVarsNumber) must equal(2)
+      }
+    }
+
+    "elgotAna" >> {
+      "generate closed terms" in {
+        (3, 0).elgotAna[Fix[Exp]].apply(distGApo(generateVars), generateTerm) must equal (
+          mul(mul(num(42), num(42)), num(42))
+        )
+
+        (4, 0).elgotAna[Fix[Exp]].apply(distGApo(generateVars), generateTerm) must equal (
+          lam('x0, mul(mul(vari('x0), vari('x0)), vari('x0)))
+        )
+
+        (5, 0).elgotAna[Fix[Exp]].apply(distGApo(generateVars), generateTerm) must equal (
+          mul(lam('x0, mul(vari('x0), vari('x0))), mul(num(42), num(42)))
+        )
+      }
+      "generate open terms" in {
+        (3, 1).elgotAna[Fix[Exp]].apply(distGApo(generateVars), generateTerm) must equal (
+          mul(mul(vari('x0), vari('x0)), vari('x0))
+        )
+      }
+    }
+
+    "elgotHylo" >> {
+      val freeVarsDistr = distZygo[Exp, List[Symbol]](freeVars)
+      val varGenDistr = distGApo[Exp, Int](generateVars)
+      val closed = elgotHylo(freeVarsNumber, generateTerm, freeVarsDistr, varGenDistr)
+
+      "assert that closed terms don't have free vars" in {
+        for (i <- (0 to 10)) {
+          closed((i, 0)) must equal (0)
+        }
+        closed((11, 0)) must equal (0)
+      }
+    }
+
     def extractFactors: Coalgebra[Exp, Int] = x =>
       if (x > 2 && x % 2 == 0) Mul(2, x/2)
       else Num(x)
