@@ -435,6 +435,11 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
+    def extractFactors: Coalgebra[Exp, Int] = x =>
+      if (x > 2 && x % 2 == 0) Mul(2, x/2)
+      else Num(x)
+
+
     val freeVars: Exp[List[Symbol]] => List[Symbol] = {
       case Var(name) => name :: Nil
       case Lambda(param, body) => body.filterNot(_ == param)
@@ -502,10 +507,6 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         closed((11, 0)) must equal (0)
       }
     }
-
-    def extractFactors: Coalgebra[Exp, Int] = x =>
-      if (x > 2 && x % 2 == 0) Mul(2, x/2)
-      else Num(x)
 
     "generalizeCoalgebra" >> {
       "behave like ana" ! prop { (i: Int) =>
