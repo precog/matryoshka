@@ -232,6 +232,8 @@ package object matryoshka {
   /** Composition of an elgot-anamorphism and an elgot-catamorphism that avoids
     * building the intermediate recursive data structure.
     *
+    * `elgotCata ⋘ elgotAna`
+    *
     * @group refolds
     */
   def elgotHylo[M[_]: Monad, W[_]: Comonad, F[_]: Functor, A, B](
