@@ -101,7 +101,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
   def addOneOrSimplifyƒ[T](implicit T: Recursive.Aux[T, Exp])
       : Exp[T] => Exp[T] = {
     case t @ Num(_)    => addOneƒ(t)
-    case t @ Mul(_, _) => repeatedly(simplifyƒ[T]).apply(t)
+    case t @ Mul(_, _) => repeatedly(simplifyƒ[T])(t)
     case t             => t
   }
 
