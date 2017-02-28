@@ -641,7 +641,7 @@ package object matryoshka {
     *
     * @group algtrans
     */
-  @annotation.tailrec
+  @tailrec
   final def repeatedly[A](f: A => Option[A])(expr: A): A =
     f(expr) match {
       case None => expr
