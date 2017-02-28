@@ -641,8 +641,12 @@ package object matryoshka {
     *
     * @group algtrans
     */
-  def repeatedly[A](f: A => Option[A]): A => A =
-    expr => f(expr).fold(expr)(repeatedly(f))
+  @tailrec
+  final def repeatedly[A](f: A => Option[A])(expr: A): A =
+    f(expr) match {
+      case None => expr
+      case Some(e) => repeatedly(f)(e)
+    }
 
   /** Converts a failable fold into a non-failable, by simply returning the
     * argument upon failure.
