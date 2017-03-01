@@ -18,6 +18,8 @@ package matryoshka
 
 import slamdata.Predef._
 
+import matryoshka.exp._
+
 import org.scalacheck._
 import org.specs2.mutable._
 import org.typelevel.discipline.specs2.mutable._
@@ -50,4 +52,36 @@ package object helpers extends SpecificationLike with Discipline {
     new Delay[Equal, NonEmptyList] {
       def apply[A](eq: Equal[A]) = NonEmptyList.nonEmptyListEqual(eq)
     }
+
+  def strings(t: Exp[(Int, String)]): String = t match {
+    case Num(x) => x.toString
+    case Mul((x, xs), (y, ys)) =>
+      xs + " (" + x + ")" + ", " + ys + " (" + y + ")"
+    case _ => ???
+  }
+
+  val eval: Algebra[Exp, Int] = {
+    case Num(x)    => x
+    case Mul(x, y) => x * y
+    case _         => ???
+  }
+
+  // Evaluate as usual, but trap 0*0 as a special case
+  def peval[T](t: Exp[(T, Int)])(implicit T: Recursive.Aux[T, Exp]): Int =
+    t match {
+      case Mul((Embed(Num(0)), _), (Embed(Num(0)), _)) => -1
+      case Mul((_,             x), (_,             y)) => x * y
+      case Num(x)                                      => x
+      case _                                           => ???
+    }
+
+  def elgotStrings: ElgotAlgebra[(Int, ?), Exp, String] = {
+    case (x, Num(xs)) if x == xs => x.toString
+    case (x, Mul(xs, ys)) => "(" + xs + " * " + ys + " = " + x + ")"
+    case _ => ???
+  }
+
+  def extractFactors: Coalgebra[Exp, Int] = x =>
+    if (x > 2 && x % 2 == 0) Mul(2, x/2)
+    else Num(x)
 }

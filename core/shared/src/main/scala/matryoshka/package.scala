@@ -402,6 +402,18 @@ package object matryoshka {
     *
     * @group dist
     */
+  def distZygoM[F[_]: Functor, M[_]: Monad, B](
+    g: AlgebraM[M, F, B], k: DistributiveLaw[F, M]) =
+    new DistributiveLaw[F, (M ∘ (B, ?))#λ] {
+      def apply[α](fm: F[M[(B, α)]]) = {
+        k(fm) >>= { f => g(f ∘ (_._1)) ∘ ((_, f ∘ (_._2))) }
+      }
+    }
+
+  /**
+    *
+    * @group dist
+    */
   def distZygoT[F[_]: Functor, W[_]: Comonad, B](
     g: Algebra[F, B], k: DistributiveLaw[F, W]) =
     new DistributiveLaw[F, EnvT[B, W, ?]] {
