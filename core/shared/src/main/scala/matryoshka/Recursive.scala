@@ -50,13 +50,14 @@ trait Recursive[T] extends Based[T] {
     g(loop(t).copoint)
   }
 
-  def gcataM[W[_]: Comonad: Traverse, M[_]: Monad, A](
-    t: T)(
-    k: DistributiveLaw[Base, W], g: GAlgebraM[W, M, Base, A])(
-    implicit BT: Traverse[Base]):
-      M[A] = {
+  def gcataM[W[_]: Comonad : Traverse, M[_]: Monad, A]
+    (t: T)
+    (w: DistributiveLaw[Base, (M ∘ W)#λ], g: GAlgebraM[W, M, Base, A])
+    (implicit BT: Traverse[Base])
+      : M[A] = {
     def loop(t: T): M[W[Base[W[A]]]] =
-      project(t).traverse(loop(_) >>= (_.traverse(g) ∘ (_.cojoin))) ∘ (k(_))
+      project(t).traverse(loop(_) >>=
+        (_.traverse(g) ∘ (_.cojoin))) ∘ (_ ∘ (_.point[M])) >>= (w(_))
 
     loop(t) ∘ (_.copoint) >>= g
   }
@@ -471,10 +472,10 @@ object Recursive {
         : A =
       typeClassInstance.gcata[W, A](self)(k, g)
     def gcataM[W[_]: Comonad: Traverse, M[_]: Monad, A]
-      (k: DistributiveLaw[F, W], g: GAlgebraM[W, M, F, A])
+      (w: DistributiveLaw[F, (M ∘ W)#λ], g: GAlgebraM[W, M, F, A])
       (implicit BT: Traverse[F])
         : M[A] =
-      typeClassInstance.gcataM[W, M, A](self)(k, g)
+      typeClassInstance.gcataM[W, M, A](self)(w, g)
     def elgotCata[W[_]: Comonad, A]
       (k: DistributiveLaw[F, W], g: ElgotAlgebra[W, F, A])
       (implicit BF: Functor[F])
