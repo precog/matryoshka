@@ -40,6 +40,7 @@ lazy val root = Project("root", file("."))
   .settings(name := "matryoshka")
   .settings(standardSettings ++ noPublishSettings: _*)
   .settings(transferPublishAndTagResources)
+  .settings(console := (console in replJVM).value)
   .aggregate(
     coreJS,  scalacheckJS,  testsJS,
     coreJVM, scalacheckJVM, testsJVM,
@@ -90,15 +91,19 @@ lazy val docs = project
 /** A project just for the console.
   * Applies only the settings necessary for that purpose.
   */
-lazy val repl = crossProject dependsOn (core % "test->test;compile->compile") settings standardSettings settings (
+lazy val repl = crossProject dependsOn (tests % "compile->test") settings standardSettings settings (
   console := (console in Test).value,
-  initialCommands in console := """
-    import matryoshka._,
-    import matryoshka.data._
-    import matryoshka.implicits._
-    import scalaz._, Scalaz._
-  """)
+  scalacOptions --= Seq("-Yno-imports", "-Ywarn-unused-import"),
+  initialCommands in console += """
+    |import matryoshka._
+    |import matryoshka.data._
+    |import matryoshka.implicits._
+    |import matryoshka.patterns._
+    |import scalaz._, Scalaz._
+  """.stripMargin.trim
+)
 
+lazy val replJVM = repl.jvm
 lazy val coreJS  = core.js
 lazy val coreJVM = core.jvm
 lazy val scalacheckJS  = scalacheck.js
