@@ -32,35 +32,27 @@ trait Recursive[T] extends Based[T] {
   def project(t: T)(implicit BF: Functor[Base]): BaseT[T]
 
   def cata[A](t: T)(f: Algebra[Base, A])(implicit BF: Functor[Base]): A =
-    f(project(t) ∘ (cata(_)(f)))
+    hylo(t)(f, project)
 
   /** A Kleisli catamorphism. */
   def cataM[M[_]: Monad, A](t: T)(f: AlgebraM[M, Base, A])(implicit BT: Traverse[Base]):
       M[A] =
-    project(t).traverse(cataM(_)(f)).flatMap(f)
+    cata[M[A]](t)(_.sequence >>= f)
 
   /** A catamorphism generalized with a comonad inside the functor. */
   def gcata[W[_]: Comonad, A]
     (t: T)
     (k: DistributiveLaw[Base, W], g: GAlgebra[W, Base, A])
     (implicit BF: Functor[Base])
-      : A = {
-    def loop(t: T): W[Base[W[A]]] = k(project(t) ∘ (loop(_).map(g).cojoin))
+      : A =
+    cata[W[A]](t)(fwa => k(fwa.map(_.cojoin)).map(g)).copoint
 
-    g(loop(t).copoint)
-  }
-
-  def gcataM[W[_]: Comonad : Traverse, M[_]: Monad, A]
+  def gcataM[W[_]: Comonad: Traverse, M[_]: Monad, A]
     (t: T)
-    (w: DistributiveLaw[Base, (M ∘ W)#λ], g: GAlgebraM[W, M, Base, A])
+    (w: DistributiveLaw[Base, W], g: GAlgebraM[W, M, Base, A])
     (implicit BT: Traverse[Base])
-      : M[A] = {
-    def loop(t: T): M[W[Base[W[A]]]] =
-      project(t).traverse(loop(_) >>=
-        (_.traverse(g) ∘ (_.cojoin))) ∘ (_ ∘ (_.point[M])) >>= (w(_))
-
-    loop(t) ∘ (_.copoint) >>= g
-  }
+      : M[A] =
+    cataM[M, W[A]](t)(fwa => w(fwa.map(_.cojoin)).traverse(g)) ∘ (_.copoint)
 
   /** A catamorphism generalized with a comonad outside the functor. */
   def elgotCata[W[_]: Comonad, A](
@@ -121,7 +113,10 @@ trait Recursive[T] extends Based[T] {
     (f: AlgebraM[M, Base, B], g: GAlgebraM[(B, ?), M, Base, A])
     (implicit BT: Traverse[Base])
       : M[A] =
-    gcataM[(B, ?), M, A](t)(distZygoM(f, distApplicative[Base, M]), g)
+    gcataM[(M[B], ?), M, A](
+      t)(
+      distZygo(_.sequence >>= f),
+        _.traverse(Bitraverse[(?, ?)].leftTraverse.sequence[M, B]) >>= g)
 
   def elgotZygo[A, B]
     (t: T)
@@ -304,14 +299,14 @@ trait Recursive[T] extends Based[T] {
     (f: Base[U] => G[U])
     (implicit U: Corecursive.Aux[U, G], BF: Functor[Base])
       : U =
-    mapR(t)(ft => f(ft.map(transCata(_)(f))))
+    cata(t)(f >>> (U.embed(_)))
 
   def transAna[U, G[_]: Functor]
     (t: T)
     (f: Base[T] => G[T])
     (implicit U: Corecursive.Aux[U, G], BF: Functor[Base])
       : U =
-    mapR(t)(f(_).map(transAna(_)(f)))
+    U.ana(t)(f <<< project)
 
   def transPostpro[U, G[_]: Functor]
     (t: T)
@@ -346,14 +341,14 @@ trait Recursive[T] extends Based[T] {
     (f: TransformM[M, U, Base, G])
     (implicit U: Corecursive.Aux[U, G], BT: Traverse[Base])
       : M[U] =
-    traverseR(t)(_.traverse(transCataM(_)(f)).flatMap(f))
+    cataM(t)(f(_) ∘ (U.embed(_)))
 
   def transAnaM[M[_]: Monad, U, G[_]: Traverse]
     (t: T)
     (f: TransformM[M, T, Base, G])
     (implicit U: Corecursive.Aux[U, G], BF: Functor[Base])
       : M[U] =
-    traverseR(t)(f(_).flatMap(_.traverse(transAnaM(_)(f))))
+    U.anaM(t)(f <<< project)
 
   // TODO: Move these operations to `Birecursive` once #44 is fixed.
 
@@ -500,7 +495,7 @@ object Recursive {
         : A =
       typeClassInstance.gcata[W, A](self)(k, g)
     def gcataM[W[_]: Comonad: Traverse, M[_]: Monad, A]
-      (w: DistributiveLaw[F, (M ∘ W)#λ], g: GAlgebraM[W, M, F, A])
+      (w: DistributiveLaw[F, W], g: GAlgebraM[W, M, F, A])
       (implicit BT: Traverse[F])
         : M[A] =
       typeClassInstance.gcataM[W, M, A](self)(w, g)
