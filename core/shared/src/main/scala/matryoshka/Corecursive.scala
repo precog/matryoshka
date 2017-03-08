@@ -32,7 +32,7 @@ trait Corecursive[T] extends Based[T] {
     (f: CoalgebraM[M, Base, A])
     (implicit BT: Traverse[Base])
       : M[T] =
-    f(a).flatMap(_.traverse(anaM(_)(f))) ∘ (embed(_))
+    hyloM[M, Base, A, T](a)(embed(_).point[M], f)
 
   def gana[N[_]: Monad, A]
     (a: A)
@@ -45,12 +45,8 @@ trait Corecursive[T] extends Based[T] {
     a: A)(
     k: DistributiveLaw[N, Base], f: GCoalgebraM[N, M, Base, A])(
     implicit BT: Traverse[Base]):
-      M[T] = {
-    def loop(x: N[Base[N[A]]]): M[T] =
-      k(x).traverse(_.join.traverse(f) >>= loop) ∘ (embed(_))
-
-    f(a) ∘ (_.point[N]) >>= loop
-  }
+      M[T] =
+    ghyloM[Id, N, M, Base, A, T](a)(distCata, k, embed(_).point[M], f)
 
   def elgotAna[N[_]: Monad, A](
     a: A)(

@@ -345,7 +345,10 @@ package object matryoshka {
         (φ: ElgotAlgebraM[(A, ?), M, F, B], ψ: CoalgebraM[M, F, A])
         (implicit M: Monad[M], F: Traverse[F])
           : M[B] =
-        hyloM[M, ((A, ?) ∘ F)#λ, A, B](a)(φ, a => ψ(a) strengthL a)(M, Traverse[(A, ?)] compose F)
+        hyloM[M, ((A, ?) ∘ F)#λ, A, B](
+          a)(
+          φ, a => ψ(a) strengthL a)(
+          M, Traverse[(A, ?)] compose F)
     }
   }
 

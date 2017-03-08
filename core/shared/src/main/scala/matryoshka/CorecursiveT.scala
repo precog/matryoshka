@@ -16,7 +16,7 @@
 
 package matryoshka
 
-import scalaz._, Scalaz._
+import scalaz._
 
 /** This is a workaround for a certain use case (e.g.,
   * [[matryoshka.patterns.Diff]] and [[matryoshka.patterns.PotentialFailure]]).
@@ -25,8 +25,9 @@ import scalaz._, Scalaz._
 // NB: Not a `@typeclass` because we don’t want to inject these operations.
 trait CorecursiveT[T[_[_]]] {
   def embedT[F[_]: Functor](t: F[T[F]]): T[F]
+
   def anaT[F[_]: Functor, A](a: A)(f: Coalgebra[F, A]): T[F] =
-    embedT(f(a) ∘ (anaT(_)(f)))
+    hylo(a)(embedT[F], f)
 }
 
 object CorecursiveT {
