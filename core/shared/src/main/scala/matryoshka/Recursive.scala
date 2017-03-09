@@ -58,22 +58,16 @@ trait Recursive[T] extends Based[T] {
   def elgotCata[W[_]: Comonad, A](
     t: T)(
     k: DistributiveLaw[Base, W], g: ElgotAlgebra[W, Base, A])
-    (implicit BF: Functor[Base]):
-      A = g(cata[W[Base[A]]](t) { fwfa => k(fwfa ∘ { _ cobind g }) })
+    (implicit BF: Functor[Base])
+      : A =
+    g(cata[W[Base[A]]](t)(fwfa => k(fwfa ∘ (_.cobind(g)))))
 
   def elgotCataM[W[_]: Comonad : Traverse, M[_]: Monad, A]
     (t: T)
     (k: DistributiveLaw[Base, (M ∘ W)#λ], g: ElgotAlgebraM[W, M, Base, A])
     (implicit BT: Traverse[Base])
-      : M[A] = {
-    def loop(t: T): M[Base[W[Base[A]]]] = {
-      project(t).traverse(loop(_) >>= { fwfa => k(fwfa ∘ (_.cojoin.traverse(g))) })
-    }
-
-    loop(t) >>= { fwfa =>
-      k(fwfa ∘ { wfa => g(wfa) ∘ (a => wfa.cobind(_ => a)) })
-    } >>= g
-  }
+      : M[A] =
+    cataM[M, W[Base[A]]](t)(fwfa => k(fwfa ∘ (_.cojoin.traverse(g)))) >>= g
 
   def para[A](t: T)(f: GAlgebra[(T, ?), Base, A])(implicit BF: Functor[Base])
       : A =
@@ -198,13 +192,14 @@ trait Recursive[T] extends Based[T] {
     f(t, that, project(t).mergeWith(project(that))(paraMerga(_, _)(f)))
 
   def isLeaf(t: T)(implicit BF: Functor[Base], B: Foldable[Base]): Boolean =
-    !Tag.unwrap(project(t).foldMap(_ => true.disjunction))
+    project(t).foldRight(true)((e, a) => false)
 
   def children(t: T)(implicit BF: Functor[Base], B: Foldable[Base]): List[T] =
-    project(t).foldMap(_ :: Nil)
+    project(t).toList
 
-  def universe(t: T)(implicit BF: Functor[Base], B: Foldable[Base]): List[T] =
-    t :: children(t).flatMap(universe)
+  def universe(t: T)(implicit BF: Functor[Base], B: Foldable[Base])
+      : NonEmptyList[T] =
+    NonEmptyList.nel(t, children(t).map(universe(_)).unite.toIList)
 
   /** Attribute a tree via an algebra starting from the root. */
   def attributeTopDown[A]
@@ -601,7 +596,7 @@ object Recursive {
       typeClassInstance.isLeaf(self)
     def children(implicit BT: Traverse[F]): List[T] =
       typeClassInstance.children(self)
-    def universe(implicit BT: Traverse[F]): List[T] =
+    def universe(implicit BF: Functor[F], B: Foldable[F]): NonEmptyList[T] =
       typeClassInstance.universe(self)
     def topDownCata[A]
       (a: A)

@@ -213,13 +213,16 @@ package object matryoshka {
     */
   type DistributiveLaw[F[_], G[_]] = (F ∘ G)#λ ~> (G ∘ F)#λ
 
-  /** Composition of an anamorphism and a catamorphism that avoids building the
-    * intermediate recursive data structure.
+  /** The hylomorphism is the fundamental operation of recursion schemes. It
+    * first applies `ψ`, recursively breaking an `A` into layers of `F`, then
+    * applies `φ`, combining the `F`s into a `B`. It can also be seen as the
+    * (fused) composition of an anamorphism and a catamorphism that avoids
+    * building the intermediate recursive data structure.
     *
     * @group refolds
     */
-  def hylo[F[_]: Functor, A, B](a: A)(f: Algebra[F, B], g: Coalgebra[F, A]): B =
-    f(g(a) ∘ (hylo(_)(f, g)))
+  def hylo[F[_]: Functor, A, B](a: A)(φ: Algebra[F, B], ψ: Coalgebra[F, A]): B =
+    φ(ψ(a) ∘ (hylo(_)(φ, ψ)))
 
   /** A Kleisli hylomorphism.
     *

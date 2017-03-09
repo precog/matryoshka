@@ -51,8 +51,9 @@ trait Corecursive[T] extends Based[T] {
   def elgotAna[N[_]: Monad, A](
     a: A)(
     k: DistributiveLaw[N, Base], ψ: ElgotCoalgebra[N, Base, A])(
-    implicit BF: Functor[Base]):
-      T = ana(ψ(a)) { nfa => k(nfa) ∘ { _ >>= ψ } }
+    implicit BF: Functor[Base])
+      : T =
+    ana(ψ(a))(k(_) ∘ (_ >>= ψ))
 
   /** An unfold that can short-circuit certain sections.
     */
