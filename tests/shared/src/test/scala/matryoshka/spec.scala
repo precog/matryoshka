@@ -498,13 +498,14 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     "elgotHylo" >> {
       val freeVarsDistr = distZygo[Exp, List[Symbol]](freeVars)
       val varGenDistr = distGApo[Exp, Int](generateVars)
-      val closed = elgotHylo(freeVarsNumber, generateTerm, freeVarsDistr, varGenDistr)
+      def closed(n: Int, bound: Int) =
+        elgotHylo((n, bound))(freeVarsDistr, varGenDistr, freeVarsNumber, generateTerm)
 
       "assert that closed terms don't have free vars" in {
         for (i <- (0 to 10)) {
-          closed((i, 0)) must equal (0)
+          closed(i, 0) must equal (0)
         }
-        closed((11, 0)) must equal (0)
+        closed(11, 0) must equal (0)
       }
     }
 

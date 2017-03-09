@@ -236,17 +236,15 @@ package object matryoshka {
     *
     * @group refolds
     */
-  def elgotHylo[M[_]: Monad, W[_]: Comonad, F[_]: Functor, A, B](
-    f: ElgotAlgebra[W, F, B],
-    g: ElgotCoalgebra[M, F, A],
-    kf: DistributiveLaw[F, W],
-    kg: DistributiveLaw[M, F]
-  ): A => B = {
-    lazy val loop: M[F[A]] => W[F[B]] = {
-      val trans: M[A] => W[B] = ma => loop(ma >>= g) cobind f
-      (kg[A] _) ⋙ (_ map trans) ⋙ kf[B]
-    }
-    g ⋙ loop ⋙ f
+  def elgotHylo[W[_]: Comonad, N[_]: Monad, F[_]: Functor, A, B]
+      (a: A)
+      (kφ: DistributiveLaw[F, W], kψ: DistributiveLaw[N, F], φ: ElgotAlgebra[W, F, B], ψ: ElgotCoalgebra[N, F, A])
+        : B = {
+    lazy val trans: N[A] => W[B] =
+      na => loop(na >>= ψ) cobind φ
+    lazy val loop: N[F[A]] => W[F[B]] =
+      (kψ[A] _) ⋙ (_ map trans) ⋙ kφ[B]
+    (ψ ⋙ loop ⋙ φ)(a)
   }
 
   /** `histo ⋘ ana`
