@@ -67,11 +67,7 @@ trait Recursive[T] extends Based[T] {
     t: T)(
     k: DistributiveLaw[Base, W], g: ElgotAlgebra[W, Base, A])
     (implicit BF: Functor[Base]):
-      A = {
-    def loop(t: T): W[Base[A]] = k(project(t) ∘ (loop(_).cojoin.map(g)))
-
-    g(loop(t))
-  }
+      A = g(cata[W[Base[A]]](t) { fwfa => k(fwfa ∘ { _ cobind g }) })
 
   def elgotCataM[W[_]: Comonad : Traverse, M[_]: Monad, A]
     (t: T)
