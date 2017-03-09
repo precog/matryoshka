@@ -417,6 +417,18 @@ package object matryoshka {
     *
     * @group dist
     */
+  def distZygoM[F[_]: Functor, M[_]: Monad, B](
+    g: AlgebraM[M, F, B], k: DistributiveLaw[F, M]) =
+    new DistributiveLaw[F, (M ∘ (B, ?))#λ] {
+      def apply[α](fm: F[M[(B, α)]]) = {
+        k(fm) >>= { f => g(f ∘ (_._1)) ∘ ((_, f ∘ (_._2))) }
+      }
+    }
+
+  /**
+    *
+    * @group dist
+    */
   def distZygoT[F[_]: Functor, W[_]: Comonad, B](
     g: Algebra[F, B], k: DistributiveLaw[F, W]) =
     new DistributiveLaw[F, EnvT[B, W, ?]] {
@@ -656,8 +668,12 @@ package object matryoshka {
     *
     * @group algtrans
     */
-  def repeatedly[A](f: A => Option[A]): A => A =
-    expr => f(expr).fold(expr)(repeatedly(f))
+  @tailrec
+  final def repeatedly[A](f: A => Option[A])(expr: A): A =
+    f(expr) match {
+      case None => expr
+      case Some(e) => repeatedly(f)(e)
+    }
 
   /** Converts a failable fold into a non-failable, by simply returning the
     * argument upon failure.

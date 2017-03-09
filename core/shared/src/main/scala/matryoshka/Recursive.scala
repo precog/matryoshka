@@ -50,13 +50,14 @@ trait Recursive[T] extends Based[T] {
     g(loop(t).copoint)
   }
 
-  def gcataM[W[_]: Comonad: Traverse, M[_]: Monad, A](
-    t: T)(
-    k: DistributiveLaw[Base, W], g: GAlgebraM[W, M, Base, A])(
-    implicit BT: Traverse[Base]):
-      M[A] = {
+  def gcataM[W[_]: Comonad : Traverse, M[_]: Monad, A]
+    (t: T)
+    (w: DistributiveLaw[Base, (M ∘ W)#λ], g: GAlgebraM[W, M, Base, A])
+    (implicit BT: Traverse[Base])
+      : M[A] = {
     def loop(t: T): M[W[Base[W[A]]]] =
-      project(t).traverse(loop(_) >>= (_.traverse(g) ∘ (_.cojoin))) ∘ (k(_))
+      project(t).traverse(loop(_) >>=
+        (_.traverse(g) ∘ (_.cojoin))) ∘ (_ ∘ (_.point[M])) >>= (w(_))
 
     loop(t) ∘ (_.copoint) >>= g
   }
@@ -67,6 +68,20 @@ trait Recursive[T] extends Based[T] {
     k: DistributiveLaw[Base, W], g: ElgotAlgebra[W, Base, A])
     (implicit BF: Functor[Base]):
       A = g(cata[W[Base[A]]](t) { fwfa => k(fwfa ∘ { _ cobind g }) })
+
+  def elgotCataM[W[_]: Comonad : Traverse, M[_]: Monad, A]
+    (t: T)
+    (k: DistributiveLaw[Base, (M ∘ W)#λ], g: ElgotAlgebraM[W, M, Base, A])
+    (implicit BT: Traverse[Base])
+      : M[A] = {
+    def loop(t: T): M[Base[W[Base[A]]]] = {
+      project(t).traverse(loop(_) >>= { fwfa => k(fwfa ∘ (_.cojoin.traverse(g))) })
+    }
+
+    loop(t) >>= { fwfa =>
+      k(fwfa ∘ { wfa => g(wfa) ∘ (a => wfa.cobind(_ => a)) })
+    } >>= g
+  }
 
   def para[A](t: T)(f: GAlgebra[(T, ?), Base, A])(implicit BF: Functor[Base])
       : A =
@@ -97,12 +112,26 @@ trait Recursive[T] extends Based[T] {
       : A =
     gcata[(B, ?), A](t)(distZygo(f), g)
 
+  def zygoM[A, B, M[_]: Monad]
+    (t: T)
+    (f: AlgebraM[M, Base, B], g: GAlgebraM[(B, ?), M, Base, A])
+    (implicit BT: Traverse[Base])
+      : M[A] =
+    gcataM[(B, ?), M, A](t)(distZygoM(f, distApplicative[Base, M]), g)
+
   def elgotZygo[A, B]
     (t: T)
     (f: Algebra[Base, B], g: ElgotAlgebra[(B, ?), Base, A])
     (implicit BF: Functor[Base])
       : A =
     elgotCata[(B, ?), A](t)(distZygo(f), g)
+
+  def elgotZygoM[A, B, M[_]: Monad]
+    (t: T)
+    (f: AlgebraM[M, Base, B], g: ElgotAlgebraM[(B, ?), M, Base, A])
+    (implicit BT: Traverse[Base])
+      : M[A] =
+    elgotCataM[(B, ?), M, A](t)(distZygoM(f, distApplicative[Base, M]), g)
 
   def gzygo[W[_]: Comonad, A, B](
     t: T)(
@@ -467,15 +496,20 @@ object Recursive {
         : A =
       typeClassInstance.gcata[W, A](self)(k, g)
     def gcataM[W[_]: Comonad: Traverse, M[_]: Monad, A]
-      (k: DistributiveLaw[F, W], g: GAlgebraM[W, M, F, A])
+      (w: DistributiveLaw[F, (M ∘ W)#λ], g: GAlgebraM[W, M, F, A])
       (implicit BT: Traverse[F])
         : M[A] =
-      typeClassInstance.gcataM[W, M, A](self)(k, g)
+      typeClassInstance.gcataM[W, M, A](self)(w, g)
     def elgotCata[W[_]: Comonad, A]
       (k: DistributiveLaw[F, W], g: ElgotAlgebra[W, F, A])
       (implicit BF: Functor[F])
         : A =
       typeClassInstance.elgotCata[W, A](self)(k, g)
+    def elgotCataM[W[_]: Comonad : Traverse, M[_]: Monad, A]
+      (k: DistributiveLaw[F, (M ∘ W)#λ], g: ElgotAlgebraM[W, M, F, A])
+      (implicit BT: Traverse[F])
+        : M[A] =
+      typeClassInstance.elgotCataM[W, M, A](self)(k, g)
     def para[A](f: GAlgebra[(T, ?), F, A])(implicit BF: Functor[F]): A =
       typeClassInstance.para[A](self)(f)
     def elgotPara[A]
@@ -498,11 +532,21 @@ object Recursive {
       (implicit BF: Functor[F])
         : A =
       typeClassInstance.zygo[A, B](self)(f, g)
+    def zygoM[A, B, M[_]: Monad]
+      (f: AlgebraM[M, F, B], g: GAlgebraM[(B, ?), M, F, A])
+      (implicit BT: Traverse[F])
+        : M[A] =
+      typeClassInstance.zygoM[A, B, M](self)(f, g)
     def elgotZygo[A, B]
       (f: Algebra[F, B], g: ElgotAlgebra[(B, ?), F, A])
       (implicit BF: Functor[F])
         : A =
       typeClassInstance.elgotZygo[A, B](self)(f, g)
+    def elgotZygoM[A, B, M[_]: Monad]
+      (f: AlgebraM[M, F, B], g: ElgotAlgebraM[(B, ?), M, F, A])
+      (implicit BT: Traverse[F])
+        : M[A] =
+      typeClassInstance.elgotZygoM[A, B, M](self)(f, g)
     def gzygo[W[_]: Comonad, A, B]
       (f: Algebra[F, B],
         w: DistributiveLaw[F, W],
