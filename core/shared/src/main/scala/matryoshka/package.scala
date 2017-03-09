@@ -321,9 +321,8 @@ package object matryoshka {
     * @group refolds
     */
   def elgot[F[_]: Functor, A, B](a: A)(φ: Algebra[F, B], ψ: ElgotCoalgebra[B \/ ?, F, A]): B = {
-    def h: A => B =
-      (((x: B) => x) ||| ((x: F[A]) => φ(x ∘ h))) ⋘ ψ
-    h(a)
+    implicit val FT = Functor[B \/ ?] compose Functor[F]
+    hylo[λ[α => B \/ F[α]], A, B](a)(_.swap valueOr φ, ψ)
   }
 
   /** `cataM ⋘ elgotGApoM`
@@ -340,11 +339,9 @@ package object matryoshka {
     *
     * @group refolds
     */
-  def coelgot[F[_]: Functor, A, B](a: A)(φ: ElgotAlgebra[(A, ?), F, B], ψ: Coalgebra[F, A]):
-      B = {
-    def h: A => B =
-      φ ⋘ (((x: A) => x) &&& (((x: F[A]) => x ∘ h) ⋘ ψ))
-    h(a)
+  def coelgot[F[_]: Functor, A, B](a: A)(φ: ElgotAlgebra[(A, ?), F, B], ψ: Coalgebra[F, A]): B = {
+    implicit val FT = Functor[(A, ?)] compose Functor[F]
+    hylo[λ[α => (A, F[α])], A, B](a)(φ, a => (a, ψ(a)))
   }
 
   /** `elgotZygoM ⋘ anaM`
