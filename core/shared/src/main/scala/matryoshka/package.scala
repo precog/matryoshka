@@ -213,21 +213,27 @@ package object matryoshka {
     */
   type DistributiveLaw[F[_], G[_]] = (F ∘ G)#λ ~> (G ∘ F)#λ
 
-  /** Composition of an anamorphism and a catamorphism that avoids building the
-    * intermediate recursive data structure.
+  /** The hylomorphism is the fundamental operation of recursion schemes. It
+    * first applies `ψ`, recursively breaking an `A` into layers of `F`, then
+    * applies `φ`, combining the `F`s into a `B`. It can also be seen as the
+    * (fused) composition of an anamorphism and a catamorphism that avoids
+    * building the intermediate recursive data structure.
     *
     * @group refolds
     */
-  def hylo[F[_]: Functor, A, B](a: A)(f: Algebra[F, B], g: Coalgebra[F, A]): B =
-    f(g(a) ∘ (hylo(_)(f, g)))
+  def hylo[F[_]: Functor, A, B](a: A)(φ: Algebra[F, B], ψ: Coalgebra[F, A]): B =
+    φ(ψ(a) ∘ (hylo(_)(φ, ψ)))
 
   /** A Kleisli hylomorphism.
     *
     * @group refolds
     */
-  def hyloM[M[_]: Monad, F[_]: Traverse, A, B](a: A)(f: AlgebraM[M, F, B], g: CoalgebraM[M, F, A]):
-      M[B] =
-    g(a) >>= (_.traverse(hyloM(_)(f, g)) >>= f)
+  def hyloM[M[_], F[_], A, B]
+    (a: A)
+    (f: AlgebraM[M, F, B], g: CoalgebraM[M, F, A])
+    (implicit M: Monad[M], F: Traverse[F])
+      : M[B] =
+    hylo[(M ∘ F)#λ, A, M[B]](a)(_ >>= (_.sequence >>= f), g)(M compose F)
 
   /** Composition of an elgot-anamorphism and an elgot-catamorphism that avoids
     * building the intermediate recursive data structure.
@@ -279,10 +285,10 @@ package object matryoshka {
     n: DistributiveLaw[N, F],
     f: GAlgebra[W, F, B],
     g: GCoalgebra[N, F, A]):
-      B = {
-    def h(x: N[A]): W[B] = w(n(x ∘ g) ∘ (y => h(y.join).cojoin)) ∘ f
-    h(a.point[N]).copoint
-  }
+      B =
+    hylo[Yoneda[F, ?], N[A], W[B]](
+      a.point[N])(
+      fwb => w((fwb ∘ (_.cojoin)).run) ∘ f, na => Yoneda(n(na ∘ g)) ∘ (_.join)).copoint
 
   /** A Kleisli `ghylo` (`gcataM ⋘ ganaM`)
     *
@@ -291,17 +297,15 @@ package object matryoshka {
   def ghyloM[W[_]: Comonad: Traverse, N[_]: Monad: Traverse, M[_]: Monad, F[_]: Traverse, A, B](
     a: A)(
     w: DistributiveLaw[F, W],
-    m: DistributiveLaw[N, F],
+    n: DistributiveLaw[N, F],
     f: GAlgebraM[W, M, F, B],
     g: GCoalgebraM[N, M, F, A]):
-      M[B] = {
-    def h(x: N[A]): M[W[B]] =
-      (x.traverse(g) >>=
-        (m(_: N[F[N[A]]]).traverse(y => h(y.join) ∘ (_.cojoin)))) ∘
-        (w(_)) >>=
-        (_.traverse(f))
-    h(a.point[N]) ∘ (_.copoint)
-  }
+      M[B] =
+    hyloM[M, F, N[A], W[B]](
+      a.point[N])(
+      fwb => w(fwb ∘ (_.cojoin)).traverse(f),
+        na => na.traverse(g) ∘ (n(_) ∘ (_.join))) ∘
+      (_.copoint)
 
   /** Similar to a hylomorphism, this composes a futumorphism and a
     * histomorphism.
@@ -318,29 +322,37 @@ package object matryoshka {
     *
     * @group refolds
     */
-  def elgot[F[_]: Functor, A, B](a: A)(φ: Algebra[F, B], ψ: ElgotCoalgebra[B \/ ?, F, A]): B = {
-    implicit val FT = Functor[B \/ ?] compose Functor[F]
-    hylo[λ[α => B \/ F[α]], A, B](a)(_.swap valueOr φ, ψ)
-  }
+  def elgot[F[_], A, B]
+    (a: A)
+    (φ: Algebra[F, B], ψ: ElgotCoalgebra[B \/ ?, F, A])
+    (implicit F: Functor[F])
+      : B =
+    hylo[((B \/ ?) ∘ F)#λ, A, B](a)(_.swap.valueOr(φ), ψ)(Functor[B \/ ?] compose F)
 
   /** `cataM ⋘ elgotGApoM`
     *
     * @group refolds
     */
-  def elgotM[M[_]: Monad, F[_]: Traverse, A, B](a: A)(φ: AlgebraM[M, F, B], ψ: ElgotCoalgebraM[B \/ ?, M, F, A]):
-      M[B] = {
-    def h(a: A): M[B] = ψ(a) >>= (_.traverse(_.traverse(h) >>= φ).map(_.merge))
-    h(a)
-  }
+  def elgotM[M[_], F[_], A, B]
+    (a: A)
+    (φ: AlgebraM[M, F, B], ψ: ElgotCoalgebraM[B \/ ?, M, F, A])
+    (implicit M: Monad[M], F: Traverse[F])
+      : M[B] =
+    hyloM[M, ((B \/ ?) ∘ F)#λ, A, B](
+      a)(
+      _.fold(_.point[M], φ), ψ)(
+      M, Traverse[B \/ ?] compose F)
 
   /** `elgotZygo ⋘ ana`
     *
     * @group refolds
     */
-  def coelgot[F[_]: Functor, A, B](a: A)(φ: ElgotAlgebra[(A, ?), F, B], ψ: Coalgebra[F, A]): B = {
-    implicit val FT = Functor[(A, ?)] compose Functor[F]
-    hylo[λ[α => (A, F[α])], A, B](a)(φ, a => (a, ψ(a)))
-  }
+  def coelgot[F[_], A, B]
+    (a: A)
+    (φ: ElgotAlgebra[(A, ?), F, B], ψ: Coalgebra[F, A])
+    (implicit F: Functor[F])
+      : B =
+    hylo[((A, ?) ∘ F)#λ, A, B](a)(φ, a => (a, ψ(a)))(Functor[(A, ?)] compose F)
 
   /** `elgotZygoM ⋘ anaM`
     *
@@ -349,14 +361,15 @@ package object matryoshka {
   object coelgotM {
     def apply[M[_]] = new PartiallyApplied[M]
     final class PartiallyApplied[M[_]] {
-      def apply[F[_]: Traverse, A, B]
+      def apply[F[_], A, B]
         (a: A)
         (φ: ElgotAlgebraM[(A, ?), M, F, B], ψ: CoalgebraM[M, F, A])
-        (implicit M: Monad[M])
-          : M[B] = {
-        def h(a: A): M[B] = ψ(a) >>= (_.traverse(h)) >>= (x => φ((a, x)))
-        h(a)
-      }
+        (implicit M: Monad[M], F: Traverse[F])
+          : M[B] =
+        hyloM[M, ((A, ?) ∘ F)#λ, A, B](
+          a)(
+          φ, a => ψ(a) strengthL a)(
+          M, Traverse[(A, ?)] compose F)
     }
   }
 

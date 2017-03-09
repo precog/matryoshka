@@ -170,20 +170,20 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
 
     "universe" >> {
       "be one for simple literal" in {
-        num(1).universe must equal(List(num(1)))
+        num(1).universe must equal(NonEmptyList(num(1)))
         num(1).convertTo[Mu[Exp]].universe must
-          equal(List(num(1)).map(_.convertTo[Mu[Exp]]))
+          equal(NonEmptyList(num(1)).map(_.convertTo[Mu[Exp]]))
         num(1).convertTo[Nu[Exp]].universe must
-          equal(List(num(1)).map(_.convertTo[Nu[Exp]]))
+          equal(NonEmptyList(num(1)).map(_.convertTo[Nu[Exp]]))
       }
 
       "contain root and sub-expressions" in {
         mul(num(1), num(2)).universe must
-          equal(List(mul(num(1), num(2)), num(1), num(2)))
+          equal(NonEmptyList(mul(num(1), num(2)), num(1), num(2)))
         mul(num(1), num(2)).convertTo[Mu[Exp]].universe must
-          equal(List(mul(num(1), num(2)), num(1), num(2)).map(_.convertTo[Mu[Exp]]))
+          equal(NonEmptyList(mul(num(1), num(2)), num(1), num(2)).map(_.convertTo[Mu[Exp]]))
         mul(num(1), num(2)).convertTo[Nu[Exp]].universe must
-          equal(List(mul(num(1), num(2)), num(1), num(2)).map(_.convertTo[Nu[Exp]]))
+          equal(NonEmptyList(mul(num(1), num(2)), num(1), num(2)).map(_.convertTo[Nu[Exp]]))
       }
     }
 
@@ -1033,12 +1033,12 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     "foldMap" >> {
       "zeros" >> Prop.forAll(expGen) { exp =>
         Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrK(0)))(_ :: Nil) must
-          equal(exp.universe.map(Function.const(0)))
+          equal(exp.universe.map(Function.const(0)).toList)
       }
 
       "selves" >> Prop.forAll(expGen) { exp =>
         Foldable[Cofree[Exp, ?]].foldMap(exp.cata[Cofree[Exp, Mu[Exp]]](attrSelf))(_ :: Nil) must
-          equal(exp.universe)
+          equal(exp.universe.toList)
       }
     }
   }

@@ -18,7 +18,7 @@ package matryoshka
 
 import slamdata.Predef._
 
-import scalaz._, Scalaz._
+import scalaz._
 
 /** This is a workaround for a certain use case (e.g.,
   * [[matryoshka.patterns.Diff]] and [[matryoshka.patterns.PotentialFailure]]).
@@ -31,7 +31,7 @@ trait RecursiveT[T[_[_]]] extends Serializable {
   def projectT[F[_]: Functor](t: T[F]): F[T[F]]
 
   def cataT[F[_]: Functor, A](t: T[F])(f: Algebra[F, A]): A =
-    f(projectT(t) ∘ (cataT(_)(f)))
+    hylo(t)(f, projectT[F])
 }
 
 object RecursiveT {

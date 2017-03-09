@@ -222,6 +222,7 @@ package object fixedpoint {
 
     /** Run to completion (if it completes).
       */
+    // TODO: Alternatively `self.cata[A](_.merge)`, but that's not tailrec.
     @tailrec final def unsafePerformSync: A = self.project match {
       case -\/(a) => a
       case \/-(p) => p.unsafePerformSync

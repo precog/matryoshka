@@ -25,41 +25,35 @@ trait Corecursive[T] extends Based[T] {
   def embed(t: Base[T])(implicit BF: Functor[Base]): T
 
   def ana[A](a: A)(f: Coalgebra[Base, A])(implicit BF: Functor[Base]): T =
-    embed(f(a) ∘ (ana(_)(f)))
+    hylo(a)(embed, f)
 
   def anaM[M[_]: Monad, A]
     (a: A)
     (f: CoalgebraM[M, Base, A])
     (implicit BT: Traverse[Base])
       : M[T] =
-    f(a).flatMap(_.traverse(anaM(_)(f))) ∘ (embed(_))
+    hyloM[M, Base, A, T](a)(embed(_).point[M], f)
 
   def gana[N[_]: Monad, A]
     (a: A)
     (k: DistributiveLaw[N, Base], f: GCoalgebra[N, Base, A])
     (implicit BF: Functor[Base])
-      : T = {
-    def loop(x: N[Base[N[A]]]): T = embed(k(x) ∘ (x => loop(x.join ∘ f)))
-
-    loop(f(a).point[N])
-  }
+      : T =
+    ana[N[A]](a.point[N])(na => k(na.map(f)).map(_.join))
 
   def ganaM[N[_]: Monad: Traverse, M[_]: Monad, A](
     a: A)(
     k: DistributiveLaw[N, Base], f: GCoalgebraM[N, M, Base, A])(
     implicit BT: Traverse[Base]):
-      M[T] = {
-    def loop(x: N[Base[N[A]]]): M[T] =
-      k(x).traverse(_.join.traverse(f) >>= loop) ∘ (embed(_))
-
-    f(a) ∘ (_.point[N]) >>= loop
-  }
+      M[T] =
+    ghyloM[Id, N, M, Base, A, T](a)(distCata, k, embed(_).point[M], f)
 
   def elgotAna[N[_]: Monad, A](
     a: A)(
     k: DistributiveLaw[N, Base], ψ: ElgotCoalgebra[N, Base, A])(
-    implicit BF: Functor[Base]):
-      T = ana(ψ(a)) { nfa => k(nfa) ∘ { _ >>= ψ } }
+    implicit BF: Functor[Base])
+      : T =
+    ana(ψ(a))(k(_) ∘ (_ >>= ψ))
 
   /** An unfold that can short-circuit certain sections.
     */
@@ -112,11 +106,8 @@ trait Corecursive[T] extends Based[T] {
 
   def futuM[M[_]: Monad, A](a: A)(f: GCoalgebraM[Free[Base, ?], M, Base, A])(
     implicit BT: Traverse[Base]):
-      M[T] = {
-    def loop(free: Free[Base, A]): M[T] =
-      free.fold(futuM(_)(f), _.traverse(loop) ∘ (embed))
-    f(a).flatMap(_.traverse(loop)) ∘ (embed(_))
-  }
+      M[T] =
+    ganaM[Free[Base, ?], M, A](a)(distFutu, f)
 
   // TODO: Move these operations to `Birecursive` once #44 is fixed.
 

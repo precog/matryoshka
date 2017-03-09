@@ -100,7 +100,7 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck {
 
     // TODO: Should work with any Int, but stack overflows on big negatives.
     "always terminate with mc91" >> prop { (n: Int) =>
-      n > -3000 ==>
+      n > -90000 ==>
         (mc91(n).unsafePerformSync must equal(if (n <= 100) 91 else n - 10))
     }
   }
