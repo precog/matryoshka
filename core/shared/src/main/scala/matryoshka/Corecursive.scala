@@ -52,11 +52,7 @@ trait Corecursive[T] extends Based[T] {
     a: A)(
     k: DistributiveLaw[N, Base], ψ: ElgotCoalgebra[N, Base, A])(
     implicit BF: Functor[Base]):
-      T = {
-    def loop(x: N[Base[A]]): T = embed(k(x) ∘ (x => loop(x >>= ψ)))
-
-    loop(ψ(a))
-  }
+      T = ana(ψ(a)) { nfa => k(nfa) ∘ { _ >>= ψ } }
 
   /** An unfold that can short-circuit certain sections.
     */
