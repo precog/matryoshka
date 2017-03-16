@@ -22,9 +22,9 @@ lazy val standardSettings = commonBuildSettings ++ Seq(
 
   libraryDependencies ++= Seq(
     CommonDependencies.slamdata.predef,
-    CommonDependencies.monocle.core.cross(ScalaJSCrossVersion.binary)          % "compile, test",
-    CommonDependencies.scalaz.core.cross(ScalaJSCrossVersion.binary)           % "compile, test",
-    CommonDependencies.simulacrum.simulacrum.cross(ScalaJSCrossVersion.binary) % "compile, test")
+    CommonDependencies.monocle.core.cross(CrossVersion.binary)          % "compile, test",
+    CommonDependencies.scalaz.core.cross(CrossVersion.binary)           % "compile, test",
+    CommonDependencies.simulacrum.simulacrum.cross(CrossVersion.binary) % "compile, test")
 )
 
 lazy val publishSettings = commonPublishSettings ++ Seq(
