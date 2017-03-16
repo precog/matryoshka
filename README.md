@@ -17,7 +17,7 @@ Generalized folds, unfolds, and traversals for fixed point data structures in Sc
 - [Efficient Nanopass Compilers using Cats and Matryoshka](https://github.com/sellout/recursion-scheme-talk/blob/master/nanopass-compiler-talk.org) – Greg Pfeil’s talk on this library (and some other things)
 - [Fix Haskell (by eliminating recursion)](https://github.com/sellout/recursion-scheme-talk/blob/master/recursion-scheme-talk.org) – Greg Pfeil’s talk on recursion schemes in Haskell
 - Recursion schemes by example - Tim Williams [slides](https://github.com/willtim/recursion-schemes/raw/master/slides-final.pdf) [talk](https://www.youtube.com/watch?v=Zw9KeP3OzpU)
-- [Practical Recursion Schmes](https://jtobin.io/practical-recursion-schemes) - Jared Tobin
+- [Practical Recursion Schemes](https://jtobin.io/practical-recursion-schemes) - Jared Tobin
 - [Promorphisms, Pre and Post](https://jtobin.io/promorphisms-pre-post) - Jared Tobin
 - [Time Traveling Recursion Schemes](https://jtobin.io/time-traveling-recursion) - Jared Tobin
 - [Automatic Differentiation via recursion schemes](https://jtobin.io/ad-via-recursion-schemes) - Jared Tobin
