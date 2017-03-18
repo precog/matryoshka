@@ -80,6 +80,14 @@ trait ArbitraryInstances extends ArbitraryInstancesʹ {
           (Arbitrary.arbitrary[A] ⊛ arb.arbitrary)(ConsF[A, B])))
     }
 
+  implicit def nelFArbitrary[A: Arbitrary]: Delay[Arbitrary, NelF[A, ?]] =
+    new Delay[Arbitrary, NelF[A, ?]] {
+      def apply[B](arb: Arbitrary[B]) =
+        Arbitrary(Gen.oneOf[NelF[A, B]](
+          (Arbitrary.arbitrary[A] ⊛ arb.arbitrary)(InitF[A, B]),
+          Arbitrary.arbitrary[A] ∘ (LastF[A, B](_))))
+    }
+
   // TODO: Submit these to Scalaz
   implicit def cofreeArbitrary[F[_], A](implicit F: Delay[Arbitrary, F], A: Arbitrary[A]): Arbitrary[Cofree[F, A]] =
     Arbitrary(
