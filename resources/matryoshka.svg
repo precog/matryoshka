@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="434px" height="500px" viewBox="0 0 434 500" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>matryoshka</title>
+    <defs></defs>
+    <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <polygon id="27" fill="#C52636" points="217 500 433.506351 375 433.506351 125 416.185843 135 416.185843 365 217 480"></polygon>
+        <polygon id="26" fill-opacity="0.7" fill="#C52636" points="0.493649054 125 0.493649054 375 217 500 217 480 17.8141571 365 17.8141571 135"></polygon>
+        <polygon id="25" fill-opacity="0.85" fill="#C52636" points="17.8141571 135 0.493649054 125 217 0 433.506351 125 416.185843 135 217 20 17.8141571 135"></polygon>
+        <polygon id="24" fill="#C52636" points="17.8141571 365 17.8141571 135 217 20 217 50 43.7949192 150 43.7949192 350"></polygon>
+        <polygon id="23" fill-opacity="0.7" fill="#C52636" points="217 20 416.185843 135 416.185843 365 390.205081 350 390.205081 150 217 50"></polygon>
+        <polygon id="22" fill-opacity="0.85" fill="#C52636" points="43.7949192 350 17.8141571 365 217 480 416.185843 365 390.205081 350 217 450"></polygon>
+        <polygon id="21" fill="#F32D41" points="217 450 390.205081 350 390.205081 150 372.884573 160 372.884573 340 217 430"></polygon>
+        <polygon id="20" fill-opacity="0.7" fill="#F32D41" points="43.7949192 150 43.7949192 350 217 450 217 430 61.1154273 340 61.1154273 160"></polygon>
+        <polygon id="19" fill-opacity="0.85" fill="#F32D41" points="61.1154273 160 43.7949192 150 217 50 390.205081 150 372.884573 160 217 70 61.1154273 160"></polygon>
+        <polygon id="18" fill="#F32D41" points="61.1154273 340 61.1154273 160 217 70 217 100 87.0961894 175 87.0961894 325 61.1154273 340"></polygon>
+        <polygon id="17" fill-opacity="0.7" fill="#F32D41" points="372.884573 340 372.884573 160 217 70 217 100 346.903811 175 346.903811 325 372.884573 340"></polygon>
+        <polygon id="16" fill-opacity="0.85" fill="#F32D41" points="346.903811 325 372.884573 340 217 430 61.1154273 340 87.0961894 325 217 400 346.903811 325"></polygon>
+        <polygon id="15" fill-opacity="0.33" fill="#F32D41" points="217 380 217 400 346.903811 325 346.903811 175 329.583302 185 329.583302 315"></polygon>
+        <polygon id="14" fill-opacity="0.21" fill="#F32D41" points="104.416698 185 87.0961894 175 87.0961894 325 217 400 217 380 104.416698 315"></polygon>
+        <polygon id="13" fill-opacity="0.27" fill="#F32D41" points="104.416698 185 87.0961894 175 217 100 346.903811 175 329.583302 185 217 120"></polygon>
+        <polygon id="12" fill-opacity="0.33" fill="#F32D41" points="130.39746 300 104.416698 315 104.416698 185 217 120 217 150 130.39746 200 130.39746 300"></polygon>
+        <polygon id="11" fill-opacity="0.21" fill="#F32D41" points="217 150 217 120 329.583302 185 329.583302 315 303.60254 300 303.60254 200"></polygon>
+        <polygon id="10" fill-opacity="0.27" fill="#F32D41" points="130.39746 300 104.416698 315 217 380 329.583302 315 303.60254 300 217 350"></polygon>
+        <polygon id="09" fill-opacity="0.15" fill="#F32D41" points="217 350 303.60254 300 303.60254 200 286.282032 210 286.282032 290 217 330"></polygon>
+        <polygon id="08" fill-opacity="0.03" fill="#F32D41" points="147.717968 210 130.39746 200 130.39746 300 217 350 217 330 147.717968 290"></polygon>
+        <polygon id="07" fill-opacity="0.09" fill="#F32D41" points="286.282032 210 303.60254 200 217 150 130.39746 200 147.717968 210 217 170"></polygon>
+        <polygon id="06" fill-opacity="0.15" fill="#F32D41" points="217.282032 200 217.282032 170 148 210 148 290 173.980762 275 173.980762 225"></polygon>
+        <polygon id="05" fill-opacity="0.03" fill="#F32D41" points="217 200 217 170 286.282032 210 286.282032 290 260.30127 275 260.30127 225"></polygon>
+        <polygon id="04" fill-opacity="0.09" fill="#F32D41" points="260.30127 275 286.282032 290 217 330 147.717968 290 173.69873 275 217 300 260.30127 275"></polygon>
+        <polygon id="03" fill-opacity="0.12" fill="#F32D41" points="260.30127 225 260.30127 275 217 300 217 250 260.30127 225"></polygon>
+        <polygon id="02" fill-opacity="0" fill="#F32D41" points="217 300 173.69873 275 173.69873 225 217 250"></polygon>
+        <polygon id="01" fill-opacity="0.06" fill="#F32D41" points="217 200 173.69873 225 217 250 260.30127 225"></polygon>
+    </g>
+</svg>

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ sealed abstract class Nu[F[_]] {
   val a: A
   val unNu: Coalgebra[F, A]
 }
+
 object Nu {
   def apply[F[_], B](f: Coalgebra[F, B], b: B): Nu[F] =
     new Nu[F] {
@@ -36,16 +37,15 @@ object Nu {
       val unNu = f
     }
 
-  implicit val recursive: Recursive[Nu] = new Recursive[Nu] {
-    def project[F[_]: Functor](t: Nu[F]) = t.unNu(t.a).map(Nu(t.unNu, _))
+  implicit def birecursiveT: BirecursiveT[Nu] = new BirecursiveT[Nu] {
+    def projectT[F[_]: Functor](t: Nu[F]) = t.unNu(t.a).map(Nu(t.unNu, _))
+
+    // FIXME: ugh, shouldn’t have to redefine `colambek` in here?
+    def embedT[F[_]: Functor](t: F[Nu[F]]) = anaT(t)(_ ∘ projectT[F])
+    override def anaT[F[_]: Functor, A](a: A)(f: A => F[A]) = Nu(f, a)
   }
 
-  implicit val corecursive: Corecursive[Nu] = new Corecursive[Nu] {
-    def embed[F[_]: Functor](t: F[Nu[F]]) = colambek(t)
-    override def ana[F[_]: Functor, A](a: A)(f: Coalgebra[F, A]) = Nu(f, a)
-  }
+  implicit val equalT: EqualT[Nu] = EqualT.recursiveT
 
-  implicit val equalT: EqualT[Nu] = Recursive.equalT[Nu]
-
-  implicit val showT: ShowT[Nu] = Recursive.showT[Nu]
+  implicit val showT: ShowT[Nu] = ShowT.recursiveT
 }

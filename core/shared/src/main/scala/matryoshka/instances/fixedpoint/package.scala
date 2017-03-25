@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 
 package matryoshka.instances
 
-import matryoshka._, Recursive.ops._
+import slamdata.Predef._
+import matryoshka._
 import matryoshka.data._
+import matryoshka.implicits._
 import matryoshka.patterns._
 
 import monocle.Prism
-import scala.{Boolean, Int, None, Option, Some}
-import scala.annotation.{tailrec}
 
 import scalaz._, Scalaz._
 
@@ -30,40 +30,49 @@ import scalaz._, Scalaz._
   * implemented explicitly as fixed-points.
   */
 package object fixedpoint {
+
+  /** Natural numbers represented as the least fixed-point of [[scala.Option]].
+    */
   type Nat = Mu[Option]
+
   object Nat {
     def fromInt: CoalgebraM[Option, Option, Int] =
       x => if (x < 0) None else Some(if (x > 0) (x - 1).some else None)
 
     // NB: This isn’t defined via `AlgebraPrism` because it only holds across a
     //     recursive structure.
-    def intPrism = Prism[Int, Fix[Option]](_.anaM(fromInt))(_.cata(height))
+    def intPrism[T](implicit TR: Recursive.Aux[T, Option], TC: Corecursive.Aux[T, Option]) =
+      Prism[Int, T](_.anaM[T](fromInt))(_.cata(height))
   }
 
-  implicit class NatOps[T[_[_]]: Recursive: Corecursive](self: T[Option]) {
-    def +(other: T[Option]) = self.cata[T[Option]] {
+  implicit class NatOps[T]
+    (self: T)
+    (implicit TR: Recursive.Aux[T, Option], TC: Corecursive.Aux[T, Option]) {
+    def +(other: T) = self.cata[T] {
       case None => other
       case o    => o.embed
     }
 
-    def min(other: T[Option]) =
-      (self, other).ana(_.bimap(_.project, _.project) match {
+    def min(other: T) =
+      (self, other).ana[T](_.bimap(_.project, _.project) match {
         case (None,    _)       => None
         case (_,       None)    => None
         case (Some(a), Some(b)) => Some((a, b))
     })
 
-    def max(other: T[Option]) =
-      (self, other).apo(_.bimap(_.project, _.project) match {
+    def max(other: T) =
+      (self, other).apo[T](_.bimap(_.project, _.project) match {
         case (None,    b)       => b ∘ (_.left)
         case (a,       None)    => a ∘ (_.left)
         case (Some(a), Some(b)) => Some((a, b).right)
-    })
+      })
 }
 
+  /** The dual of [[Nat]], a potentially-infinite number. */
   type Conat = Nu[Option]
   object Conat {
-    val inf: Conat = ().ana[Nu, Option](_.some)
+    /** A representation of infinity, as a non-terminating corecursive process */
+    val inf: Conat = ().ana[Nu[Option]](_.some)
   }
 
   type Free[F[_], A]   = Mu[CoEnv[A, F, ?]]
@@ -71,31 +80,40 @@ package object fixedpoint {
   type List[A]         = Mu[ListF[A, ?]]
   object List {
     def apply[A](elems: A*) =
-      elems.ana[Mu, ListF[A, ?]](ListF.seqIso[A].reverseGet)
+      elems.toList.ana[Mu[ListF[A, ?]]](ListF.listIso[A].reverseGet)
 
-    def fillƒ[A](elem: => A): Option ~> ListF[A, ?] =
-      new (Option ~> ListF[A, ?]) {
-        def apply[β](opt: Option[β]) = opt match {
-          case None    => NilF()
-          case Some(b) => ConsF(elem, b)
-        }
-      }
+    def tuple[A](elem: => A) = λ[Option ~> ListF[A, ?]] {
+      case None    => NilF()
+      case Some(b) => ConsF(elem, b)
+    }
 
-    def fill[A](n: Int)(elem: => A): List[A] =
-      n.hyloM(
-        transformToAlgebra[Mu, Id, Option, Option, ListF[A, ?]](fillƒ(elem).apply(_).point[Option]),
-        Nat.fromInt)
-        .getOrElse(NilF[A, List[A]]().embed)
+    def forget[A] = λ[ListF[A, ?] ~> Option] {
+      case NilF()      => None
+      case ConsF(_, t) => t.some
+    }
+
+    def fill[A](n: Nat)(elem: => A): List[A] =
+      n.transAna[List[A]](tuple(elem))
   }
 
-  implicit class ListOps[A](self: Mu[ListF[A, ?]]) {
+  // FIXME: This implicit conversion seems to not get found, so we specialize
+  //        `T` below.
+  implicit class RecListFOps[T, A]
+    (self: T)
+    (implicit T: Recursive.Aux[T, ListF[A, ?]]) {
+    def find(cond: A => Boolean): Option[A] = self.cata(ListF.find(cond))
     def length: Int = self.cata(size) - 1
+    def headOption: Option[A] = self.project.headOption
+    def tailOption: Option[T] = self.project.tailOption
+    def take[N]
+      (i: N)
+      (implicit N: Recursive.Aux[N, Option], C: Corecursive.Aux[T, ListF[A, ?]])
+        : T =
+      (i, self).ana[T](ListF.takeUpTo)
   }
 
-  implicit class RecListFOps[T[_[_]]: Recursive, A](self: T[ListF[A, ?]]) {
-    def headOption: Option[A]              = self.project.headOption
-    def tailOption: Option[T[ListF[A, ?]]] = self.project.tailOption
-  }
+  implicit def ListOps[A](self: List[A]): RecListFOps[List[A], A] =
+    new RecListFOps[List[A], A](self)
 
   /** A lazy (potentially-infinite) list.
     */
@@ -105,16 +123,57 @@ package object fixedpoint {
     */
   type Stream[A] = Nu[(A, ?)]
 
+  object Stream {
+    def matchesFirst[A, B](cond: A => Boolean) =
+      λ[(A, ?) ~> (A \/ ?)] {
+        case (h, t) => if (cond(h)) h.left else t.right
+      }
+
+    def take[N, T, A](implicit N: Recursive.Aux[N, Option], T: Recursive.Aux[T, (A, ?)]): Coalgebra[ListF[A, ?], (N, T)] = {
+      case (n, s) =>
+        n.project.fold[ListF[A, (N, T)]](
+          NilF())(
+          prev => {
+            val pair = s.project
+            ConsF(pair._1, (prev, pair._2))
+          })
+    }
+
+    /** Colists are simply streams that may terminate, so a stream is easily
+      * converted to a Colist that doesn’t terminate.
+      */
+    // TODO: This could be `toConsF` potentially.
+    def toListF[A] = λ[(A, ?) ~> ListF[A, ?]](p => ConsF(p._1, p._2))
+  }
+
   implicit class StreamOps[A](self: Nu[(A, ?)]) {
     def head: A = self.project._1
+
     def tail: Nu[(A, ?)] = self.project._2
-    @tailrec final def drop(n: Int): Nu[(A, ?)] =
-      if (n > 0) tail.drop(n - 1) else self
-    def take(n: Int): Mu[ListF[A, ?]] =
-      (n, self).ana[Mu, ListF[A, ?]] {
-        case (r, stream) if (r > 0) => ConsF(stream.head, (r - 1, stream.tail))
-        case (_, _)                 => NilF()
-      }
+
+    /** Drops exactly `n` elements from the stream.
+      * This doesn’t expose the Coalgebra because it returns `Stream \/ Stream`,
+      * which isn’t the type of `drop`.
+      */
+    def drop[N](n: N)(implicit N: Recursive.Aux[N, Option]): Nu[(A, ?)] =
+      (n, self).anaM[Stream[A]] {
+        case (r, stream) =>
+          r.project.fold[Stream[A] \/ (A, (N, Stream[A]))](
+            stream.left)(
+            prev => stream.project.map((prev, _)).right)
+      }.merge
+
+    def take[N, T]
+      (n: N)
+      (implicit N: Recursive.Aux[N, Option], T: Corecursive.Aux[T, ListF[A, ?]])
+        : T =
+      (n, self).ana[T](Stream.take[N, Nu[(A, ?)], A])
+
+    /** Colists are simply streams that may terminate, so a stream is easily
+      * converted to a Colist that doesn’t terminate.
+      */
+    def toColist[T](implicit T: Corecursive.Aux[T, ListF[A, ?]]): T =
+      self.transAna[T](Stream.toListF(_))
   }
 
   /** Encodes a function that may diverge.
@@ -122,16 +181,17 @@ package object fixedpoint {
   type Partial[A] = Nu[A \/ ?]
 
   object Partial {
+    /** A partial function that immediately evaluates to the provided value.
+      */
     def now[A](a: A): Partial[A] = a.left[Nu[A \/ ?]].embed
+
     def later[A](partial: Partial[A]): Partial[A] = partial.right[A].embed
 
-    def delay[A](a: A): Option ~> (A \/ ?) = new (Option ~> (A \/ ?)) {
-      def apply[B](b: Option[B]) = b \/> a
-    }
+    def delay[A](a: A): Option ~> (A \/ ?) = λ[Option ~> (A \/ ?)](_ \/> a)
 
     /** Canonical function that diverges.
       */
-    def never[A]: Partial[A] = ().ana[Nu, A \/ ?](_.right)
+    def never[A]: Partial[A] = ().ana[Nu[A \/ ?]](_.right[A])
 
     /** This instance is not implicit, because it potentially runs forever.
       */
@@ -139,20 +199,20 @@ package object fixedpoint {
       Equal.equal((a, b) => (a ≈ b).unsafePerformSync)
 
     def fromOption[A](opt: Option[A]): Partial[A] = opt.fold(never[A])(now)
-    def fromPartialFunction[A, B](pf: scala.PartialFunction[A, B]):
+
+    def fromPartialFunction[A, B](pf: PartialFunction[A, B]):
         A => Partial[B] =
       pf.lift ⋙ fromOption
   }
 
   implicit val partialMonad: Monad[Partial] = new Monad[Partial] {
     def point[A](a: => A) = Partial.now(a)
+
     def bind[A, B](fa: Partial[A])(f: A => Partial[B]) =
       fa.project.fold(f, l => Partial.later(bind(l)(f)))
   }
 
-  implicit class PartialOps[A](self: Nu[A \/ ?]) {
-    import Partial._
-
+  implicit class PartialOps[A](self: Partial[A]) {
     def step: A \/ Partial[A] = self.project
 
     /** Returns `left` if the result was found within the given number of steps.
@@ -162,21 +222,17 @@ package object fixedpoint {
 
     /** Run to completion (if it completes).
       */
+    // TODO: Alternatively `self.cata[A](_.merge)`, but that's not tailrec.
     @tailrec final def unsafePerformSync: A = self.project match {
       case -\/(a) => a
       case \/-(p) => p.unsafePerformSync
     }
 
+    // TODO: Would be nice to have this in ApplicativeOps
     /** If two `Partial`s eventually have the same value, then they are
       * equivalent.
       */
     def ≈(that: Partial[A])(implicit A: Equal[A]): Partial[Boolean] =
-      // NB: could be defined as `(self ⊛ that)(_ ≟ _)`
-      (self, that).ana[Nu, Boolean \/ ?](_.bimap(_.project, _.project) match {
-        case (-\/(a1), -\/(a2)) => (a1 ≟ a2).left
-        case (\/-(l1), -\/(a2)) => (l1,      now(a2)).right
-        case (-\/(a1), \/-(l2)) => (now(a1), l2).right
-        case (\/-(l1), \/-(l2)) => (l1,      l2).right
-      })
+      (self ⊛ that)(_ ≟ _)
   }
 }

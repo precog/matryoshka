@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,28 +16,29 @@
 
 package matryoshka.data
 
-import matryoshka._, Recursive.ops._
+import matryoshka._
 
 import scalaz._, Scalaz._
 
 /** This is for inductive (finite) recursive structures, models the concept of
   * “data”, aka, the “least fixed point”.
   */
-final case class Mu[F[_]](unMu: λ[A => Algebra[F, A]] ~> Id)
-object Mu {
-  implicit val recursive: Recursive[Mu] = new Recursive[Mu] {
-    def project[F[_]: Functor](t: Mu[F]) = lambek(t)
-    override def cata[F[_]: Functor, A](t: Mu[F])(f: Algebra[F, A]) = t.unMu(f)
-  }
+final case class Mu[F[_]](unMu: Algebra[F, ?] ~> Id)
 
-  implicit val corecursive: Corecursive[Mu] = new Corecursive[Mu] {
-    def embed[F[_]: Functor](t: F[Mu[F]]) =
-      Mu(new (λ[A => Algebra[F, A]] ~> Id) {
-        def apply[A](fa: Algebra[F, A]): A = fa(t.map(_.cata(fa)))
+object Mu {
+  implicit def birecursiveT: BirecursiveT[Mu] = new BirecursiveT[Mu] {
+    // FIXME: ugh, shouldn’t have to redefine `lambek` in here?
+    def projectT[F[_]: Functor](t: Mu[F]) =
+      cataT[F, F[Mu[F]]](t)(_ ∘ embedT[F])
+    override def cataT[F[_]: Functor, A](t: Mu[F])(f: Algebra[F, A]) = t.unMu(f)
+
+    def embedT[F[_]: Functor](t: F[Mu[F]]) =
+      Mu(new (Algebra[F, ?] ~> Id) {
+        def apply[A](fa: Algebra[F, A]): A = fa(t.map(cataT(_)(fa)))
       })
   }
 
-  implicit val equalT: EqualT[Mu] = Recursive.equalT[Mu]
+  implicit val equalT: EqualT[Mu] = EqualT.recursiveT
 
-  implicit val showT: ShowT[Mu] = Recursive.showT[Mu]
+  implicit val showT: ShowT[Mu] = ShowT.recursiveT
 }

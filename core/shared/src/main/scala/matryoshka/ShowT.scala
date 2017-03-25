@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,12 @@
 
 package matryoshka
 
+import matryoshka.implicits._
+
 import java.lang.String
-import scala.inline
 
 import scalaz._
-import simulacrum.typeclass
+import simulacrum._
 
 @typeclass trait ShowT[T[_[_]]] {
   def show[F[_]: Functor](tf: T[F])(implicit del: Delay[Show, F]): Cord =
@@ -31,4 +32,11 @@ import simulacrum.typeclass
 
   def showT[F[_]: Functor](delay: Delay[Show, F]): Show[T[F]] =
     Show.show[T[F]](show[F](_)(Functor[F], delay))
+}
+
+object ShowT {
+  def recursiveT[T[_[_]]: RecursiveT]: ShowT[T] = new ShowT[T] {
+    override def show[F[_]: Functor](tf: T[F])(implicit del: Delay[Show, F]) =
+      tf.cata(del(Cord.CordShow).show)
+  }
 }

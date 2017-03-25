@@ -1,0 +1,1 @@
+- Replace Delay type alias with a type class.

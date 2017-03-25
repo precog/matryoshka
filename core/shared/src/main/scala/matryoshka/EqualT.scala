@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,11 @@
 
 package matryoshka
 
-import scala.{Boolean, inline}
+import slamdata.Predef._
+import matryoshka.implicits._
 
 import scalaz._
-import simulacrum.typeclass
+import simulacrum._
 
 @typeclass trait EqualT[T[_[_]]] {
   def equal[F[_]: Functor](tf1: T[F], tf2: T[F])(implicit del: Delay[Equal, F]):
@@ -27,4 +28,13 @@ import simulacrum.typeclass
 
   def equalT[F[_]: Functor](delay: Delay[Equal, F]): Equal[T[F]] =
     Equal.equal[T[F]](equal[F](_, _)(Functor[F], delay))
+}
+
+object EqualT {
+  def recursiveT[T[_[_]]: RecursiveT]: EqualT[T] = new EqualT[T] {
+    def equal[F[_]: Functor]
+      (tf1: T[F], tf2: T[F])
+      (implicit del: Delay[Equal, F]) =
+      del(equalT[F](del)).equal(tf1.project, tf2.project)
+  }
 }

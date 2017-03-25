@@ -1,0 +1,1 @@
+- add logo/sticker designed @tscholak

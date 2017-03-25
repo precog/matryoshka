@@ -1,3 +1,5 @@
+<img align="right" src="resources/matryoshka.png" height="200px" style="padding-left: 20px"/>
+
 # Matryoshka
 
 Generalized folds, unfolds, and traversals for fixed point data structures in Scala.
@@ -14,13 +16,19 @@ Generalized folds, unfolds, and traversals for fixed point data structures in Sc
 - [Unifying Structured Recursion Schemes](http://www.cs.ox.ac.uk/people/jeremy.gibbons/publications/urs.pdf) – a newer paper on how to generalize recursion schemes
 - [Efficient Nanopass Compilers using Cats and Matryoshka](https://github.com/sellout/recursion-scheme-talk/blob/master/nanopass-compiler-talk.org) – Greg Pfeil’s talk on this library (and some other things)
 - [Fix Haskell (by eliminating recursion)](https://github.com/sellout/recursion-scheme-talk/blob/master/recursion-scheme-talk.org) – Greg Pfeil’s talk on recursion schemes in Haskell
+- Recursion schemes by example - Tim Williams [slides](https://github.com/willtim/recursion-schemes/raw/master/slides-final.pdf) [talk](https://www.youtube.com/watch?v=Zw9KeP3OzpU)
+- [Practical Recursion Schemes](https://jtobin.io/practical-recursion-schemes) - Jared Tobin
+- [Promorphisms, Pre and Post](https://jtobin.io/promorphisms-pre-post) - Jared Tobin
+- [Time Traveling Recursion Schemes](https://jtobin.io/time-traveling-recursion) - Jared Tobin
+- [Automatic Differentiation via recursion schemes](https://jtobin.io/ad-via-recursion-schemes) - Jared Tobin
 
 ## Usage
 
 To use Matryoshka, the following import should bring in pretty much everything:
 
 ```scala
-import matryoshka._, Recursive.ops._, TraverseT.ops._
+import matryoshka._
+import matryoshka.implicits._
 ```
 
 Also, there are a number of implicits that scalac has trouble finding. Adding @milessabin’s [SI-2712 fix compiler plugin](https://github.com/milessabin/si2712fix-plugin) will simplify a ton of Matryoshka-related code.
@@ -70,16 +78,26 @@ This diagram covers the major classes of transformations. The most basic ones ar
 Here is a very simple example of an algebra (`eval`) and how to apply it to a recursive structure.
 
 ```scala
+// we will need a Functor[Expr] in order to call embed bellow
+implicit val exprFunctor = new scalaz.Functor[Expr] {
+  override def map[A, B](fa: Expr[A])(f: (A) => B) = fa match{
+    case Num(value) => Num[B](value)
+    case Mul(l, r) => Mul(f(l), f(r))
+  }
+}
+
 val eval: Algebra[Expr, Long] = { // i.e. Expr[Long] => Long
   case Num(x)    => x
   case Mul(x, y) => x * y
 }
+ 
+def someExpr[T](implicit T: Corecursive.Aux[T, Expr]): T =
+  Mul(Num[T](2).embed, Mul(Num[T](3).embed,
+      Num[T](4).embed).embed).embed
 
-def someExpr[T[_[_]]: Corecursive]: T[Expr] =
-  Mul(Num[T[Expr]](2).embed, Mul(Num[T[Expr]](3).embed,
-      Num[T[Expr]](4).embed).embed).embed
+import matryoshka.data.Mu 
 
-someExpr[Mu].cata(eval) // ⇒ 24
+someExpr[Mu[Expr]].cata(eval) // ⇒ 24
 ```
 
 The `.embed` calls in `someExpr` wrap the nodes in the fixed point type. `embed` is generic, and we abstract `someExpr` over the fixed point type (only requiring that it has an instance of `Corecursive`), so we can postpone the choice of the fixed point as long as possible.
@@ -146,7 +164,7 @@ Since we can actually derive almost everything from a fairly small number of ope
 
 1. Reducing constraints. In the case of `para`, using `gcata(distPara, …)` would introduce a `Corecursive` constraint, and all of the Kleisli variants require `Traverse` for the functor, not just `Functor`.
 2. Improving performance. `cata` implemented directly (presumably) performs better than `gcata[Id, …]`. We should have some benchmarks added eventually to actually determine when this is worth doing.
-3. Helping inference. Whle we are (planning to) used kinda-curried type parameters to help with this, it’s still the case that `gcata` generally requires all the type parameters to be specified, while, say, `zygo` doesn’t. You can notice these instances because their definition actually is just to call the generalized version, rather than being implemented directly.
+3. Helping inference. While we are (planning to) use kinda-curried type parameters to help with this, it’s still the case that `gcata` generally requires all the type parameters to be specified, while, say, `zygo` doesn’t. You can notice these instances because their definition actually is just to call the generalized version, rather than being implemented directly.
 
 ## Contributing
 

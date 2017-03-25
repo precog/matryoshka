@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,25 +17,25 @@
 package matryoshka.data
 
 import matryoshka._
+import matryoshka.patterns.EnvT
 
 import scalaz._
-import scalaz.syntax.functor._
 
 trait CofreeInstances {
-  implicit def cofreeRecursive[A]: Recursive[Cofree[?[_], A]] =
-    new Recursive[Cofree[?[_], A]] {
-      def project[F[_]: Functor](t: Cofree[F, A]) = t.tail
+  implicit def cofreeRecursive[F[_], A]: Recursive.Aux[Cofree[F, A], EnvT[A, F, ?]] =
+    new Recursive[Cofree[F, A]] {
+      type Base[B] = EnvT[A, F, B]
+
+      def project(t: Cofree[F, A])(implicit BF: Functor[Base]) =
+        EnvT((t.head, t.tail))
     }
 
-  implicit def cofreeCorecursive[A: Monoid]: Corecursive[Cofree[?[_], A]] =
-    new Corecursive[Cofree[?[_], A]] {
-      def embed[F[_]: Functor](t: F[Cofree[F, A]]) = Cofree(Monoid[A].zero, t)
-    }
+  implicit def cofreeCorecursive[F[_], A]: Corecursive.Aux[Cofree[F, A], EnvT[A, F, ?]] =
+    new Corecursive[Cofree[F, A]] {
+      type Base[B] = EnvT[A, F, B]
 
-  implicit def cofreeTraverseT[A]: TraverseT[Cofree[?[_], A]] =
-    new TraverseT[Cofree[?[_], A]] {
-      def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: Cofree[F, A])(f: F[Cofree[F, A]] => M[G[Cofree[G, A]]]) =
-        f(t.tail).map(Cofree(t.head, _))
+      def embed(t: EnvT[A, F, Cofree[F, A]])(implicit BF: Functor[Base]) =
+        Cofree(t.ask, t.lower)
     }
 
   implicit def cofreeEqual[F[_]](implicit F: Delay[Equal, F]):

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,26 @@
 package matryoshka.data
 
 import matryoshka._
+import matryoshka.patterns.CoEnv
 
 import scalaz._, Scalaz._
 
 trait FreeInstances {
-  implicit def freeCorecursive[A]: Corecursive[Free[?[_], A]] =
-    new Corecursive[Free[?[_], A]] {
-      def embed[F[_]: Functor](t: F[Free[F, A]]) = Free.liftF(t).join
+  // TODO: Remove the Functor constraint when we upgrade to Scalaz 7.2
+  implicit def freeRecursive[F[_]: Functor, A]: Recursive.Aux[Free[F, A], CoEnv[A, F, ?]] =
+    new Recursive[Free[F, A]] {
+      type Base[B] = CoEnv[A, F, B]
+
+      def project(t: Free[F, A])(implicit BF: Functor[Base]) =
+        CoEnv(t.resume.swap)
     }
 
-  implicit def freeTraverseT[A]: TraverseT[Free[?[_], A]] =
-    new TraverseT[Free[?[_], A]] {
-      def traverse[M[_]: Applicative, F[_]: Functor, G[_]: Functor](t: Free[F, A])(f: F[Free[F, A]] => M[G[Free[G, A]]]) =
-        t.fold(
-          _.point[Free[G, ?]].point[M],
-          f(_).map(Free.liftF(_).join))
+  implicit def freeCorecursive[F[_]: Functor, A]: Corecursive.Aux[Free[F, A], CoEnv[A, F, ?]] =
+    new Corecursive[Free[F, A]] {
+      type Base[B] = CoEnv[A, F, B]
+
+      def embed(t: CoEnv[A, F, Free[F, A]])(implicit BF: Functor[Base]) =
+        t.run.fold(_.point[Free[F, ?]], Free.liftF(_).join)
     }
 
   implicit def freeEqual[F[_]: Functor](implicit F: Delay[Equal, F]):

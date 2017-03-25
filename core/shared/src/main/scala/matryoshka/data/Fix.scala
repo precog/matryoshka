@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,16 +23,15 @@ import scalaz._
 /** This is the simplest fixpoint type, implemented with general recursion.
   */
 final case class Fix[F[_]](unFix: F[Fix[F]])
+
 object Fix {
-  implicit val recursive: Recursive[Fix] = new Recursive[Fix] {
-    def project[F[_]: Functor](t: Fix[F]) = t.unFix
+  implicit def birecursiveT: BirecursiveT[Fix] = new BirecursiveT[Fix] {
+    def projectT[F[_]: Functor](t: Fix[F]) = t.unFix
+
+    def embedT[F[_]: Functor](t: F[Fix[F]]) = Fix(t)
   }
 
-  implicit val corecursive: Corecursive[Fix] = new Corecursive[Fix] {
-    def embed[F[_]: Functor](t: F[Fix[F]]) = Fix(t)
-  }
+  implicit val equalT: EqualT[Fix] = EqualT.recursiveT
 
-  implicit val equalT: EqualT[Fix] = Recursive.equalT[Fix]
-
-  implicit val showT: ShowT[Fix] = Recursive.showT[Fix]
+  implicit val showT: ShowT[Fix] = ShowT.recursiveT
 }

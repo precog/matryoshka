@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,12 @@
  * limitations under the License.
  */
 
-import matryoshka.Recursive.ops._
-import matryoshka.patterns.EnvT
-
-import scala.{Boolean, Function, Int, None, Option, Unit}
-import scala.collection.immutable.{List, ::}
+import slamdata.Predef._
+import matryoshka.implicits._
+import matryoshka.patterns.{CoEnv, EnvT}
 
 import monocle._
-import scalaz._, Scalaz._
+import scalaz._, Liskov._, Scalaz._
 
 /** Generalized folds, unfolds, and refolds.
   *
@@ -36,123 +34,124 @@ import scalaz._, Scalaz._
   */
 package object matryoshka {
 
-  /** Fold a structure `F` containing values in `W`, to a value `A`, 
+  /** Fold a structure `F` containing values in `W`, to a value `A`,
     * accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
   type GAlgebraM[W[_], M[_], F[_], A] = F[W[A]] => M[A]
   /** Fold a structure `F` containing values in `W`, to a value `A`.
-    * @group algebras 
+    * @group algebras
     */
   type GAlgebra[W[_], F[_], A]        = F[W[A]] => A    // GAlgebraM[W, Id, F, A]
   /** Fold a structure `F` to a value `A`, accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
   type AlgebraM[M[_], F[_], A]        = F[A]    => M[A] // GAlgebraM[Id, M, F, A]
   /** Fold a structure `F` to a value `A`.
-    * @group algebras 
+    * @group algebras
     */
   type Algebra[F[_], A]               = F[A] => A       // GAlgebra[Id, F, A]
-  /** Fold a structure `F` (usually a `Functor`) contained in `W` (usually a 
+  /** Fold a structure `F` (usually a `Functor`) contained in `W` (usually a
     * `Comonad`), to a value `A`, accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
   type ElgotAlgebraM[W[_], M[_], F[_], A] =                        W[F[A]] => M[A]
-  /** Fold a structure `F` (usually a `Functor`) contained in `W` (usually a 
+  /** Fold a structure `F` (usually a `Functor`) contained in `W` (usually a
     * `Comonad`), to a value `A`.
-    * @group algebras 
+    * @group algebras
     */
   type ElgotAlgebra[W[_], F[_], A] = ElgotAlgebraM[W, Id, F, A] // W[F[A]] => A
 
-  /** Unfold a value `A` to a structure `F` containing values in `N`, 
+  /** Unfold a value `A` to a structure `F` containing values in `N`,
     * accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
   type GCoalgebraM[N[_], M[_], F[_], A] = A => M[F[N[A]]]
   /** Unfold a value `A` to a structure `F` containing values in `N`.
-    * @group algebras 
+    * @group algebras
     */
   type GCoalgebra[N[_], F[_], A]        = A => F[N[A]] // GCoalgebraM[N, Id, F, A]
-  /** Unfold a value `A` to a structure `F`, accumulating effects in the monad 
+  /** Unfold a value `A` to a structure `F`, accumulating effects in the monad
     * `M`.
-    * @group algebras 
+    * @group algebras
     */
   type CoalgebraM[M[_], F[_], A]        = A => M[F[A]] // GCoalgebraM[Id, M, F, A]
   /** Unfold a value `A` to a structure `F`.
-    * @group algebras 
+    * @group algebras
     */
   type Coalgebra[F[_], A]               = A => F[A]    // GCoalgebra[Id, F, A]
-  /** Unfold a value `A` to a structure `F` (usually a `Functor`), contained in 
+  /** Unfold a value `A` to a structure `F` (usually a `Functor`), contained in
     * `E`, accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
   type ElgotCoalgebraM[E[_], M[_], F[_], A] = A => M[E[F[A]]]
-  /** Unfold a value `A` to a structure `F` (usually a `Functor`), contained in 
+  /** Unfold a value `A` to a structure `F` (usually a `Functor`), contained in
     * `E`.
-    * @group algebras 
+    * @group algebras
     */
   type ElgotCoalgebra[E[_], F[_], A]        = A => E[F[A]] // ElgotCoalgebraM[E, Id, F, A]
 
-  /** Transform a structure `F` containing values in `W`, to a structure `G`, 
-    * in bottom-up fashion, accumulating effects in the monad `M`.
-    * @group algebras 
-    */
-  type GAlgebraicTransformM[T[_[_]], W[_], M[_], F[_], G[_]] = F[W[T[G]]] => M[G[T[G]]]
-  /** Transform a structure `F`, to a structure `G`, in bottom-up fashion, 
-    * accumulating effects in the monad `M`.
-    * @group algebras 
-    */
-  type AlgebraicTransformM[T[_[_]], M[_], F[_], G[_]]        = F[T[G]] => M[G[T[G]]] // GAlgebraicTransformM[T, Id, M, F, G]
-  /** Transform a structure `F` containing values in `W`, to a structure `G`, 
+  /** Transform a structure `F` containing values in `W`, to a structure `G`,
     * in bottom-up fashion.
-    * @group algebras 
+    * @group algebras
     */
-  type GAlgebraicTransform[T[_[_]], W[_], F[_], G[_]]        = F[W[T[G]]] => G[T[G]] // GAlgebraicTransformM[T, W, Id, F, G]
-  /** Transform a structure `F` to a structure `G`, in bottom-up fashion.
-    * @group algebras 
-    */
-  type AlgebraicTransform[T[_[_]], F[_], G[_]]               = F[T[G]] => G[T[G]]    // GAlgebraicTransformM[T, Id, Id, F, G]
+  type AlgebraicGTransformM[W[_], M[_], T, F[_], G[_]] = F[W[T]] => M[G[T]]
 
-  /** Transform a structure `F` to a structure `G` containing values in `N`, 
+  /** Transform a structure `F` containing values in `W`, to a structure `G`,
+    * in bottom-up fashion.
+    * @group algebras
+    */
+  type AlgebraicGTransform[W[_], T, F[_], G[_]]        = F[W[T]] => G[T]
+
+  /** Transform a structure `F` to a structure `G` containing values in `N`,
     * in top-down fashion, accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
-  type GCoalgebraicTransformM[T[_[_]], N[_], M[_], F[_], G[_]] = F[T[F]] => M[G[N[T[F]]]]
-  /** Transform a structure `F` to a structure `G`, in top-down fashion, 
+  type CoalgebraicGTransformM[N[_], M[_], T, F[_], G[_]] = F[T] => M[G[N[T]]]
+
+  /** Transform a structure `F` to a structure `G`, in top-down fashion,
     * accumulating effects in the monad `M`.
-    * @group algebras 
+    * @group algebras
     */
-  type CoalgebraicTransformM[T[_[_]], M[_], F[_], G[_]]        = F[T[F]] => M[G[T[F]]] // GCoalgebraicTransformM[T, Id, M, F, G]
-  /** Transform a structure `F` to a structure `G` containing values in `N`, 
-    * in top-down fashion.
-    * @group algebras 
+  type CoalgebraicGTransform[N[_], T, F[_], G[_]]        = F[T] => G[N[T]]
+
+  /** Transform a structure `F` to a structure `G`, in top-down fashion,
+    * accumulating effects in the monad `M`.
+    * @group algebras
     */
-  type GCoalgebraicTransform[T[_[_]], N[_], F[_], G[_]]        = F[T[F]] => G[N[T[F]]] // GCoalgebraicTransformM[T, N, Id, F, G]
-  /** Transform a structure `F` to a structure `G`, in top-down fashion.
-    * @group algebras 
+  type CoalgebraicElgotTransform[N[_], T, F[_], G[_]]    = F[T] => N[G[T]]
+
+  /** Transform a structure `F` to a structure `G`, accumulating effects in the
+    *  monad `M`. For a top-down transformation, `T#Base` must be `F`, and for a
+    *  bottom-up transformation, `T#Base` must be `G`.
+    *
+    * @group algebras
     */
-  type CoalgebraicTransform[T[_[_]], F[_], G[_]]               = F[T[F]] => G[T[F]]    // GCoalgebraicTransformM[T, Id, Id, F, G]
+  type TransformM[M[_], T, F[_], G[_]]        = F[T] => M[G[T]]
 
-  /** @group algtrans */
-  def transformToAlgebra[T[_[_]]: Corecursive, W[_], M[_]: Functor, F[_], G[_]: Functor](
-    self: GAlgebraicTransformM[T, W, M, F, G]):
-      GAlgebraM[W, M, F, T[G]] =
-    self(_) ∘ (_.embed)
+  /** Transform a structure `F` to a structure `G`. For a top-down
+    * transformation, `T#Base` must be `F`, and for a bottom-up transformation,
+    * `T#Base` must be `G`.
+    *
+    * @group algebras
+    */
+  type Transform[T, F[_], G[_]]               = F[T] => G[T] // TransformM[Id, T, F, G]
 
-  def lambek[T[_[_]]: Corecursive: Recursive, F[_]: Functor](tf: T[F]):
-      F[T[F]] =
-    tf.cata[F[T[F]]](_ ∘ (_.embed))
-
-  def colambek[T[_[_]]: Corecursive: Recursive, F[_]: Functor](ft: F[T[F]]):
-      T[F] =
-    ft.ana(_ ∘ (_.project))
+  type EndoTransform[T, F[_]]                 = F[T] => F[T] // Transform[T, F, F]
 
   /** An algebra and its dual form an isomorphism.
     */
   type GAlgebraIso[W[_], N[_], F[_], A] = PIso[F[W[A]], F[N[A]], A, A]
   object GAlgebraIso {
-    def apply[W[_], N[_], F[_], A](φ: GAlgebra[W, F, A])(ψ: GCoalgebra[N, F, A]):
-        GAlgebraIso[W, N, F, A] =
+    def apply[W[_], N[_], F[_], A](φ: GAlgebra[W, F, A])(ψ: GCoalgebra[N, F, A])
+        : GAlgebraIso[W, N, F, A] =
+      PIso(φ)(ψ)
+  }
+
+  type ElgotAlgebraIso[W[_], N[_], F[_], A] = PIso[W[F[A]], N[F[A]], A, A]
+  object ElgotAlgebraIso {
+    def apply[W[_], N[_], F[_], A](φ: ElgotAlgebra[W, F, A])(ψ: ElgotCoalgebra[N, F, A])
+        : ElgotAlgebraIso[W, N, F, A] =
       PIso(φ)(ψ)
   }
 
@@ -177,26 +176,36 @@ package object matryoshka {
       Prism(ψ)(φ)
   }
 
-  def recCorecIso[T[_[_]]: Recursive: Corecursive, F[_]: Functor] =
-    AlgebraIso[F, T[F]](_.embed)(_.project)
+  // TODO: Move this to `Birecursive` once that works.
+  def birecursiveIso[T, F[_]: Functor]
+    (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
+    AlgebraIso[F, T](_.embed)(_.project)
 
-  def lambekIso[T[_[_]]: Corecursive: Recursive, F[_]: Functor] =
-    AlgebraIso[F, T[F]](colambek)(lambek)
+  // TODO: Move this to `Birecursive` once that works.
+  def bilambekIso[T, F[_]: Functor]
+    (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
+    AlgebraIso[F, T](_.colambek)(_.lambek)
 
   /** There is a fold/unfold isomorphism for any AlgebraIso.
     */
-  def foldIso[T[_[_]]: Corecursive: Recursive, F[_]: Functor, A](alg: AlgebraIso[F, A]) =
-    Iso[T[F], A](_.cata(alg.get))(_.ana(alg.reverseGet))
+  def foldIso[T, F[_]: Functor, A]
+    (alg: AlgebraIso[F, A])
+    (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
+    Iso[T, A](_.cata(alg.get))(_.ana[T](alg.reverseGet))
 
   /** There is a fold prism for any AlgebraPrism.
     */
-  def foldPrism[T[_[_]]: Corecursive: Recursive, F[_]: Traverse, A](alg: AlgebraPrism[F, A]) =
-    Prism[T[F], A](Recursive[T].cataM(_)(alg.getOption))(_.ana(alg.reverseGet))
+  def foldPrism[T, F[_]: Traverse, A]
+    (alg: AlgebraPrism[F, A])
+    (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
+    Prism[T, A](TR.cataM(_)(alg.getOption))(_.ana[T](alg.reverseGet))
 
   /** There is an unfold prism for any CoalgebraPrism.
     */
-  def unfoldPrism[T[_[_]]: Corecursive: Recursive, F[_]: Traverse, A](coalg: CoalgebraPrism[F, A]) =
-    Prism[A, T[F]](_.anaM(coalg.getOption))(_.cata(coalg.reverseGet))
+  def unfoldPrism[T, F[_]: Traverse, A]
+    (coalg: CoalgebraPrism[F, A])
+    (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
+    Prism[A, T](_.anaM[T](coalg.getOption))(_.cata(coalg.reverseGet))
 
   /** A NaturalTransformation that sequences two types
     *
@@ -204,59 +213,45 @@ package object matryoshka {
     */
   type DistributiveLaw[F[_], G[_]] = (F ∘ G)#λ ~> (G ∘ F)#λ
 
-  /** This folds a Free that you may think of as “already partially-folded”.
-    * It’s also the fold of a decomposed `elgot`.
-    */
-  def interpretCata[F[_]: Functor, A](t: Free[F, A])(φ: Algebra[F, A]): A =
-    t.fold(x => x, f => φ(f ∘ (interpretCata(_)(φ))))
-
-  /** The fold of a decomposed `coelgot`, since the Cofree already has the
-    * attribute for each node.
-    */
-  def cofCata[F[_]: Functor, A, B](
-    t: Cofree[F, A])(
-    φ: ElgotAlgebra[(A, ?), F, B]):
-      B =
-    φ((t.head, t.tail ∘ (cofCata(_)(φ))))
-
-  def cofCataM[F[_]: Traverse, M[_]: Monad, A, B](
-    t: Cofree[F, A])(
-    φ: ElgotAlgebraM[(A, ?), M, F, B]):
-      M[B] =
-    t.tail.traverse(cofCataM(_)(φ)) >>= (fb => φ((t.head, fb)))
-
-  /** A version of [[matryoshka.Corecursive.ana]] that annotates each node with
-    * the `A` it was expanded from. This is also the unfold from a decomposed
-    * `coelgot`.
-    */
-  def attributeAna[F[_]: Functor, A](a: A)(ψ: Coalgebra[F, A]): Cofree[F, A] =
-    Cofree(a, ψ(a) ∘ (attributeAna(_)(ψ)))
-
-  /** A Kleisli [[matryoshka.attributeAna]]. */
-  def attributeAnaM[M[_]: Monad, F[_]: Traverse, A](a: A)(ψ: CoalgebraM[M, F, A]): M[Cofree[F, A]] =
-    ψ(a).flatMap(_.traverse(attributeAnaM(_)(ψ))) ∘ (Cofree(a, _))
-
-  /** The unfold from a decomposed `elgot`. */
-  def freeAna[F[_]: Functor, A, B](a: A)(ψ: ElgotCoalgebra[B \/ ?, F, A]): Free[F, B] =
-    ψ(a).fold(
-      _.point[Free[F, ?]],
-      fb => Free.liftF(fb ∘ (freeAna(_)(ψ))).join)
-
-  /** Composition of an anamorphism and a catamorphism that avoids building the
-    * intermediate recursive data structure.
+  /** The hylomorphism is the fundamental operation of recursion schemes. It
+    * first applies `ψ`, recursively breaking an `A` into layers of `F`, then
+    * applies `φ`, combining the `F`s into a `B`. It can also be seen as the
+    * (fused) composition of an anamorphism and a catamorphism that avoids
+    * building the intermediate recursive data structure.
     *
     * @group refolds
     */
-  def hylo[F[_]: Functor, A, B](a: A)(f: Algebra[F, B], g: Coalgebra[F, A]): B =
-    f(g(a) ∘ (hylo(_)(f, g)))
+  def hylo[F[_]: Functor, A, B](a: A)(φ: Algebra[F, B], ψ: Coalgebra[F, A]): B =
+    φ(ψ(a) ∘ (hylo(_)(φ, ψ)))
 
   /** A Kleisli hylomorphism.
     *
     * @group refolds
     */
-  def hyloM[M[_]: Monad, F[_]: Traverse, A, B](a: A)(f: AlgebraM[M, F, B], g: CoalgebraM[M, F, A]):
-      M[B] =
-    g(a) >>= (_.traverse(hyloM(_)(f, g)) >>= f)
+  def hyloM[M[_], F[_], A, B]
+    (a: A)
+    (f: AlgebraM[M, F, B], g: CoalgebraM[M, F, A])
+    (implicit M: Monad[M], F: Traverse[F])
+      : M[B] =
+    hylo[(M ∘ F)#λ, A, M[B]](a)(_ >>= (_.sequence >>= f), g)(M compose F)
+
+  /** Composition of an elgot-anamorphism and an elgot-catamorphism that avoids
+    * building the intermediate recursive data structure.
+    *
+    * `elgotCata ⋘ elgotAna`
+    *
+    * @group refolds
+    */
+  def elgotHylo[W[_]: Comonad, N[_]: Monad, F[_]: Functor, A, B]
+      (a: A)
+      (kφ: DistributiveLaw[F, W], kψ: DistributiveLaw[N, F], φ: ElgotAlgebra[W, F, B], ψ: ElgotCoalgebra[N, F, A])
+        : B = {
+    lazy val trans: N[A] => W[B] =
+      na => loop(na >>= ψ) cobind φ
+    lazy val loop: N[F[A]] => W[F[B]] =
+      (kψ[A] _) ⋙ (_ map trans) ⋙ kφ[B]
+    (ψ ⋙ loop ⋙ φ)(a)
+  }
 
   /** `histo ⋘ ana`
     *
@@ -284,37 +279,33 @@ package object matryoshka {
     *
     * @group refolds
     */
-  def ghylo[W[_]: Comonad, N[_], F[_]: Functor, A, B](
+  def ghylo[W[_]: Comonad, N[_]: Monad, F[_]: Functor, A, B](
     a: A)(
     w: DistributiveLaw[F, W],
     n: DistributiveLaw[N, F],
     f: GAlgebra[W, F, B],
-    g: GCoalgebra[N, F, A])(
-    implicit N: Monad[N]):
-      B = {
-    def h(x: N[A]): W[B] = w(n(N.lift(g)(x)) ∘ (y => h(y.join).cojoin)) ∘ f
-    h(a.point[N]).copoint
-  }
+    g: GCoalgebra[N, F, A]):
+      B =
+    hylo[Yoneda[F, ?], N[A], W[B]](
+      a.point[N])(
+      fwb => w((fwb ∘ (_.cojoin)).run) ∘ f, na => Yoneda(n(na ∘ g)) ∘ (_.join)).copoint
 
   /** A Kleisli `ghylo` (`gcataM ⋘ ganaM`)
     *
     * @group refolds
     */
-  def ghyloM[W[_]: Comonad: Traverse, N[_]: Traverse, M[_]: Monad, F[_]: Traverse, A, B](
+  def ghyloM[W[_]: Comonad: Traverse, N[_]: Monad: Traverse, M[_]: Monad, F[_]: Traverse, A, B](
     a: A)(
     w: DistributiveLaw[F, W],
-    m: DistributiveLaw[N, F],
+    n: DistributiveLaw[N, F],
     f: GAlgebraM[W, M, F, B],
-    g: GCoalgebraM[N, M, F, A])(
-    implicit N: Monad[N]):
-      M[B] = {
-    def h(x: N[A]): M[W[B]] =
-      (N.lift(g)(x).sequence >>=
-        (m(_: N[F[N[A]]]).traverse(y => h(y.join) ∘ (_.cojoin)))) ∘
-        (w(_)) >>=
-        (_.traverse(f))
-    h(a.point[N]) ∘ (_.copoint)
-  }
+    g: GCoalgebraM[N, M, F, A]):
+      M[B] =
+    hyloM[M, F, N[A], W[B]](
+      a.point[N])(
+      fwb => w(fwb ∘ (_.cojoin)).traverse(f),
+        na => na.traverse(g) ∘ (n(_) ∘ (_.join))) ∘
+      (_.copoint)
 
   /** Similar to a hylomorphism, this composes a futumorphism and a
     * histomorphism.
@@ -331,43 +322,54 @@ package object matryoshka {
     *
     * @group refolds
     */
-  def elgot[F[_]: Functor, A, B](a: A)(φ: Algebra[F, B], ψ: CoalgebraM[B \/ ?, F, A]): B = {
-    def h: A => B =
-      (((x: B) => x) ||| ((x: F[A]) => φ(x ∘ h))) ⋘ ψ
-    h(a)
-  }
+  def elgot[F[_], A, B]
+    (a: A)
+    (φ: Algebra[F, B], ψ: ElgotCoalgebra[B \/ ?, F, A])
+    (implicit F: Functor[F])
+      : B =
+    hylo[((B \/ ?) ∘ F)#λ, A, B](a)(_.swap.valueOr(φ), ψ)(Functor[B \/ ?] compose F)
 
   /** `cataM ⋘ elgotGApoM`
     *
     * @group refolds
     */
-  def elgotM[M[_]: Monad, F[_]: Traverse, A, B](a: A)(φ: AlgebraM[M, F, B], ψ: ElgotCoalgebraM[B \/ ?, M, F, A]):
-      M[B] = {
-    def h(a: A): M[B] = ψ(a) >>= (_.traverse(_.traverse(h) >>= φ).map(_.merge))
-    h(a)
-  }
+  def elgotM[M[_], F[_], A, B]
+    (a: A)
+    (φ: AlgebraM[M, F, B], ψ: ElgotCoalgebraM[B \/ ?, M, F, A])
+    (implicit M: Monad[M], F: Traverse[F])
+      : M[B] =
+    hyloM[M, ((B \/ ?) ∘ F)#λ, A, B](
+      a)(
+      _.fold(_.point[M], φ), ψ)(
+      M, Traverse[B \/ ?] compose F)
 
   /** `elgotZygo ⋘ ana`
     *
     * @group refolds
     */
-  def coelgot[F[_]: Functor, A, B](a: A)(φ: ElgotAlgebra[(A, ?), F, B], ψ: Coalgebra[F, A]):
-      B = {
-    def h: A => B =
-      φ ⋘ (((x: A) => x) &&& (((x: F[A]) => x ∘ h) ⋘ ψ))
-    h(a)
-  }
+  def coelgot[F[_], A, B]
+    (a: A)
+    (φ: ElgotAlgebra[(A, ?), F, B], ψ: Coalgebra[F, A])
+    (implicit F: Functor[F])
+      : B =
+    hylo[((A, ?) ∘ F)#λ, A, B](a)(φ, a => (a, ψ(a)))(Functor[(A, ?)] compose F)
 
   /** `elgotZygoM ⋘ anaM`
     *
     * @group refolds
     */
-  def coelgotM[M[_]] = new CoelgotMPartiallyApplied[M]
-  final class CoelgotMPartiallyApplied[M[_]] {
-    def apply[F[_]: Traverse, A, B](a: A)(φ: ElgotAlgebraM[(A, ?), M, F, B], ψ: CoalgebraM[M, F, A])(implicit M: Monad[M]):
-        M[B] = {
-      def h(a: A): M[B] = ψ(a) >>= (_.traverse(h)) >>= (x => φ((a, x)))
-      h(a)
+  object coelgotM {
+    def apply[M[_]] = new PartiallyApplied[M]
+    final class PartiallyApplied[M[_]] {
+      def apply[F[_], A, B]
+        (a: A)
+        (φ: ElgotAlgebraM[(A, ?), M, F, B], ψ: CoalgebraM[M, F, A])
+        (implicit M: Monad[M], F: Traverse[F])
+          : M[B] =
+        hyloM[M, ((A, ?) ∘ F)#λ, A, B](
+          a)(
+          φ, a => ψ(a) strengthL a)(
+          M, Traverse[(A, ?)] compose F)
     }
   }
 
@@ -375,25 +377,45 @@ package object matryoshka {
     *
     * @group dist
     */
-  def distPara[T[_[_]]: Corecursive, F[_]: Functor]:
-      DistributiveLaw[F, (T[F], ?)] =
-    distZygo(_.embed)
+  def distPara[T, F[_]: Functor](implicit T: Corecursive.Aux[T, F])
+      : DistributiveLaw[F, (T, ?)] =
+    distZygo[F, T](T.embed(_))
 
   /**
     *
     * @group dist
     */
-  def distParaT[T[_[_]], F[_]: Functor, W[_]: Comonad](
-    t: DistributiveLaw[F, W])(
-    implicit T: Corecursive[T]):
-      DistributiveLaw[F, EnvT[T[F], W, ?]] =
-    distZygoT(_.embed, t)
+  def distParaT[T, W[_]: Comonad, F[_]: Functor]
+    (t: DistributiveLaw[F, W])
+    (implicit T: Corecursive.Aux[T, F])
+      : DistributiveLaw[F, EnvT[T, W, ?]] =
+    distZygoT[F, W, T](_.embed, t)
 
   /**
     *
     * @group dist
     */
   def distCata[F[_]]: DistributiveLaw[F, Id] = NaturalTransformation.refl
+
+  /** A general [[DistributiveLaw]] for the case where the [[scalaz.Comonad]] is
+    * also [[scalaz.Applicative]].
+    *
+    * @group dist
+    */
+  def distApplicative[F[_]: Traverse, G[_]: Applicative] =
+    new DistributiveLaw[F, G] {
+      def apply[A](fga: F[G[A]]) = fga.sequence
+    }
+
+  /** A general [[DistributiveLaw]] for the case where the [[scalaz.Comonad]] is
+    * also [[scalaz.Distributive]].
+    *
+    * @group dist
+    */
+  def distDistributive[F[_]: Functor, G[_]: Distributive] =
+    new DistributiveLaw[F, G] {
+      def apply[A](fga: F[G[A]]) = fga.cosequence
+    }
 
   /**
     *
@@ -408,14 +430,23 @@ package object matryoshka {
     *
     * @group dist
     */
-  def distZygoT[F[_], W[_]: Comonad, B](
-    g: Algebra[F, B], k: DistributiveLaw[F, W])(
-    implicit F: Functor[F]) =
+  def distZygoM[F[_]: Functor, M[_]: Monad, B](
+    g: AlgebraM[M, F, B], k: DistributiveLaw[F, M]) =
+    new DistributiveLaw[F, (M ∘ (B, ?))#λ] {
+      def apply[α](fm: F[M[(B, α)]]) = {
+        k(fm) >>= { f => g(f ∘ (_._1)) ∘ ((_, f ∘ (_._2))) }
+      }
+    }
+
+  /**
+    *
+    * @group dist
+    */
+  def distZygoT[F[_]: Functor, W[_]: Comonad, B](
+    g: Algebra[F, B], k: DistributiveLaw[F, W]) =
     new DistributiveLaw[F, EnvT[B, W, ?]] {
       def apply[α](fe: F[EnvT[B, W, α]]) =
-        EnvT((
-          g(F.lift[EnvT[B, W, α], B](_.ask)(fe)),
-          k(F.lift[EnvT[B, W, α], W[α]](_.lower)(fe))))
+        EnvT((g(fe ∘ (_.ask)), k(fe ∘ (_.lower))))
     }
 
   /**
@@ -432,14 +463,13 @@ package object matryoshka {
     *
     * @group dist
     */
-  def distGHisto[F[_],  H[_]](
-    k: DistributiveLaw[F, H])(
-    implicit F: Functor[F], H: Functor[H]) =
+  // TODO: Should be able to generalize this over `Recursive.Aux[T, EnvT[…]]`
+  //       somehow, then it wouldn’t depend on Scalaz and would work with any
+  //       `Cofree` representation.
+  def distGHisto[F[_]: Functor,  H[_]: Functor](k: DistributiveLaw[F, H]) =
     new DistributiveLaw[F, Cofree[H, ?]] {
       def apply[α](m: F[Cofree[H, α]]) =
-        Cofree.unfold(m)(as => (
-          F.lift[Cofree[H, α], α](_.copure)(as),
-          k(F.lift[Cofree[H, α], H[Cofree[H, α]]](_.tail)(as))))
+        Cofree.unfold(m)(as => (as ∘ (_.copure), k(as ∘ (_.tail))))
     }
 
   /**
@@ -452,9 +482,9 @@ package object matryoshka {
     *
     * @group dist
     */
-  def distApo[T[_[_]]: Recursive, F[_]: Functor]:
-      DistributiveLaw[T[F] \/ ?, F] =
-    distGApo(_.project)
+  def distApo[T, F[_]: Functor](implicit T: Recursive.Aux[T, F])
+      : DistributiveLaw[T \/ ?, F] =
+    distGApo[F, T](T.project(_))
 
   /**
     *
@@ -491,18 +521,19 @@ package object matryoshka {
     *
     * @group dist
     */
-  def distGFutu[H[_], F[_]](
-    k: DistributiveLaw[H, F])(
-    implicit H: Functor[H], F: Functor[F]): DistributiveLaw[Free[H, ?], F] =
+  // TODO: Should be able to generalize this over `Recursive.Aux[T, CoEnv[…]]`
+  //       somehow, then it wouldn’t depend on Scalaz and would work with any
+  //       `Free` representation.
+  def distGFutu[H[_]: Functor, F[_]]
+    (k: DistributiveLaw[H, F])
+    (implicit F: Functor[F])
+      : DistributiveLaw[Free[H, ?], F] =
     new DistributiveLaw[Free[H, ?], F] {
       def apply[α](m: Free[H, F[α]]) =
         m.fold(
           F.lift(Free.point[H, α](_)),
-          as => F.lift(Free.liftF(_: H[Free[H, α]]).join)(k(H.lift(distGFutu(k)(H, F)(_: Free[H, F[α]]))(as))))
+          as => k(as ∘ (distGFutu(k).apply)) ∘ (Free.liftF(_).join))
     }
-
-  sealed trait Hole
-  val Hole = new Hole{}
 
   def holes[F[_]: Traverse, A](fa: F[A]): F[(A, Coalgebra[F, A])] =
     (fa.mapAccumL(0) {
@@ -554,6 +585,20 @@ package object matryoshka {
       Coalgebra[EnvT[B, F, ?], B] =
     b => EnvT[B, F, B]((b, ψ(b)))
 
+  /** Useful for ignoring the annotation when folding a cofree. */
+  def deattribute[F[_], A, B](φ: Algebra[F, B]): Algebra[EnvT[A, F, ?], B] =
+    ann => φ(ann.lower)
+
+  def forgetAnnotation[T, R, F[_]: Functor, A]
+    (t: T)
+    (implicit T: Recursive.Aux[T, EnvT[A, F, ?]], R: Corecursive.Aux[R, F])
+      : R =
+    t.cata(deattribute[F, A, R](_.embed))
+
+  // def ignoreAttribute[T[_[_]], F[_], G[_], A](φ: F[T[G]] => G[T[G]]):
+  //     EnvT[A, F, T[EnvT[A, G, ?]]] => EnvT[A, G, T[EnvT[A, G, ?]]] =
+  //   ???
+
   /**
     *
     * @group algtrans
@@ -564,22 +609,38 @@ package object matryoshka {
     *
     * @group algtrans
     */
-  def attrSelf[T[_[_]]: Corecursive, F[_]: Functor] =
-    attributeAlgebra[F, T[F]](_.embed)
+  def attrSelf[T, F[_]: Functor](implicit T: Corecursive.Aux[T, F]) =
+    attributeAlgebra[F, T](T.embed(_))
 
   /** A function to be called like `attributeElgotM[M](myElgotAlgebraM)`.
     *
     * @group algtrans
     */
   object attributeElgotM {
-    def apply[W[_], M[_]] = new Aux[W, M]
+    def apply[W[_], M[_]] = new PartiallyApplied[W, M]
 
-    final class Aux[W[_], M[_]] {
+    final class PartiallyApplied[W[_], M[_]] {
       def apply[F[_]: Functor, A](f: ElgotAlgebraM[W, M, F, A])(implicit W: Comonad[W], M: Functor[M]):
           ElgotAlgebraM[W, M, F, Cofree[F, A]] =
         node => f(node ∘ (_ ∘ (_.head))) ∘ (Cofree(_, node.copoint))
     }
   }
+
+  /** Makes it possible to use ElgotAlgebras on EnvT.
+    */
+  def liftT[F[_], A, B](φ: ElgotAlgebra[(A, ?), F, B]):
+      Algebra[EnvT[A, F, ?], B] =
+    ann => φ(ann.run)
+
+  /** Makes it possible to use ElgotAlgebras on EnvT.
+    */
+  def liftTM[M[_], F[_], A, B](φ: ElgotAlgebraM[(A, ?), M, F, B]):
+      AlgebraM[M, EnvT[A, F, ?], B] =
+    ann => φ(ann.run)
+
+  def runT[F[_], A, B](ψ: ElgotCoalgebra[A \/ ?, F, B])
+      : Coalgebra[CoEnv[A, F, ?], B] =
+    b => CoEnv(ψ(b))
 
   /**
     *
@@ -620,8 +681,12 @@ package object matryoshka {
     *
     * @group algtrans
     */
-  def repeatedly[A](f: A => Option[A]): A => A =
-    expr => f(expr).fold(expr)(repeatedly(f))
+  @tailrec
+  final def repeatedly[A](f: A => Option[A])(expr: A): A =
+    f(expr) match {
+      case None => expr
+      case Some(e) => repeatedly(f)(e)
+    }
 
   /** Converts a failable fold into a non-failable, by simply returning the
     * argument upon failure.
@@ -638,13 +703,15 @@ package object matryoshka {
   def orDefault[A, B](default: B)(f: A => Option[B]): A => B =
     expr => f(expr).getOrElse(default)
 
-  /** Count the instinces of `form` in the structure.
+  /** Count the instances of `form` in the structure.
     *
     * @group algebras
     */
-  def count[T[_[_]]: Recursive, F[_]: Functor: Foldable](form: T[F]):
-      GAlgebra[(T[F], ?), F, Int] =
-    e => e.foldRight(if (e ∘ (_._1) == form.project) 1 else 0)(_._2 + _)
+  def count[T: Equal, F[_]: Functor: Foldable]
+    (form: T)
+    (implicit T: Recursive.Aux[T, F])
+      : ElgotAlgebra[(T, ?), F, Int] =
+    e => (e._1 ≟ form).fold(1, 0) + e._2.foldRight(0)(_ + _)
 
   /** The number of nodes in this structure.
     *
@@ -662,26 +729,26 @@ package object matryoshka {
     *
     * @group algebras
     */
-  def zipTuple[T[_[_]]: Recursive, F[_]: Functor: Zip]:
-      Coalgebra[F, (T[F], T[F])] =
-    p => Zip[F].zip[T[F], T[F]](p._1.project, p._2.project)
+  def zipTuple[T, F[_]: Functor: Zip](implicit T: Recursive.Aux[T, F])
+      : Coalgebra[F, (T, T)] =
+    p => Zip[F].zip[T, T](p._1.project, p._2.project)
 
   /** Aligns “These” into a single structure, short-circuting when we hit a
     * “This” or “That”.
     *
     * @group algebras
     */
-  def alignThese[T[_[_]]: Recursive, F[_]: Align]:
-      ElgotCoalgebra[T[F] \/ ?, F, T[F] \&/ T[F]] =
+  def alignThese[T, F[_]: Align](implicit T: Recursive.Aux[T, F])
+      : ElgotCoalgebra[T \/ ?, F, T \&/ T] =
     _.fold(_.left, _.left, (a, b) => a.project.align(b.project).right)
 
   /** Merges a tuple of functors, if possible.
     *
     * @group algebras
     */
-  def mergeTuple[T[_[_]]: Recursive, F[_]: Functor: Merge]:
-      CoalgebraM[Option, F, (T[F], T[F])] =
-    p => Merge[F].merge[T[F], T[F]](p._1.project, p._2.project)
+  def mergeTuple[T, F[_]: Functor: Merge](implicit T: Recursive.Aux[T, F])
+      : CoalgebraM[Option, F, (T, T)] =
+    p => Merge[F].merge[T, T](p._1.project, p._2.project)
 
   /** Generates an infinite sequence from two seed values.
     *
@@ -691,6 +758,24 @@ package object matryoshka {
     case (a1, a2) =>
       val c = relation(a1, a2)
       (c, (a2, c))
+  }
+
+  def partition[A: Order]: Coalgebra[λ[α => Option[(A, (α, α))]], List[A]] = {
+    case Nil    => None
+    case h :: t => (h, (t.filter(_ <= h), t.filter(_ > h))).some
+  }
+
+  def join[A]: Algebra[λ[α => Option[(A, (α, α))]], List[A]] =
+    _.fold[List[A]](Nil) { case (a, (x, y)) => x ++ (a :: y) }
+
+  // NB: not in-place
+  def quicksort[A: Order](as: List[A]): List[A] = {
+    implicit val F: Functor[λ[α => Option[(A, (α, α))]]] =
+      new Functor[λ[α => Option[(A, (α, α))]]] {
+        def map[B, C] (fa: Option[(A, (B, B))])(f: B => C) =
+          fa.map(_.map(_.bimap(f, f)))
+      }
+    as.hylo[λ[α => Option[(A, (α, α))]], List[A]](join, partition)
   }
 
   /** Converts a fixed-point structure into a generic Tree.
@@ -704,24 +789,15 @@ package object matryoshka {
 
   /** Returns (on the left) the first element that passes `f`.
     */
-  def find[T[_[_]], F[_]](f: T[F] => Boolean): T[F] => T[F] \/ T[F] =
-    tf => if (f(tf)) tf.left else tf.right
+  def find[T](f: T => Boolean): T => T \/ T =
+    tf => (f(tf)).fold(tf.left, tf.right)
 
   /** Replaces all instances of `original` in the structure with `replacement`.
     *
     * @group algebras
     */
-  def substitute[T[_[_]], F[_]](original: T[F], replacement: T[F])(implicit T: Equal[T[F]]):
-      T[F] => T[F] \/ T[F] =
-    find[T, F](_ ≟ original)(_).leftMap(_ => replacement)
-
-  sealed abstract class ∘[F[_], G[_]] { type λ[A] = F[G[A]] }
-
-  /** To avoid diverging implicits with fixed-point types, we need to defer the
-    * lookup. We do this with a `NaturalTransformation` (although there
-    * are more type class-y solutions available now).
-    */
-  type Delay[F[_], G[_]] = F ~> (F ∘ G)#λ
+  def substitute[T: Equal](original: T, replacement: T): T => T \/ T =
+    find[T](_ ≟ original)(_).leftMap(_ => replacement)
 
   /** This implicit allows Delay implicits to be found when searching for a
     * traditionally-defined instance.
@@ -736,32 +812,61 @@ package object matryoshka {
       Show[F[A]] =
     F(A)
 
-  implicit def toIdOps[A](a: A): IdOps[A] = new IdOps[A](a)
+  implicit def recursiveTRecursive[T[_[_]]: RecursiveT, F[_]]: Recursive.Aux[T[F], F] =
+    new Recursive[T[F]] {
+      type Base[A] = F[A]
 
-  implicit final class CorecursiveOps[T[_[_]], F[_]](
-    self: F[T[F]])(
-    implicit T: Corecursive[T]) {
+      def project(t: T[F])(implicit F: Functor[F]) =
+        RecursiveT[T].projectT[F](t)
+      override def cata[A](t: T[F])(f: Algebra[F, A])(implicit F: Functor[F]) =
+        RecursiveT[T].cataT[F, A](t)(f)
+    }
 
-    def embed(implicit F: Functor[F]): T[F] = T.embed(self)
-  }
+  implicit def corecursiveTCorecursive[T[_[_]]: CorecursiveT, F[_]]: Corecursive.Aux[T[F], F] =
+    new Corecursive[T[F]] {
+      type Base[A] = F[A]
 
-  implicit def toAlgebraOps[F[_], A](a: Algebra[F, A]): AlgebraOps[F, A] =
-    new AlgebraOps[F, A](a)
+      def embed(t: F[T[F]])(implicit F: Functor[F]) =
+        CorecursiveT[T].embedT[F](t)
+      override def ana[A](a: A)(f: Coalgebra[F, A])(implicit F: Functor[F]) =
+        CorecursiveT[T].anaT[F, A](a)(f)
+    }
 
-  implicit def toCoalgebraOps[F[_], A](a: Coalgebra[F, A]): CoalgebraOps[F, A] =
-    new CoalgebraOps[F, A](a)
+  implicit def birecursiveTBirecursive[T[_[_]]: BirecursiveT, F[_]]: Birecursive.Aux[T[F], F] =
+    new Birecursive[T[F]] {
+      type Base[A] = F[A]
 
-  implicit def toCofreeOps[F[_], A](a: Cofree[F, A]): CofreeOps[F, A] =
-    new CofreeOps[F, A](a)
+      def project(t: T[F])(implicit F: Functor[F]) =
+        BirecursiveT[T].projectT[F](t)
+      override def cata[A](t: T[F])(f: Algebra[F, A])(implicit F: Functor[F]) =
+        BirecursiveT[T].cataT[F, A](t)(f)
 
-  implicit def toFreeOps[F[_], A](a: Free[F, A]): FreeOps[F, A] =
-    new FreeOps[F, A](a)
+      def embed(t: F[T[F]])(implicit F: Functor[F]) =
+        BirecursiveT[T].embedT[F](t)
+      override def ana[A](a: A)(f: Coalgebra[F, A])(implicit F: Functor[F]) =
+        BirecursiveT[T].anaT[F, A](a)(f)
+    }
 
-  implicit def equalTEqual[T[_[_]], F[_]: Functor](implicit T: EqualT[T], F: Delay[Equal, F]):
-      Equal[T[F]] =
+  implicit def equalTEqual[T[_[_]], F[_]: Functor](implicit T: EqualT[T], F: Delay[Equal, F]): Equal[T[F]] =
     T.equalT[F](F)
 
-  implicit def showTShow[T[_[_]], F[_]: Functor](implicit T: ShowT[T], F: Delay[Show, F]):
-      Show[T[F]] =
+  implicit def showTShow[T[_[_]], F[_]: Functor](implicit T: ShowT[T], F: Delay[Show, F]): Show[T[F]] =
     T.showT[F](F)
+
+  implicit def birecursiveTFunctor[T[_[_]]: BirecursiveT, F[_, _]](implicit F: Bifunctor[F]): Functor[λ[α => T[F[α, ?]]]] =
+    new Functor[λ[α => T[F[α, ?]]]] {
+      implicit def RF[A]: Functor[F[A, ?]] = F.rightFunctor
+
+      def map[A, B](fa: T[F[A, ?]])(f: A => B) =
+        fa.transCata[T[F[B, ?]]](_.leftMap[B](f))
+    }
+
+  implicit def recursiveTFoldable[T[_[_]]: RecursiveT, F[_, _]](implicit FB: Bifoldable[F], FF: Bifunctor[F]): Foldable[λ[α => T[F[α, ?]]]] =
+    new Foldable[λ[α => T[F[α, ?]]]] {
+      def foldMap[A, B: Monoid](fa: T[F[A, ?]])(f: A ⇒ B) =
+        fa.cata[B](FB.leftFoldable.foldMap(_)(f))(FF.rightFunctor)
+
+      def foldRight[A, B](fa: T[F[A, ?]], z: ⇒ B)(f: (A, ⇒ B) ⇒ B) =
+        fa.cata[B](FB.leftFoldable.foldRight(_, z)(f))(FF.rightFunctor)
+    }
 }

@@ -1,14 +1,27 @@
 language: scala
 scala:
   - 2.11.8
+  - 2.12.1
 jdk:
   - oraclejdk8
   - oraclejdk7
   - openjdk7
+matrix:
+  exclude: # NB: Scala 2.12 requires JDK 8
+  - scala: 2.12.1
+    jdk: oraclejdk7
+  - scala: 2.12.1
+    jdk: openjdk7
+
 sudo: false
 script:
   - sbt checkHeaders
-  - sbt coverage doc test
+  - sbt coverage doc test tut
   - sbt coverageReport
+  - sbt clean transferPublishAndTagResources
+  - scripts/publishAndTag 'slamdata/matryoshka'
+branches:
+  except:
+  - "/^v\\d+\\.\\d+\\.\\d+$/"
 after_success:
-  - pip install --user codecov && codecov
+  - bash <(curl -s https://codecov.io/bash)
