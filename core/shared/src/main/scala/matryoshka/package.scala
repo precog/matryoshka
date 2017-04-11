@@ -681,8 +681,8 @@ package object matryoshka {
     *
     * @group algtrans
     */
-  @tailrec
-  final def repeatedly[A](f: A => Option[A])(expr: A): A =
+  final def repeatedly[A]: (A => Option[A]) => A => A =
+    (f: A => Option[A]) => (expr: A) =>
     f(expr) match {
       case None => expr
       case Some(e) => repeatedly(f)(e)
