@@ -54,6 +54,9 @@ package object patterns {
       AlgebraM[M, CoEnv[A, F, ?], B] =
     ginterpretM[Id, M, F, A, B](f, φ)
 
+  def ginterpret[W[_], F[_], A, B](f: A => Id[B], φ: GAlgebra[W, F, B]): GAlgebra[W, CoEnv[A, F, ?], B] =
+      ginterpretM[W, Id, F, A, B](f, φ)
+
   def ginterpretM[W[_], M[_], F[_], A, B](f: A => M[B], φ: GAlgebraM[W, M, F, B]):
       GAlgebraM[W, M, CoEnv[A, F, ?], B] =
     _.run.fold(f, φ)
