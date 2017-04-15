@@ -45,7 +45,7 @@ class ZygoSpecs extends Specification with ScalaCheck with ScalazMatchers {
         testRec(
           mul(mul(num(0), num(0)), mul(num(2), num(5))),
           new RecRunner[Exp, String] {
-            def run[T](implicit TR: Recursive.Aux[T, Exp], TC: Corecursive.Aux[T, Exp]) =
+            def run[T](implicit T: Recursive.Aux[T, Exp]) =
               _.zygo(eval, strings) must
             equal("0 (0), 0 (0) (0), 2 (2), 5 (5) (10)")
           })
@@ -69,7 +69,7 @@ class ZygoSpecs extends Specification with ScalaCheck with ScalazMatchers {
         testRec(
           mul(mul(num(0), num(0)), mul(num(2), num(5))),
           new RecRunner[Exp, Int \/ String] {
-            def run[T](implicit TR: Recursive.Aux[T, Exp], TC: Corecursive.Aux[T, Exp]) =
+            def run[T](implicit T: Recursive.Aux[T, Exp]) =
               _.elgotZygoM[String, Int, Int \/ ?](
                 eval.generalizeM[Int \/ ?],
                 elgotStrings(_).right

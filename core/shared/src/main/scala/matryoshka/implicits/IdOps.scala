@@ -181,9 +181,9 @@ sealed class IdOps[A](self: A) {
     final class PartiallyApplied[T] {
       def apply[F[_]: Functor]
         (e: F ~> F, g: Coalgebra[F, A])
-        (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F])
+        (implicit T: Birecursive.Aux[T, F])
           : T =
-        TC.postpro(self)(e, g)
+        T.postpro(self)(e, g)
     }
   }
 
@@ -193,9 +193,9 @@ sealed class IdOps[A](self: A) {
     final class PartiallyApplied[T] {
       def apply[N[_]: Monad, F[_]: Functor]
         (k: DistributiveLaw[N, F], e: F ~> F, g: GCoalgebra[N, F, A])
-        (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F])
+        (implicit T: Birecursive.Aux[T, F])
           : T =
-        TC.gpostpro(self)(k, e, g)
+        T.gpostpro(self)(k, e, g)
     }
   }
 

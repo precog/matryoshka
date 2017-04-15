@@ -108,32 +108,6 @@ trait Corecursive[T] extends Based[T] {
     implicit BT: Traverse[Base]):
       M[T] =
     ganaM[Free[Base, ?], M, A](a)(distFutu, f)
-
-  // TODO: Move these operations to `Birecursive` once #44 is fixed.
-
-  /** Roughly a default impl of `embed`, given a [[matryoshka.Recursive]]
-    * instance and an overridden `ana`.
-    */
-  def colambek(ft: Base[T])(implicit TR: Recursive.Aux[T, Base], BF: Functor[Base]): T =
-    ana(ft)(_ ∘ (TR.project(_)))
-
-  def postpro[A](
-    a: A)(
-    e: Base ~> Base, g: Coalgebra[Base, A])(
-    implicit T: Recursive.Aux[T, Base], BF: Functor[Base]):
-      T =
-    gpostpro[Id, A](a)(distAna, e, g)
-
-  def gpostpro[N[_], A](
-    a: A)(
-    k: DistributiveLaw[N, Base], e: Base ~> Base, ψ: GCoalgebra[N, Base, A])(
-    implicit T: Recursive.Aux[T, Base], BF: Functor[Base], N: Monad[N]):
-      T = {
-    def loop(ma: N[A]): T =
-      embed(k(ma ∘ ψ) ∘ (x => ana(loop(x.join))(x => e(T.project(x)))))
-
-    loop(a.point[N])
-  }
 }
 
 object Corecursive {

@@ -34,4 +34,6 @@ object Delay {
    */
   implicit def fromNT[F[_], G[_]](nt: F ~> (F ∘ G)#λ): Delay[F, G] =
     new Delay[F, G] { def apply[A](fa: F[A]): F[G[A]] = nt(fa) }
+
+  def apply[F[_], G[_]](implicit ev: Delay[F, G]): Delay[F, G] = ev
 }

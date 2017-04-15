@@ -22,11 +22,9 @@ import matryoshka._
 import scalaz._
 
 trait EitherInstances {
-  implicit def eitherRecursive[A, B]: Recursive.Aux[Either[A, B], Const[Either[A, B], ?]] =
-    id.idRecursive[Either[A, B]]
-
-  implicit def eitherCorecursive[A, B]: Corecursive.Aux[Either[A, B], Const[Either[A, B], ?]] =
-    id.idCorecursive[Either[A, B]]
+  implicit def eitherBirecursive[A, B]
+      : Birecursive.Aux[Either[A, B], Const[Either[A, B], ?]] =
+    id.idBirecursive[Either[A, B]]
 }
 
 object either extends EitherInstances

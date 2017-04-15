@@ -21,11 +21,9 @@ import matryoshka._
 import scalaz._
 
 trait MaybeInstances {
-  implicit def maybeRecursive[A]: Recursive.Aux[Maybe[A], Const[Maybe[A], ?]] =
-    id.idRecursive[Maybe[A]]
-
-  implicit def maybeCorecursive[A]: Corecursive.Aux[Maybe[A], Const[Maybe[A], ?]] =
-    id.idCorecursive[Maybe[A]]
+  implicit def maybeBirecursive[A]
+      : Birecursive.Aux[Maybe[A], Const[Maybe[A], ?]] =
+    id.idBirecursive[Maybe[A]]
 }
 
 object maybe extends MaybeInstances

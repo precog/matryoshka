@@ -33,7 +33,6 @@ import scalaz._, Liskov._, Scalaz._
   * @groupdesc dist Natural transformations required for generalized folds and unfolds.
   */
 package object matryoshka {
-
   /** Fold a structure `F` containing values in `W`, to a value `A`,
     * accumulating effects in the monad `M`.
     * @group algebras
@@ -177,34 +176,32 @@ package object matryoshka {
   }
 
   // TODO: Move this to `Birecursive` once that works.
-  def birecursiveIso[T, F[_]: Functor]
-    (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
+  def birecursiveIso[T, F[_]: Functor](implicit T: Birecursive.Aux[T, F]) =
     AlgebraIso[F, T](_.embed)(_.project)
 
   // TODO: Move this to `Birecursive` once that works.
-  def bilambekIso[T, F[_]: Functor]
-    (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
+  def bilambekIso[T, F[_]: Functor](implicit T: Birecursive.Aux[T, F]) =
     AlgebraIso[F, T](_.colambek)(_.lambek)
 
   /** There is a fold/unfold isomorphism for any AlgebraIso.
     */
   def foldIso[T, F[_]: Functor, A]
     (alg: AlgebraIso[F, A])
-    (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
+    (implicit T: Birecursive.Aux[T, F]) =
     Iso[T, A](_.cata(alg.get))(_.ana[T](alg.reverseGet))
 
   /** There is a fold prism for any AlgebraPrism.
     */
   def foldPrism[T, F[_]: Traverse, A]
     (alg: AlgebraPrism[F, A])
-    (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
-    Prism[T, A](TR.cataM(_)(alg.getOption))(_.ana[T](alg.reverseGet))
+    (implicit T: Birecursive.Aux[T, F]) =
+    Prism[T, A](T.cataM(_)(alg.getOption))(_.ana[T](alg.reverseGet))
 
   /** There is an unfold prism for any CoalgebraPrism.
     */
   def unfoldPrism[T, F[_]: Traverse, A]
     (coalg: CoalgebraPrism[F, A])
-    (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
+    (implicit T: Birecursive.Aux[T, F]) =
     Prism[A, T](_.anaM[T](coalg.getOption))(_.cata(coalg.reverseGet))
 
   /** A NaturalTransformation that sequences two types

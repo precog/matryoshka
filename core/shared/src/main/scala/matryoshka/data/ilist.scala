@@ -22,25 +22,14 @@ import matryoshka.patterns._
 import scalaz._
 
 trait IListInstances {
-  implicit def ilistRecursive[A]: Recursive.Aux[IList[A], ListF[A, ?]] =
-    new Recursive[IList[A]] {
-      type Base[B] = ListF[A, B]
-
-      def project(t: IList[A])(implicit BF: Functor[Base]) = t match {
-        case ICons(h, t) => ConsF(h, t)
-        case INil()      => NilF[A, IList[A]]()
-      }
-    }
-
-  implicit def ilistCorecursive[A]: Corecursive.Aux[IList[A], ListF[A, ?]] =
-    new Corecursive[IList[A]] {
-      type Base[B] = ListF[A, B]
-
-      def embed(t: ListF[A, IList[A]])(implicit BF: Functor[Base]) = t match {
-        case ConsF(h, t) => ICons(h, t)
-        case NilF()      => INil[A]
-      }
-    }
+  implicit def ilistBirecursive[A]: Birecursive.Aux[IList[A], ListF[A, ?]] =
+    Birecursive.algebraIso({
+      case ConsF(h, t) => ICons(h, t)
+      case NilF()      => INil[A]
+    }, {
+      case ICons(h, t) => ConsF(h, t)
+      case INil()      => NilF[A, IList[A]]()
+    })
 }
 
 object ilist extends IListInstances
