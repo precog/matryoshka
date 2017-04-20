@@ -14,23 +14,14 @@
  * limitations under the License.
  */
 
-package matryoshka.data
+package matryoshka.runners
 
 import matryoshka._
-import matryoshka.patterns._
 
-import scalaz._
+import org.specs2.matcher._
 
-trait NonEmptyListInstances {
-  implicit def nelBirecursive[A]
-      : Birecursive.Aux[NonEmptyList[A], NelF[A, ?]] =
-    Birecursive.algebraIso({
-      case InitF(a, bs) => a <:: bs
-      case LastF(a)     => NonEmptyList(a)
-    }, {
-      case NonEmptyList(a, ICons(b, cs)) => InitF(a, NonEmptyList.nel(b, cs))
-      case NonEmptyList(a,       INil()) => LastF(a)
-    })
+abstract class BirecRunner[F[_], A] {
+  // NB: This is defined as a function to make the many definition sites
+  //     slightly shorter.
+  def run[T](implicit T: Birecursive.Aux[T, F]): T => MatchResult[A]
 }
-
-object nel extends NonEmptyListInstances

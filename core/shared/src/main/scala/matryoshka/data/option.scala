@@ -22,11 +22,9 @@ import matryoshka._
 import scalaz._
 
 trait OptionInstances {
-  implicit def optionRecursive[A]: Recursive.Aux[Option[A], Const[Option[A], ?]] =
-    id.idRecursive[Option[A]]
-
-  implicit def optionCorecursive[A]: Corecursive.Aux[Option[A], Const[Option[A], ?]] =
-    id.idCorecursive[Option[A]]
+  implicit def optionBirecursive[A]
+      : Birecursive.Aux[Option[A], Const[Option[A], ?]] =
+    id.idBirecursive[Option[A]]
 }
 
 object option extends OptionInstances

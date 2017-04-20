@@ -23,6 +23,5 @@ import org.specs2.matcher._
 abstract class RecRunner[F[_], A] {
   // NB: This is defined as a function to make the many definition sites
   //     slightly shorter.
-  def run[T](implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F])
-      : T => MatchResult[A]
+  def run[T](implicit T: Recursive.Aux[T, F]): T => MatchResult[A]
 }

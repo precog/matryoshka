@@ -22,7 +22,6 @@ import org.specs2.matcher._
 import scalaz._
 
 abstract class CorecRunner[M[_], F[_], A] {
-  def run[T: Equal: Show]
-    (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F])
+  def run[T: Equal: Show](implicit T: Birecursive.Aux[T, F])
       : A => MatchResult[M[T]]
 }

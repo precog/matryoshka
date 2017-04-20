@@ -23,6 +23,14 @@ package object implicits
     with Merge.ToMergeOps
     with Recursive.ToRecursiveOps {
 
+  implicit def toRecursive[T, F[_]](implicit T: Birecursive.Aux[T, F])
+      : Recursive.Aux[T, F] =
+    T.rec
+
+  implicit def toCorecursive[T, F[_]](implicit T: Birecursive.Aux[T, F])
+      : Corecursive.Aux[T, F] =
+    T.corec
+
   implicit def toIdOps[A](a: A): IdOps[A] = new IdOps[A](a)
 
   implicit final class CorecursiveOps[T, F[_], FF[_]](
@@ -30,8 +38,13 @@ package object implicits
     implicit T: Corecursive.Aux[T, FF], Sub: F[T] <~< FF[T]) {
 
     def embed(implicit F: Functor[FF]): T = T.embed(Sub(self))
-    def colambek(implicit TR: Recursive.Aux[T, FF], F: Functor[FF]): T =
-      T.colambek(Sub(self))
+  }
+
+  implicit final class BirecursiveOps[T, F[_], FF[_]](
+    self: F[T])(
+    implicit T: Birecursive.Aux[T, FF], Sub: F[T] <~< FF[T]) {
+
+    def colambek(implicit F: Functor[FF]): T = T.colambek(Sub(self))
   }
 
   implicit def toAlgebraOps[F[_], A](a: Algebra[F, A]): AlgebraOps[F, A] =

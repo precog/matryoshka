@@ -32,6 +32,13 @@ package object runners extends SpecificationLike {
     r.run[Nu[F]].apply(t.convertTo[Nu[F]])
   }
 
+  def testBirec[F[_], A](t: Fix[F], r: BirecRunner[F, A])(implicit F: Functor[F])
+      : MatchResult[A] = {
+    r.run[Fix[F]].apply(t) and
+    r.run[Mu[F]].apply(t.convertTo[Mu[F]]) and
+    r.run[Nu[F]].apply(t.convertTo[Nu[F]])
+  }
+
   def testCorec[M[_], F[_]: Functor, A]
     (a: A, r: CorecRunner[M, F, A])
     (implicit Eq0: Delay[Equal, F], S0: Delay[Show, F])

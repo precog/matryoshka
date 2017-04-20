@@ -21,11 +21,9 @@ import matryoshka._
 import scalaz._
 
 trait DisjunctionInstances {
-  implicit def disjunctionRecursive[A, B]: Recursive.Aux[A \/ B, Const[A \/ B, ?]] =
-    id.idRecursive[A \/ B]
-
-  implicit def disjunctionCorecursive[A, B]: Corecursive.Aux[A \/ B, Const[A \/ B, ?]] =
-    id.idCorecursive[A \/ B]
+  implicit def disjunctionBirecursive[A, B]
+      : Birecursive.Aux[A \/ B, Const[A \/ B, ?]] =
+    id.idBirecursive[A \/ B]
 }
 
 object disjunction extends DisjunctionInstances
