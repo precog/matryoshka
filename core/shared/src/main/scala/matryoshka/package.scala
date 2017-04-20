@@ -175,14 +175,6 @@ package object matryoshka {
       Prism(ψ)(φ)
   }
 
-  // TODO: Move this to `Birecursive` once that works.
-  def birecursiveIso[T, F[_]: Functor](implicit T: Birecursive.Aux[T, F]) =
-    AlgebraIso[F, T](_.embed)(_.project)
-
-  // TODO: Move this to `Birecursive` once that works.
-  def bilambekIso[T, F[_]: Functor](implicit T: Birecursive.Aux[T, F]) =
-    AlgebraIso[F, T](_.colambek)(_.lambek)
-
   /** There is a fold/unfold isomorphism for any AlgebraIso.
     */
   def foldIso[T, F[_]: Functor, A]

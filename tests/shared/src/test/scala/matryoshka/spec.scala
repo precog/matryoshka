@@ -134,8 +134,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       case _ => t.map(_.head).embed
     }
 
-  checkAlgebraIsoLaws("birec", birecursiveIso[Mu[Exp], Exp])
-  checkAlgebraIsoLaws("lambek", bilambekIso[Mu[Exp], Exp])
+  checkAlgebraIsoLaws("birec", Birecursive.iso[Mu[Exp], Exp])
+  checkAlgebraIsoLaws("lambek", Birecursive.lambekIso[Mu[Exp], Exp])
 
   "Recursive" >> {
     "isLeaf" >> {
@@ -192,7 +192,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testRec(
           num(1),
           new RecRunner[Exp, Fix[Exp]] {
-            def run[T](implicit TR: Recursive.Aux[T, Exp]) =
+            def run[T](implicit T: Recursive.Aux[T, Exp]) =
               _.transCata[Fix[Exp]](addOneƒ) must equal(num(2))
           })
       }
@@ -201,7 +201,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
         testRec(
           mul(num(1), num(2)),
           new RecRunner[Exp, Fix[Exp]] {
-            def run[T](implicit TR: Recursive.Aux[T, Exp]) =
+            def run[T](implicit T: Recursive.Aux[T, Exp]) =
               _.transCata[Fix[Exp]](addOneƒ) must equal(mul(num(2), num(3)))
           })
       }

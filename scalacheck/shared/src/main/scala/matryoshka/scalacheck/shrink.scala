@@ -41,7 +41,7 @@ trait ShrinkInstances extends ShrinkInstancesʹ {
     * [[scalacheck.Shrink]] instance.
     */
   def shrinkCorecursiveShrink[T, F[_]: Functor]
-    (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F], F: Shrink[F[T]])
+    (implicit T: Birecursive.Aux[T, F], F: Shrink[F[T]])
       : Shrink[T] =
     Shrink(t => F.shrink(t.project).map(_.embed))
 
@@ -49,7 +49,7 @@ trait ShrinkInstances extends ShrinkInstancesʹ {
     * both [[scalaz.Foldable]] and [[scalacheck.Shrink]] instances.
     */
   def corecursiveShrink[T, F[_]: Functor: Foldable]
-    (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F], F: Shrink[F[T]])
+    (implicit T: Birecursive.Aux[T, F], F: Shrink[F[T]])
       : Shrink[T] =
     Shrink(t => shrinkCorecursiveShrink[T, F].shrink(t) ++ recursiveShrink[T, F].shrink(t))
 

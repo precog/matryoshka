@@ -41,13 +41,13 @@ package object fixedpoint {
 
     // NB: This isn’t defined via `AlgebraPrism` because it only holds across a
     //     recursive structure.
-    def intPrism[T](implicit TR: Recursive.Aux[T, Option], TC: Corecursive.Aux[T, Option]) =
+    def intPrism[T](implicit T: Birecursive.Aux[T, Option]) =
       Prism[Int, T](_.anaM[T](fromInt))(_.cata(height))
   }
 
   implicit class NatOps[T]
     (self: T)
-    (implicit TR: Recursive.Aux[T, Option], TC: Corecursive.Aux[T, Option]) {
+    (implicit T: Birecursive.Aux[T, Option]) {
     def +(other: T) = self.cata[T] {
       case None => other
       case o    => o.embed
