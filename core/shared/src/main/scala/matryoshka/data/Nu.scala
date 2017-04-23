@@ -18,6 +18,8 @@ package matryoshka.data
 
 import matryoshka._
 
+import scala.Unit
+
 import scalaz._, Scalaz._
 
 /** This is for coinductive (potentially infinite) recursive structures, models
@@ -46,6 +48,10 @@ object Nu {
   }
 
   implicit val equalT: EqualT[Nu] = EqualT.recursiveT
+
+  // TODO: Use OrderT
+  implicit def order[F[_]: Traverse](implicit F: Order[F[Unit]]): Order[Nu[F]] =
+    Birecursive.order[Nu[F], F]
 
   implicit val showT: ShowT[Nu] = ShowT.recursiveT
 }

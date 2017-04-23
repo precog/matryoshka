@@ -23,7 +23,7 @@ import scalaz._, Scalaz._
 
 /** Represents diffs of recursive data structures.
   */
-sealed trait Diff[T[_[_]], F[_], A]
+sealed abstract class Diff[T[_[_]], F[_], A]
 final case class Same[T[_[_]], F[_], A](ident: T[F]) extends Diff[T, F, A]
 final case class Similar[T[_[_]], F[_], A](ident: F[A]) extends Diff[T, F, A]
 final case class Different[T[_[_]], F[_], A](left: T[F], right: T[F])

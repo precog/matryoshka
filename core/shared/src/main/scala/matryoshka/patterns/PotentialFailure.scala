@@ -23,7 +23,7 @@ import scalaz._, Scalaz._
 /** Generally similar to CoEnv (Free), this has an additional `success` case
   * that indicates there’s no failure down to the leaves.
   */
-sealed trait PotentialFailure[T[_[_]], F[_], E, A]
+sealed abstract class PotentialFailure[T[_[_]], F[_], E, A]
 final case class Success[T[_[_]], F[_], E, A] private[patterns](v: T[F])
     extends PotentialFailure[T, F, E, A]
 /** Akin to Free.point */

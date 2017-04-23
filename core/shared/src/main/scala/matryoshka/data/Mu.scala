@@ -18,6 +18,8 @@ package matryoshka.data
 
 import matryoshka._
 
+import scala.Unit
+
 import scalaz._, Scalaz._
 
 /** This is for inductive (finite) recursive structures, models the concept of
@@ -39,6 +41,10 @@ object Mu {
   }
 
   implicit val equalT: EqualT[Mu] = EqualT.recursiveT
+
+  // TODO: Use OrderT
+  implicit def order[F[_]: Traverse](implicit F: Order[F[Unit]]): Order[Mu[F]] =
+    Birecursive.order[Mu[F], F]
 
   implicit val showT: ShowT[Mu] = ShowT.recursiveT
 }

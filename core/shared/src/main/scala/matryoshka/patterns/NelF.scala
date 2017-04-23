@@ -19,69 +19,75 @@ package matryoshka.patterns
 import slamdata.Predef._
 import matryoshka._
 
+import monocle.Iso
 import scalaz._, Scalaz._
 
-sealed abstract class NelF[A, B] {
+sealed abstract class AndMaybe[A, B] {
   def head: A = this match {
-    case InitF(a, _) => a
-    case LastF(a)    => a
+    case Indeed(a, _) => a
+    case Only(a)      => a
   }
 
   def tailOption: Option[B] = this match {
-    case InitF(_, b) => some(b)
-    case LastF(_)    => none
+    case Indeed(_, b) => some(b)
+    case Only(_)      => none
   }
 }
-final case class InitF[A, B](h: A, t: B) extends NelF[A, B]
-final case class LastF[A, B](a: A)       extends NelF[A, B]
+final case class Indeed[A, B](h: A, t: B) extends AndMaybe[A, B]
+final case class Only[A, B](a: A)         extends AndMaybe[A, B]
 
-object NelF extends NelFInstances {
-  def nelIso[A]: AlgebraIso[NelF[A, ?], NonEmptyList[A]] =
-    AlgebraIso[NelF[A, ?], NonEmptyList[A]] {
-      case InitF(h, t) => h <:: t
-      case LastF(a)    => NonEmptyList(a)
+object AndMaybe extends AndMaybeInstances {
+  def envTIso[A, B] = Iso[AndMaybe[A, B], EnvT[A, Option, B]] {
+    case Indeed(h, t) => EnvT((h, t.some))
+    case Only(h)      => EnvT((h, none))
+  } (envt => envt.lower.fold[AndMaybe[A, B]](Only(envt.ask))(Indeed(envt.ask, _)))
+
+  def nelIso[A]: AlgebraIso[AndMaybe[A, ?], NonEmptyList[A]] =
+    AlgebraIso[AndMaybe[A, ?], NonEmptyList[A]] {
+      case Indeed(h, t) => h <:: t
+      case Only(a)    => NonEmptyList(a)
     } {
-      case NonEmptyList(a, ICons(b, cs)) => InitF(a, NonEmptyList.nel(b, cs))
-      case NonEmptyList(a,       INil()) => LastF(a)
+      case NonEmptyList(a, ICons(b, cs)) => Indeed(a, NonEmptyList.nel(b, cs))
+      case NonEmptyList(a,       INil()) => Only(a)
     }
 
-  def find[A](p: A => Boolean): Algebra[NelF[A, ?], Option[A]] =
+  def find[A](p: A => Boolean): Algebra[AndMaybe[A, ?], Option[A]] =
     l => if (p(l.head)) some(l.head) else l.tailOption.join
 }
 
-sealed abstract class NelFInstances {
-  implicit def traverse[A]: Traverse[NelF[A, ?]] =
+sealed abstract class AndMaybeInstances {
+  implicit def traverse[A]: Traverse[AndMaybe[A, ?]] =
     bitraverse.rightTraverse[A]
 
-  implicit val bitraverse: Bitraverse[NelF] =
-    new Bitraverse[NelF] {
+  implicit val bitraverse: Bitraverse[AndMaybe] =
+    new Bitraverse[AndMaybe] {
       def bitraverseImpl[G[_]: Applicative, A, B, C, D](
-        fab: NelF[A, B])(
+        fab: AndMaybe[A, B])(
         f: A => G[C], g: B => G[D]
       ) =
         fab match {
-          case InitF(a, b) => (f(a) |@| g(b))(InitF(_, _))
-          case LastF(a)    => f(a) map (LastF(_))
+          case Indeed(a, b) => (f(a) |@| g(b))(Indeed(_, _))
+          case Only(a)    => f(a) map (Only(_))
         }
     }
 
-  implicit def equal[A: Equal]: Delay[Equal, NelF[A, ?]] =
-    new Delay[Equal, NelF[A, ?]] {
+  implicit def equal[A: Equal]: Delay[Equal, AndMaybe[A, ?]] =
+    new Delay[Equal, AndMaybe[A, ?]] {
       def apply[B](eql: Equal[B]) = {
         implicit val eqlB: Equal[B] = eql
         Equal.equalBy {
-          case InitF(a, b) => (a, b).right[A]
-          case LastF(a)    => a.left[(A, B)]
+          case Indeed(a, b) => (a, b).right[A]
+          case Only(a)    => a.left[(A, B)]
         }
       }
     }
 
-  implicit def show[A: Show]: Delay[Show, NelF[A, ?]] =
-    new Delay[Show, NelF[A, ?]] {
+  implicit def show[A: Show]: Delay[Show, AndMaybe[A, ?]] =
+    new Delay[Show, AndMaybe[A, ?]] {
       def apply[B](show: Show[B]) =
         Show.show {
-          case InitF(a, b) => a.show ++ Cord("::") ++ show.show(b)
-          case LastF(a)    => a.show
+          case Indeed(a, b) => a.show ++ Cord("::") ++ show.show(b)
+          case Only(a)    => a.show
         }
     }
 }

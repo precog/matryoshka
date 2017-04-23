@@ -29,11 +29,15 @@ import scalaz._, Scalaz._
   */
 package object data
     extends CofreeInstances
+    with DisjunctionInstances
     with EitherInstances
     with FreeInstances
     with IdInstances
     with IListInstances
-    with MaybeInstances {
+    with ListInstances
+    with MaybeInstances
+    with NonEmptyListInstances
+    with OptionInstances {
 
   /** NB: Since Cofree carries the functor, the resulting algebra is a cata, not
     *     a para.

@@ -16,6 +16,7 @@
 
 package matryoshka.scalacheck
 
+import slamdata.Predef._
 import matryoshka._
 import matryoshka.data._
 import matryoshka.implicits._
@@ -31,6 +32,7 @@ trait CogenInstancesʹ {
 
 trait CogenInstances extends CogenInstancesʹ {
   // TODO: Define this using a fold rather than `project`
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   def recursiveCogen[T, F[_]: Functor]
     (implicit T: Recursive.Aux[T, F], F: Delay[Cogen, F])
       : Cogen[T] =
@@ -42,6 +44,12 @@ trait CogenInstances extends CogenInstancesʹ {
     recursiveCogen[Mu[F], F]
   implicit def nuCogen[F[_]: Functor](implicit F: Delay[Cogen, F]): Cogen[Nu[F]] =
     recursiveCogen[Nu[F], F]
+
+  implicit val optionCogen: Delay[Cogen, Option] =
+    new Delay[Cogen, Option] {
+      def apply[A](a: Cogen[A]) =
+        Cogen((seed, value) => value.fold(seed.next)(a.perturb(seed, _)))
+    }
 
   implicit def coEnvCogen[F[_], A: Cogen](implicit F: Delay[Cogen, F]): Delay[Cogen, CoEnv[A, F, ?]] =
     new Delay[Cogen, CoEnv[A, F, ?]] {

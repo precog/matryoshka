@@ -39,8 +39,6 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck {
 
     addFragments(properties(Props.equal.laws[Partial[Int]](Partial.equal, implicitly)))
     addFragments(properties(Props.monad.laws[Partial](implicitly, implicitly, implicitly, implicitly, Partial.equal)))
-    // NB: We get Foldable for free due to `RecursiveT[Nu]` and
-    //     `Bifoldable[\/]`
     addFragments(properties(Props.foldable.laws[Partial]))
   }
 
@@ -50,46 +48,43 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck {
     else mc91(n + 11) >>= mc91
 
   "never" should {
-    "always have more steps" in {
-      Partial.never[Int].runFor(1000) must beRightDisjunction
+    "always have more steps" >> prop { (i: Conat) =>
+      Partial.never[Int].runFor(i) must beRightDisjunction
     }
   }
 
   "runFor" should {
     "return now immediately" in {
-      Partial.now(13).runFor(0) must beLeftDisjunction(13)
+      Partial.now(13).runFor(Nat.zero[Nat]) must beLeftDisjunction(13)
     }
 
-    "return a value when it runs past the end" in {
-      Partial.later(Partial.now(7)).runFor(300000) must beLeftDisjunction(7)
+    "return a value when it runs past the end" >> prop { (i: Conat) =>
+      i.transAna[Partial[Int]](Partial.delay(7)).runFor(i) must
+        beLeftDisjunction(7)
     }
 
     "return after multiple runs" >> prop { (a: Conat, b: Conat) =>
-      val (ai, bi) = (a.cata(height), b.cata(height))
-      bi > 0 ==> {
-        val first = (a + b).transAna[Partial[Int]](Partial.delay(27)).runFor(ai)
+      b > Nat.zero[Conat] ==> {
+        val first = (a + b).transAna[Partial[Int]](Partial.delay(27)).runFor(a)
         first must beRightDisjunction
-        first.flatMap(_.runFor(bi)) must beLeftDisjunction(27)
+        first.flatMap(_.runFor(b)) must beLeftDisjunction(27)
       }
     }
 
     "still pending one short" >> prop { (a: Conat) =>
-      val ai = a.cata(height)
-      ai > 0 ==> {
-        val first = a.transAna[Partial[Int]](Partial.delay(27)).runFor(ai - 1)
-        first must beRightDisjunction
-        first.flatMap(_.runFor(1)) must beLeftDisjunction(27)
-      }
+      val first = (a + Nat.one[Conat]).transAna[Partial[Int]](Partial.delay(27)).runFor(a)
+      first must beRightDisjunction
+      first.flatMap(_.runFor(a + Nat.one[Conat])) must beLeftDisjunction(27)
     }
 
-    "return exactly at the end" >> prop { (i: Conat) =>
-      i.transAna[Partial[Int]](Partial.delay(4)).runFor(i.cata(height)) must
-        beLeftDisjunction(4)
+    "return exactly at the end" >> prop { (n: Conat, i: Int) =>
+      n.transAna[Partial[Int]](Partial.delay(i)).runFor(n) must
+        beLeftDisjunction(i)
     }
   }
 
   "unsafePerformSync" should {
-    "return now immediately" in {
+    "return novw immediately" in {
       Partial.now(12).unsafePerformSync must equal(12)
     }
 

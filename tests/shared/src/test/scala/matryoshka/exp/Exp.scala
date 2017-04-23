@@ -24,7 +24,7 @@ import org.scalacheck._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalaCheckBinding._
 
-sealed trait Exp[A]
+sealed abstract class Exp[A]
 case class Num[A](value: Int) extends Exp[A]
 case class Mul[A](left: A, right: A) extends Exp[A]
 case class Var[A](value: Symbol) extends Exp[A]

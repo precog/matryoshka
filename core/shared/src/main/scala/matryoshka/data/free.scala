@@ -28,23 +28,24 @@ trait FreeInstances {
       _.run.fold(_.point[Free[F, ?]], Free.liftF(_).join),
       t => CoEnv(t.resume.swap))
 
-  implicit def freeEqual[F[_]: Functor](implicit F: Delay[Equal, F]):
+  implicit def freeEqual[F[_]: Traverse](implicit F: Delay[Equal, F]):
       Delay[Equal, Free[F, ?]] =
     new Delay[Equal, Free[F, ?]] {
-      def apply[α](eq: Equal[α]) =
-        Equal.equal((a, b) => (a.resume, b.resume) match {
-          case (-\/(f1), -\/(f2)) =>
-            F(freeEqual[F].apply(eq)).equal(f1, f2)
-          case (\/-(a1), \/-(a2)) => eq.equal(a1, a2)
-          case (_,       _)       => false
-        })
+      def apply[A](eq: Equal[A]) = {
+        implicit val coenvʹ: Delay[Equal, CoEnv[A, F, ?]] = CoEnv.equal(eq, F)
+
+        Birecursive.equal[Free[F, A], CoEnv[A, F, ?]]
+      }
     }
 
   implicit def freeShow[F[_]: Functor](implicit F: Delay[Show, F]):
       Delay[Show, Free[F, ?]] =
     new Delay[Show, Free[F, ?]] {
-      def apply[A](s: Show[A]) =
-        Show.show(_.resume.fold(F(freeShow[F].apply(s)).show(_), s.show(_)))
+      def apply[A](s: Show[A]) = {
+        implicit val coenvʹ: Delay[Show, CoEnv[A, F, ?]] = CoEnv.show(s, F)
+
+        Recursive.show[Free[F, A], CoEnv[A, F, ?]]
+      }
     }
 }
 

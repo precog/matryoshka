@@ -19,7 +19,7 @@ package matryoshka.data
 import matryoshka._
 import matryoshka.patterns.EnvT
 
-import scalaz._
+import scalaz._, Scalaz._
 
 trait CofreeInstances {
   implicit def cofreeBirecursive[F[_], A]
@@ -28,18 +28,24 @@ trait CofreeInstances {
       t => Cofree(t.ask, t.lower),
       t => EnvT((t.head, t.tail)))
 
-  implicit def cofreeEqual[F[_]](implicit F: Delay[Equal, F]):
+  implicit def cofreeEqual[F[_]: Traverse](implicit F: Delay[Equal, F]):
       Delay[Equal, Cofree[F, ?]] =
     new Delay[Equal, Cofree[F, ?]] {
-      def apply[A](eq: Equal[A]) = Equal.equal((a, b) =>
-        eq.equal(a.head, b.head) && F(cofreeEqual(F)(eq)).equal(a.tail, b.tail))
+      def apply[A](eq: Equal[A]) = {
+        implicit val envtʹ: Delay[Equal, EnvT[A, F, ?]] = EnvT.equal(eq, F)
+
+        Birecursive.equal[Cofree[F, A], EnvT[A, F, ?]]
+      }
     }
 
-  implicit def cofreeShow[F[_]](implicit F: Delay[Show, F]):
+  implicit def cofreeShow[F[_]: Functor](implicit F: Delay[Show, F]):
       Delay[Show, Cofree[F, ?]] =
     new Delay[Show, Cofree[F, ?]] {
-      def apply[A](s: Show[A]) =
-        Show.show(cof => Cord("(") ++ s.show(cof.head) ++ Cord(", ") ++ F(cofreeShow(F)(s)).show(cof.tail) ++ Cord(")"))
+      def apply[A](s: Show[A]) = {
+        implicit val envtʹ: Delay[Show, EnvT[A, F, ?]] = EnvT.show(s, F)
+
+        Recursive.show[Cofree[F, A], EnvT[A, F, ?]]
+      }
     }
 }
 

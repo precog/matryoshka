@@ -18,16 +18,13 @@ package matryoshka
 
 import matryoshka.patterns.EnvT
 
-import scala.Predef.identity
+import scala.{Option, Unit}
 
 import scalaz._, Scalaz._
 
 /** A type that is both [[Recursive]] and [[Corecursive]].
   */
-trait Birecursive[T] extends Recursive[T] with Corecursive[T] { self =>
-  implicit val rec: Recursive.Aux[T, Base] = self
-  implicit val corec: Corecursive.Aux[T, Base] = self
-
+trait Birecursive[T] extends Recursive[T] with Corecursive[T] {
   /** Roughly a default impl of `project`, given a [[matryoshka.Corecursive]]
     * instance and an overridden `cata`.
     */
@@ -51,12 +48,11 @@ trait Birecursive[T] extends Recursive[T] with Corecursive[T] { self =>
     a: A)(
     k: DistributiveLaw[N, Base], e: Base ~> Base, ψ: GCoalgebra[N, Base, A])(
     implicit BF: Functor[Base], N: Monad[N]):
-      T = {
-    def loop(ma: N[A]): T =
-      embed(k(ma ∘ ψ) ∘ (x => ana(loop(x.join))(x => e(project(x)))))
-
-    loop(a.point[N])
-  }
+      T =
+    hylo[Yoneda[Base, ?], N[A], T](
+      a.point[N])(
+      fa => embed((fa ∘ (ana(_)(x => e(project(x))))).run),
+        ma => Yoneda(k(ma ∘ ψ)) ∘ (_.join))
 
   override def para[A]
     (t: T)
@@ -100,75 +96,87 @@ trait Birecursive[T] extends Recursive[T] with Corecursive[T] { self =>
     (e: Base ~> Base, f: Algebra[Base, A])
     (implicit BF: Functor[Base])
       : A =
-    f(project(t) ∘ (x => prepro(cata[T](x)(c => embed(e(c))))(e, f)))
+    gprepro[Id, A](t)(distCata, e, f)
 
   def gprepro[W[_]: Comonad, A](
     t: T)(
     k: DistributiveLaw[Base, W], e: Base ~> Base, f: GAlgebra[W, Base, A])(
     implicit BF: Functor[Base]):
-      A = {
-    def loop(t: T): W[A] =
-      k(project(t) ∘ (x => loop(cata[T](x)(c => embed(e(c)))).cojoin)) ∘ f
+      A =
+    hylo[Yoneda[Base, ?], T, W[A]](
+      t)(
+      fwa => k((fwa ∘ (_.cojoin)).run) ∘ f,
+        t => Yoneda(project(t)) ∘ (cata[T](_)(c => embed(e(c))))).copoint
 
-    loop(t).copoint
-  }
+  // TODO: This should be an enrichment on Tuple2.
+  private def sequenceTuple[F[_]: Functor, A, B](tup: (A, F[B])): F[(A, B)] =
+    tup._2 ∘ ((tup._1, _))
 
   def topDownCata[A]
     (t: T, a: A)
     (f: (A, T) => (A, T))
     (implicit BF: Functor[Base])
-      : T = {
-    val (a0, tf) = f(a, t)
-    mapR(tf)(_.map(topDownCata(_, a0)(f)))
-  }
+      : T =
+    ana((a, t))(at => sequenceTuple(f.tupled(at).map(project)))
 
   def topDownCataM[M[_]: Monad, A](
     t: T, a: A)(
     f: (A, T) => M[(A, T)])(
     implicit BT: Traverse[Base]):
       M[T] =
-    f(a, t).flatMap { case (a, tf) =>
-      traverseR(tf)(_.traverse(topDownCataM(_, a)(f)))
-    }
+    anaM((a, t))(at => f.tupled(at).map(aft => sequenceTuple(aft.map(project))))
+
+  override def transPara[U, G[_]: Functor]
+    (t: T)
+    (f: AlgebraicGTransform[(T, ?), U, Base, G])
+    (implicit U: Corecursive.Aux[U, G], BF: Functor[Base]) =
+    transGcata(t)(distPara, f)
+
+  override def transApo[U, G[_]: Functor]
+    (u: U)
+    (f: CoalgebraicGTransform[T \/ ?, U, G, Base])
+    (implicit U: Recursive.Aux[U, G], BF: Functor[Base])
+      : T =
+    transGana(u)(distApo, f)
 
   def transPrepro[U, G[_]: Functor]
     (t: T)
     (e: Base ~> Base, f: Transform[U, Base, G])
     (implicit U: Corecursive.Aux[U, G], BF: Functor[Base])
       : U =
-    mapR(t)(ft => f(ft ∘ (x => transPrepro(transCata[T, Base](x)(e(_)))(e, f))))
+    prepro(t)(e, f >>> (U.embed(_)))
 
   def transCataT
     (t: T)
     (f: T => T)
     (implicit BF: Functor[Base])
       : T =
-    f(mapR(t)(_.map(transCataT(_)(f))))
+    cata(t)(f <<< embed)
 
   /** This behaves like [[matryoshka.Recursive.elgotPara]]`, but it’s harder to
     * see from the types that in the tuple, `_2` is the result so far and `_1`
     * is the original structure.
     */
   def transParaT(t: T)(f: ((T, T)) => T)(implicit BF: Functor[Base]): T =
-    f((t, mapR(t)(_.map(transParaT(_)(f)))))
+    elgotPara[T](t)(f <<< (_ ∘ embed))
 
   def transAnaT(t: T)(f: T => T)(implicit BF: Functor[Base]): T =
-    mapR(f(t))(_.map(transAnaT(_)(f)))
+    ana(t)(f >>> project)
 
   /** This behaves like [[matryoshka.Corecursive.elgotApo]]`, but it’s harder to
     * see from the types that in the disjunction, `-\/` is the final result for
     * this node, while `\/-` means to keep processing the children.
     */
   def transApoT(t: T)(f: T => T \/ T)(implicit BF: Functor[Base]): T =
-    f(t).fold(identity, mapR(_)(_.map(transApoT(_)(f))))
+    elgotApo(t)(f(_) ∘ project)
 
   def transCataTM[M[_]: Monad](t: T)(f: T => M[T])(implicit BF: Traverse[Base])
       : M[T] =
-    traverseR(t)(_.traverse(transCataTM(_)(f))).flatMap(f)
+    cataM(t)(f <<< embed)
 
   def transAnaTM[M[_]: Monad](t: T)(f: T => M[T])(implicit BF: Traverse[Base])
       : M[T] =
-    f(t).flatMap(traverseR(_)(_.traverse(transAnaTM(_)(f))))
+    anaM(t)(f(_) ∘ project)
 }
 
 object Birecursive {
@@ -189,12 +197,31 @@ object Birecursive {
   def lambekIso[T, F[_]: Functor](implicit T: Birecursive.Aux[T, F]) =
     AlgebraIso[F, T](T.colambek(_))(T.lambek(_))
 
+  def equal[T, F[_]: Traverse]
+    (implicit T: Birecursive.Aux[T, F], F: Equal[F[Unit]])
+      : Equal[T] =
+    Equal.equal((a, b) =>
+      T.anaM[Option, (T, T)]((a, b)) {
+        case (a, b) => Merge.fromTraverse[F].merge(T.project(a), T.project(b))
+      }.isDefined)
+
+  def order[T, F[_]: Traverse]
+    (implicit T: Birecursive.Aux[T, F], F: Order[F[Unit]])
+      : Order[T] =
+    Order.order((a, b) =>
+      T.anaM[Ordering \/ ?, (T, T)]((a, b)) {
+        case (a, b) =>
+          val (fa, fb) = (T.project(a), T.project(b))
+          Merge.fromTraverse[F].merge(fa, fb) \/> (fa.void ?|? fb.void)
+      }.as(Ordering.EQ).merge)
+
   // NB: The rest of this is what would be generated by simulacrum, except this
   //     type class is too complicated to take advantage of that.
 
   type Aux[T, F[_]] = Birecursive[T] { type Base[A] = F[A] }
 
-  def apply[T, F[_]](implicit instance: Aux[T, F]): Aux[T, F] = instance
+  def apply[T](implicit instance: Birecursive[T]): Aux[T, instance.Base] =
+    instance
 
   trait Ops[T, F[_]] {
     def typeClassInstance: Aux[T, F]

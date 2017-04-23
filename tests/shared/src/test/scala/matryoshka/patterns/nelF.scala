@@ -27,10 +27,10 @@ import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 import scalaz.scalacheck.ScalazArbitrary._
 
-class NelFSpec extends Specification with ScalaCheck with AlgebraChecks {
-  "NelF" >> {
-    addFragments(properties(equal.laws[NelF[String, Int]]))
-    addFragments(properties(bitraverse.laws[NelF]))
-    checkAlgebraIsoLaws("NelF ⇔ NonEmptyList", NelF.nelIso[Int])
+class AndMaybeSpec extends Specification with ScalaCheck with AlgebraChecks {
+  "AndMaybe" >> {
+    addFragments(properties(equal.laws[AndMaybe[String, Int]]))
+    addFragments(properties(bitraverse.laws[AndMaybe]))
+    checkAlgebraIsoLaws("AndMaybe ⇔ NonEmptyList", AndMaybe.nelIso[Int])
   }
 }

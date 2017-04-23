@@ -19,6 +19,7 @@ package matryoshka.instances.fixedpoint
 import slamdata.Predef._
 import matryoshka._
 import matryoshka.implicits._
+import matryoshka.scalacheck.arbitrary._
 
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
@@ -45,13 +46,13 @@ class StreamSpec extends Specification with ScalaCheck with ScalazMatchers {
     }
 
     "have a proper prefix" in {
-      5.anaM[Nat](Nat.fromInt) ∘ fib.take[Nat, List[Int]] must
+      5.anaM[Nat](Nat.fromInt) ∘ (fib.take[List[Int]](_)) must
         equal(List(1, 1, 2, 3, 5).some)
     }
 
     "get a subsequence" in {
       (10.anaM[Nat](Nat.fromInt) ⊛ 5.anaM[Nat](Nat.fromInt))((d, t) =>
-        fib.drop(d).take[Nat, List[Int]](t)) must
+        fib.drop(d).take[List[Int]](t)) must
         equal(List(89, 144, 233, 377, 610).some)
     }
   }
@@ -69,10 +70,9 @@ class StreamSpec extends Specification with ScalaCheck with ScalazMatchers {
         equal(i.some)
     }
 
-    "have subsequence of the given value" >> prop { (i: Int, t: Int) =>
-      350.anaM[Nat](Nat.fromInt) ∘
-        (i.ana[Stream[Int]](constantly).take[Nat, List[Int]](_)) must
-        equal(350.anaM[Nat](Nat.fromInt) ∘ (List.fill(_)(i)))
+    "have subsequence of the given value" >> prop { (n: Nat, i: Int, t: Int) =>
+      i.ana[Stream[Int]](constantly).take[List[Int]](n) must
+        equal(List.fill[List[Int]](n)(i))
     }
   }
 }

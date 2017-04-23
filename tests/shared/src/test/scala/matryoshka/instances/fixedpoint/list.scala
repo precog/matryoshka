@@ -18,15 +18,24 @@ package matryoshka.instances.fixedpoint
 
 import slamdata.Predef._
 import matryoshka._
+import matryoshka.data.list._
 import matryoshka.implicits._
 import matryoshka.patterns._
+import matryoshka.scalacheck.arbitrary._
 
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
 import org.specs2.scalaz.ScalazMatchers
 import scalaz._, Scalaz._
+import scalaz.scalacheck.{ScalazProperties => Props}
 
 class ListSpec extends Specification with ScalaCheck with ScalazMatchers {
+  "List laws" >> {
+    addFragments(properties(Props.equal.laws[List[Int]]))
+    addFragments(properties(Props.foldable.laws[List]))
+  }
+
+
   "apply" should {
     "be equivalent to scala.List.apply" in {
       List(1, 2, 3, 4).cata(ListF.listIso.get) must
@@ -35,16 +44,15 @@ class ListSpec extends Specification with ScalaCheck with ScalazMatchers {
   }
 
   "fill" should {
-    "be equivalent to scala.List.fill" >> prop { (v: Int) =>
-      100.anaM[Nat](Nat.fromInt) ∘ (List.fill(_)(v).cata(ListF.listIso.get)) must
-        equal(scala.List.fill(100)(v).some)
+    "be equivalent to scala.List.fill" >> prop { (n: Nat, v: Int) =>
+      List.fill[scala.List[Int]](n)(v) must
+        equal(scala.List.fill(n.toInt)(v))
     }
   }
 
   "length" should {
-    "count the number of elements" >> prop { (v: Int) =>
-      30.anaM[Nat](Nat.fromInt) ∘ (List.fill(_)(v).length) must
-        equal(30.some)
+    "count the number of elements" >> prop { (n: Nat, v: Int) =>
+      List.fill[List[Int]](n)(v).length must equal(n.toInt)
     }
   }
 
