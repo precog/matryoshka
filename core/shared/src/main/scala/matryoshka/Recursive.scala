@@ -73,7 +73,7 @@ trait Recursive[T] extends Based[T] { self =>
       : A =
     hylo[λ[α => Base[(T, α)]], T, A](
       t)(
-      f, project(_) ∘ (t => (t, t)))(
+      f, project(_) ∘ (_.squared))(
       BF.compose[(T, ?)])
 
   def elgotPara[A]
