@@ -27,12 +27,12 @@ trait OptionInstances {
     id.idBirecursive[Option[A]]
 
   implicit val optionDelayEqual: Delay[Equal, Option] =
-    Delay.fromNT(λ[Equal ~> (Equal ∘ Option)#λ](eq =>
-      Equal.equal {
-        case (None,    None)    => true
-        case (Some(a), Some(b)) => eq.equal(a, b)
-        case (_,       _)       => false
-      }))
+    new Delay[Equal, Option] {
+      def apply[A](a: Equal[A]) = {
+        implicit val aʹ: Equal[A] = a
+        Equal[Option[A]]
+      }
+    }
 
   implicit val optionDelayOrder: Delay[Order, Option] =
     Delay.fromNT(λ[Order ~> (Order ∘ Option)#λ](ord =>

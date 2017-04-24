@@ -27,10 +27,12 @@ trait NonEmptyListInstances {
     Birecursive.algebraIso({
       case Indeed(a, bs) => a <:: bs
       case Only(a)     => NonEmptyList(a)
-    }, {
-      case NonEmptyList(a, ICons(b, cs)) => Indeed(a, NonEmptyList.nel(b, cs))
-      case NonEmptyList(a,       INil()) => Only(a)
-    })
+    },
+      // TODO: restore exhaustivity when scalaz/scalaz#1363 is fixed, or we're on Cats.
+      (_: NonEmptyList[A] @scala.unchecked) match {
+        case NonEmptyList(a, ICons(b, cs)) => Indeed(a, NonEmptyList.nel(b, cs))
+        case NonEmptyList(a, INil())       => Only(a)
+      })
 }
 
 object nel extends NonEmptyListInstances

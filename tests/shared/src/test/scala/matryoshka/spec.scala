@@ -448,10 +448,10 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     val generateVars: Int => Exp[Int] = n => Var(Symbol("x" + ((n * 13) % n)))
 
     val generateTerm: ElgotCoalgebra[Int \/ ?, Exp, (Int, Int)] = {
-      case (n, 0)     if n <= 0 => Num(42).right
-      case (n, bound) if n <= 0 => bound.left
-      case (n, bound) if n % 2 == 0 => Lambda(Symbol("x" + bound), (n - 1, bound + 1)).right
-      case (n, bound) if n % 2 == 1 => \/-(Mul((n / 2, bound), ((n / 2) - 1, bound)))
+      case (n, 0)     if n <= 0      => Num(42).right
+      case (n, bound) if n <= 0      => bound.left
+      case (n, bound) if (n % 2) ≟ 0 => Lambda(Symbol("x" + bound), (n - 1, bound + 1)).right
+      case (n, bound)                => \/-(Mul((n / 2, bound), ((n / 2) - 1, bound)))
     }
 
     "elgotCata" >> {

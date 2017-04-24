@@ -74,7 +74,7 @@ trait Recursive[T] extends Based[T] { self =>
     hylo[λ[α => Base[(T, α)]], T, A](
       t)(
       f, project(_) ∘ (t => (t, t)))(
-      BF compose tuple2Instance)
+      BF.compose[(T, ?)])
 
   def elgotPara[A]
     (t: T)
@@ -316,9 +316,9 @@ trait Recursive[T] extends Based[T] { self =>
     (implicit U: Corecursive.Aux[U, G], BF: Functor[Base])
       : U = {
     implicit val nested: Functor[λ[α => Base[(T, α)]]] =
-      BF compose tuple2Instance
+      BF.compose[(T, ?)]
 
-    transHylo[T, Base, λ[α => Base[(T, α)]], U, G](t)(f, _ ∘ (t => (t, t)))
+    transHylo[T, Base, λ[α => Base[(T, α)]], U, G](t)(f, _ ∘ (_.squared))
   }
 
   def transCataM[M[_]: Monad, U, G[_]: Functor]

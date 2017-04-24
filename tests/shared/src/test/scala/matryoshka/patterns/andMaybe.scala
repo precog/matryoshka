@@ -25,12 +25,10 @@ import org.specs2.ScalaCheck
 import org.specs2.mutable._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
-import scalaz.scalacheck.ScalazArbitrary._
 
 class AndMaybeSpec extends Specification with ScalaCheck with AlgebraChecks {
   "AndMaybe" >> {
     addFragments(properties(equal.laws[AndMaybe[String, Int]]))
     addFragments(properties(bitraverse.laws[AndMaybe]))
-    checkAlgebraIsoLaws("AndMaybe ⇔ NonEmptyList", AndMaybe.nelIso[Int])
   }
 }

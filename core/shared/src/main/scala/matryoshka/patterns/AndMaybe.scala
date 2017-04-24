@@ -42,15 +42,6 @@ object AndMaybe extends AndMaybeInstances {
     case Only(h)      => EnvT((h, none))
   } (envt => envt.lower.fold[AndMaybe[A, B]](Only(envt.ask))(Indeed(envt.ask, _)))
 
-  def nelIso[A]: AlgebraIso[AndMaybe[A, ?], NonEmptyList[A]] =
-    AlgebraIso[AndMaybe[A, ?], NonEmptyList[A]] {
-      case Indeed(h, t) => h <:: t
-      case Only(a)    => NonEmptyList(a)
-    } {
-      case NonEmptyList(a, ICons(b, cs)) => Indeed(a, NonEmptyList.nel(b, cs))
-      case NonEmptyList(a,       INil()) => Only(a)
-    }
-
   def find[A](p: A => Boolean): Algebra[AndMaybe[A, ?], Option[A]] =
     l => if (p(l.head)) some(l.head) else l.tailOption.join
 }

@@ -16,16 +16,14 @@ lazy val standardSettings = commonBuildSettings ++ Seq(
   ScoverageKeys.coverageHighlighting := true,
   scalacOptions in (Compile, doc) ++= Seq("-groups", "-implicits"),
   wartremoverWarnings in (Compile, compile) --= Seq(
-    Wart.PublicInference,  // TODO: enable incrementally — currently results in many errors
-    Wart.ImplicitParameter // TODO: enable incrementally — currently results in many errors
-  ),
+    Wart.PublicInference,    // TODO: enable incrementally — currently results in many errors
+    Wart.ImplicitParameter), // see wartremover/wartremover#350 & #351
 
   libraryDependencies ++= Seq(
     CommonDependencies.slamdata.predef,
     CommonDependencies.monocle.core.cross(CrossVersion.binary)          % "compile, test",
     CommonDependencies.scalaz.core.cross(CrossVersion.binary)           % "compile, test",
-    CommonDependencies.simulacrum.simulacrum.cross(CrossVersion.binary) % "compile, test")
-)
+    CommonDependencies.simulacrum.simulacrum.cross(CrossVersion.binary) % "compile, test"))
 
 lazy val publishSettings = commonPublishSettings ++ Seq(
   organizationName := "SlamData Inc.",

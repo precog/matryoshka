@@ -84,7 +84,7 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck {
   }
 
   "unsafePerformSync" should {
-    "return novw immediately" in {
+    "return now immediately" in {
       Partial.now(12).unsafePerformSync must equal(12)
     }
 
@@ -93,9 +93,23 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck {
         equal(3)
     }
 
+    // NB: This test will depend on the size of your stack, you may have to
+    //     increase the initial value on larger stacks.
+    "return a value well after stack would overflow" in {
+      100000000.ana[Partial[Unit]](i => if (i ≟ 0) ().left else (i - 1).right)
+        .unsafePerformSync must
+        equal(())
+    }
+
+    // NB: This is because the following test doesn't always get close to the
+    //     lower bound, so we make sure changes don't make things worse.
+    "check lower bound of mc91" in {
+      mc91(-150000).unsafePerformSync must equal(91)
+    }
+
     // TODO: Should work with any Int, but stack overflows on big negatives.
     "always terminate with mc91" >> prop { (n: Int) =>
-      n > -90000 ==>
+      n > -150000 ==>
         (mc91(n).unsafePerformSync must equal(if (n <= 100) 91 else n - 10))
     }
   }

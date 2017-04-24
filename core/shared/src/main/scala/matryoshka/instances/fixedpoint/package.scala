@@ -312,7 +312,14 @@ package object fixedpoint {
 
     /** Run to completion (if it completes).
       */
-    final def unsafePerformSync: A = self.cata[A](_.merge)
+    // TODO: Can we do this stack-safely with a fold?
+    //         _.cata(_.merge)                                          // blows up
+    //         _.cataM[Free.Trampoline](p => Trampoline.delay(p.merge)) // still blows up
+    //         _.hyloM[Free.Trampoline](..., p.project.point)           // takes forever
+    @tailrec final def unsafePerformSync: A = self.project match {
+      case -\/(a) => a
+      case \/-(p) => p.unsafePerformSync
+    }
 
     // TODO: Would be nice to have this in ApplicativeOps
     /** If two `Partial`s eventually have the same value, then they are

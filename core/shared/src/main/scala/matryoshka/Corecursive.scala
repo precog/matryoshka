@@ -62,7 +62,7 @@ trait Corecursive[T] extends Based[T] { self =>
     hylo[λ[α => Base[T \/ α]], A, T](
       a)(
       fa => embed(fa.map(_.merge)), f)(
-      BF compose \/.DisjunctionInstances1)
+      BF.compose[T \/ ?])
 
   def elgotApo[A]
     (a: A)
@@ -84,7 +84,7 @@ trait Corecursive[T] extends Based[T] { self =>
     hylo[λ[α => Base[B \/ α]], A, T](
       a)(
       fa => embed(fa.map(_.leftMap(ana(_)(ψ0)).merge)), ψ)(
-      BF compose \/.DisjunctionInstances1)
+      BF.compose[B \/ ?])
 
   def apoM[M[_]: Monad, A](
     a: A)(
@@ -94,7 +94,7 @@ trait Corecursive[T] extends Based[T] { self =>
     hyloM[M, λ[α => Base[T \/ α]], A, T](
       a)(
       fa => embed(fa ∘ (_.merge)).point[M], f)(
-      Monad[M], BT compose \/.DisjunctionInstances1)
+      Monad[M], BT.compose[T \/ ?])
 
   def futu[A]
     (a: A)
@@ -135,7 +135,7 @@ trait Corecursive[T] extends Based[T] { self =>
     (implicit U: Recursive.Aux[U, G], BF: Functor[Base])
       : T = {
     implicit val nested: Functor[λ[α => Base[T \/ α]]] =
-      BF compose \/.DisjunctionInstances1
+      BF.compose[T \/ ?]
 
     transHylo[U, G, λ[α => Base[T \/ α]], T, Base](u)(_ ∘ (_.merge), f)
   }
