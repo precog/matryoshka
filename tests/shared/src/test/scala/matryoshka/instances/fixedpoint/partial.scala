@@ -39,8 +39,6 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck {
 
     addFragments(properties(Props.equal.laws[Partial[Int]](Partial.equal, implicitly)))
     addFragments(properties(Props.monad.laws[Partial](implicitly, implicitly, implicitly, implicitly, Partial.equal)))
-    // NB: We get Foldable for free due to `RecursiveT[Nu]` and
-    //     `Bifoldable[\/]`
     addFragments(properties(Props.foldable.laws[Partial]))
   }
 
@@ -50,41 +48,38 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck {
     else mc91(n + 11) >>= mc91
 
   "never" should {
-    "always have more steps" in {
-      Partial.never[Int].runFor(1000) must beRightDisjunction
+    "always have more steps" >> prop { (i: Conat) =>
+      Partial.never[Int].runFor(i) must beRightDisjunction
     }
   }
 
   "runFor" should {
     "return now immediately" in {
-      Partial.now(13).runFor(0) must beLeftDisjunction(13)
+      Partial.now(13).runFor(Nat.zero[Nat]) must beLeftDisjunction(13)
     }
 
-    "return a value when it runs past the end" in {
-      Partial.later(Partial.now(7)).runFor(300000) must beLeftDisjunction(7)
+    "return a value when it runs past the end" >> prop { (i: Conat) =>
+      i.transAna[Partial[Int]](Partial.delay(7)).runFor(i) must
+        beLeftDisjunction(7)
     }
 
     "return after multiple runs" >> prop { (a: Conat, b: Conat) =>
-      val (ai, bi) = (a.cata(height), b.cata(height))
-      bi > 0 ==> {
-        val first = (a + b).transAna[Partial[Int]](Partial.delay(27)).runFor(ai)
+      b > Nat.zero[Conat] ==> {
+        val first = (a + b).transAna[Partial[Int]](Partial.delay(27)).runFor(a)
         first must beRightDisjunction
-        first.flatMap(_.runFor(bi)) must beLeftDisjunction(27)
+        first.flatMap(_.runFor(b)) must beLeftDisjunction(27)
       }
     }
 
     "still pending one short" >> prop { (a: Conat) =>
-      val ai = a.cata(height)
-      ai > 0 ==> {
-        val first = a.transAna[Partial[Int]](Partial.delay(27)).runFor(ai - 1)
-        first must beRightDisjunction
-        first.flatMap(_.runFor(1)) must beLeftDisjunction(27)
-      }
+      val first = (a + Nat.one[Conat]).transAna[Partial[Int]](Partial.delay(27)).runFor(a)
+      first must beRightDisjunction
+      first.flatMap(_.runFor(a + Nat.one[Conat])) must beLeftDisjunction(27)
     }
 
-    "return exactly at the end" >> prop { (i: Conat) =>
-      i.transAna[Partial[Int]](Partial.delay(4)).runFor(i.cata(height)) must
-        beLeftDisjunction(4)
+    "return exactly at the end" >> prop { (n: Conat, i: Int) =>
+      n.transAna[Partial[Int]](Partial.delay(i)).runFor(n) must
+        beLeftDisjunction(i)
     }
   }
 
@@ -98,9 +93,23 @@ class PartialSpec extends Specification with ScalazMatchers with ScalaCheck {
         equal(3)
     }
 
+    // NB: This test will depend on the size of your stack, you may have to
+    //     increase the initial value on larger stacks.
+    "return a value well after stack would overflow" in {
+      100000000.ana[Partial[Unit]](i => if (i ≟ 0) ().left else (i - 1).right)
+        .unsafePerformSync must
+        equal(())
+    }
+
+    // NB: This is because the following test doesn't always get close to the
+    //     lower bound, so we make sure changes don't make things worse.
+    "check lower bound of mc91" in {
+      mc91(-150000).unsafePerformSync must equal(91)
+    }
+
     // TODO: Should work with any Int, but stack overflows on big negatives.
     "always terminate with mc91" >> prop { (n: Int) =>
-      n > -90000 ==>
+      n > -150000 ==>
         (mc91(n).unsafePerformSync must equal(if (n <= 100) 91 else n - 10))
     }
   }

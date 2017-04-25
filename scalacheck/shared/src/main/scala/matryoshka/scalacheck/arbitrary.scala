@@ -34,6 +34,7 @@ trait ArbitraryInstancesʹ {
 }
 
 trait ArbitraryInstances extends ArbitraryInstancesʹ {
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   def corecursiveArbitrary[T, F[_]: Functor]
     (implicit T: Corecursive.Aux[T, F], fArb: Delay[Arbitrary, F])
       : Arbitrary[T] =
@@ -80,37 +81,23 @@ trait ArbitraryInstances extends ArbitraryInstancesʹ {
           (Arbitrary.arbitrary[A] ⊛ arb.arbitrary)(ConsF[A, B])))
     }
 
-  implicit def nelFArbitrary[A: Arbitrary]: Delay[Arbitrary, NelF[A, ?]] =
-    new Delay[Arbitrary, NelF[A, ?]] {
+  implicit def nelFArbitrary[A: Arbitrary]: Delay[Arbitrary, AndMaybe[A, ?]] =
+    new Delay[Arbitrary, AndMaybe[A, ?]] {
       def apply[B](arb: Arbitrary[B]) =
-        Arbitrary(Gen.oneOf[NelF[A, B]](
-          (Arbitrary.arbitrary[A] ⊛ arb.arbitrary)(InitF[A, B]),
-          Arbitrary.arbitrary[A] ∘ (LastF[A, B](_))))
+        Arbitrary(Gen.oneOf[AndMaybe[A, B]](
+          (Arbitrary.arbitrary[A] ⊛ arb.arbitrary)(Indeed[A, B]),
+          Arbitrary.arbitrary[A] ∘ (Only[A, B](_))))
     }
 
-  // TODO: Submit these to Scalaz
-  implicit def cofreeArbitrary[F[_], A](implicit F: Delay[Arbitrary, F], A: Arbitrary[A]): Arbitrary[Cofree[F, A]] =
-    Arbitrary(
-      Gen.sized(size =>
-        (Gen.resize(size / 2, A.arbitrary) ⊛
-          F(Arbitrary(
-              if (size <= 0)
-                Gen.fail[Cofree[F, A]]
-              else
-                Gen.resize(size / 2, cofreeArbitrary(F, A).arbitrary))).arbitrary)(
-          Cofree(_, _))))
+  implicit def cofreeArbitrary[F[_]: Functor, A]
+    (implicit F: Delay[Arbitrary, F], A: Arbitrary[A])
+      : Arbitrary[Cofree[F, A]] =
+    corecursiveArbitrary[Cofree[F, A], EnvT[A, F, ?]]
 
-  implicit def freeArbitrary[F[_], A](implicit F: Delay[Arbitrary, F], A: Arbitrary[A]): Arbitrary[Free[F, A]] =
-    Arbitrary(
-      Gen.sized(size =>
-        Gen.resize(size - 1,
-          Gen.oneOf(
-            A.arbitrary ∘ (_.point[Free[F, ?]]),
-            F(Arbitrary(
-              if (size <= 0)
-                Gen.fail[Free[F, A]]
-              else
-                freeArbitrary(F, A).arbitrary)).arbitrary ∘ (Free.liftF(_).join)))))
+  implicit def freeArbitrary[F[_]: Functor, A]
+    (implicit F: Delay[Arbitrary, F], A: Arbitrary[A])
+      : Arbitrary[Free[F, A]] =
+    corecursiveArbitrary[Free[F, A], CoEnv[A, F, ?]]
 
   implicit val optionArbitrary: Delay[Arbitrary, Option] =
     new Delay[Arbitrary, Option] {

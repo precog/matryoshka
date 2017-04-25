@@ -15,7 +15,9 @@
  */
 
 import slamdata.Predef._
+import matryoshka.data.free._
 import matryoshka.implicits._
+import matryoshka.instances.fixedpoint.{BirecursiveOptionOps, Nat}
 import matryoshka.patterns.{CoEnv, EnvT}
 
 import monocle._
@@ -210,6 +212,7 @@ package object matryoshka {
     *
     * @group refolds
     */
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   def hylo[F[_]: Functor, A, B](a: A)(φ: Algebra[F, B], ψ: Coalgebra[F, A]): B =
     φ(ψ(a) ∘ (hylo(_)(φ, ψ)))
 
@@ -362,6 +365,13 @@ package object matryoshka {
     }
   }
 
+  def transHylo[T, F[_]: Functor, G[_]: Functor, U, H[_]: Functor]
+    (t: T)
+    (φ: G[U] => H[U], ψ: F[T] => G[T])
+    (implicit T: Recursive.Aux[T, F], U: Corecursive.Aux[U, H])
+      : U =
+    hylo(t)(φ >>> (U.embed(_)), ψ <<< (T.project(_)))
+
   /**
     *
     * @group dist
@@ -513,15 +523,11 @@ package object matryoshka {
   // TODO: Should be able to generalize this over `Recursive.Aux[T, CoEnv[…]]`
   //       somehow, then it wouldn’t depend on Scalaz and would work with any
   //       `Free` representation.
-  def distGFutu[H[_]: Functor, F[_]]
-    (k: DistributiveLaw[H, F])
-    (implicit F: Functor[F])
+  def distGFutu[H[_]: Functor, F[_]: Functor](k: DistributiveLaw[H, F])
       : DistributiveLaw[Free[H, ?], F] =
     new DistributiveLaw[Free[H, ?], F] {
-      def apply[α](m: Free[H, F[α]]) =
-        m.fold(
-          F.lift(Free.point[H, α](_)),
-          as => k(as ∘ (distGFutu(k).apply)) ∘ (Free.liftF(_).join))
+      def apply[A](m: Free[H, F[A]]) =
+        m.cata[F[Free[H, A]]](_.run.fold(_ ∘ Free.point, k(_) ∘ Free.roll))
     }
 
   def holes[F[_]: Traverse, A](fa: F[A]): F[(A, Coalgebra[F, A])] =
@@ -665,17 +671,22 @@ package object matryoshka {
     ElgotAlgebraMZip[W, Id, F]
     // (ann, node) => node.unfzip.bimap(f(ann, _), g(ann, _))
 
+  final def repeatedlyƒ[A](f: A => Option[A]): Coalgebra[A \/ ?, A] =
+    a => f(a) \/> a
+
   /** Repeatedly applies the function to the result as long as it returns Some.
     * Finally returns the last non-None value (which may be the initial input).
     *
     * @group algtrans
     */
-  @tailrec
-  final def repeatedly[A](f: A => Option[A])(expr: A): A =
-    f(expr) match {
-      case None => expr
-      case Some(e) => repeatedly(f)(e)
+  object repeatedly {
+    def apply[P] = new PartiallyApplied[P]
+    class PartiallyApplied[P] {
+      def apply[A](f: A => Option[A])(implicit P: Corecursive.Aux[P, A \/ ?])
+          : A => P =
+        _.ana[P](repeatedlyƒ(f))
     }
+  }
 
   /** Converts a failable fold into a non-failable, by simply returning the
     * argument upon failure.
@@ -706,13 +717,27 @@ package object matryoshka {
     *
     * @group algebras
     */
-  def size[F[_]: Foldable]: Algebra[F, Int] = _.foldRight(1)(_ + _)
+  object size {
+    def apply[N] = new PartiallyApplied[N]
+    class PartiallyApplied[N] {
+      def apply[F[_]: Foldable](implicit N: Birecursive.Aux[N, Option])
+          : Algebra[F, N] =
+        _.foldRight(Nat.one[N])(_ + _)
+    }
+  }
 
   /** The largest number of hops from a node to a leaf.
     *
     * @group algebras
     */
   def height[F[_]: Foldable]: Algebra[F, Int] = _.foldRight(-1)(_ max _) + 1
+
+  /** Collects the set of all subtrees.
+    *
+    * @group algebras 
+    */
+  def universe[F[_]: Foldable, A]: ElgotAlgebra[(A, ?), F, NonEmptyList[A]] =
+    p => NonEmptyList.nel(p._1, p._2.toIList.unite)
 
   /** Combines a tuple of zippable functors.
     *
@@ -791,13 +816,17 @@ package object matryoshka {
   /** This implicit allows Delay implicits to be found when searching for a
     * traditionally-defined instance.
     */
-  implicit def delayEqual[F[_], A](implicit A: Equal[A], F: Delay[Equal, F]):
-      Equal[F[A]] =
+  implicit def delayEqual[F[_], A](implicit F: Delay[Equal, F], A: Equal[A])
+      : Equal[F[A]] =
+    F(A)
+
+  implicit def delayOrder[F[_], A](implicit F: Delay[Order, F], A: Order[A])
+      : Order[F[A]] =
     F(A)
 
   /** See `delayEqual`.
     */
-  implicit def delayShow[F[_], A](implicit A: Show[A], F: Delay[Show, F]):
+  implicit def delayShow[F[_], A](implicit F: Delay[Show, F], A: Show[A]):
       Show[F[A]] =
     F(A)
 
@@ -848,14 +877,5 @@ package object matryoshka {
 
       def map[A, B](fa: T[F[A, ?]])(f: A => B) =
         fa.transCata[T[F[B, ?]]](_.leftMap[B](f))
-    }
-
-  implicit def recursiveTFoldable[T[_[_]]: RecursiveT, F[_, _]](implicit FB: Bifoldable[F], FF: Bifunctor[F]): Foldable[λ[α => T[F[α, ?]]]] =
-    new Foldable[λ[α => T[F[α, ?]]]] {
-      def foldMap[A, B: Monoid](fa: T[F[A, ?]])(f: A ⇒ B) =
-        fa.cata[B](FB.leftFoldable.foldMap(_)(f))(FF.rightFunctor)
-
-      def foldRight[A, B](fa: T[F[A, ?]], z: ⇒ B)(f: (A, ⇒ B) ⇒ B) =
-        fa.cata[B](FB.leftFoldable.foldRight(_, z)(f))(FF.rightFunctor)
     }
 }

@@ -21,7 +21,7 @@ import matryoshka._, Recursive.ops._
 
 import scalaz._, Scalaz._
 
-sealed trait ListF[A, B] {
+sealed abstract class ListF[A, B] {
   def headOption: Option[A] = this match {
     case ConsF(h, _) => h.some
     case NilF()      => None

@@ -22,7 +22,7 @@ import matryoshka._
 import org.scalacheck._
 import scalaz.{Apply => _, _}, Scalaz._
 
-sealed trait Exp2[A]
+sealed abstract class Exp2[A]
 case class Const[A]() extends Exp2[A]
 case class Num2[A](value: Int) extends Exp2[A]
 case class Single[A](a: A) extends Exp2[A]

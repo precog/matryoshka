@@ -25,6 +25,30 @@ trait OptionInstances {
   implicit def optionBirecursive[A]
       : Birecursive.Aux[Option[A], Const[Option[A], ?]] =
     id.idBirecursive[Option[A]]
+
+  implicit val optionDelayEqual: Delay[Equal, Option] =
+    new Delay[Equal, Option] {
+      def apply[A](a: Equal[A]) = {
+        implicit val aʹ: Equal[A] = a
+        Equal[Option[A]]
+      }
+    }
+
+  implicit val optionDelayOrder: Delay[Order, Option] =
+    new Delay[Order, Option] {
+      def apply[A](a: Order[A]) = {
+        implicit val aʹ: Order[A] = a
+        Order[Option[A]]
+      }
+    }
+
+  implicit val optionDelayShow: Delay[Show, Option] =
+    new Delay[Show, Option] {
+      def apply[A](a: Show[A]) = {
+        implicit val aʹ: Show[A] = a
+        Show[Option[A]]
+      }
+    }
 }
 
 object option extends OptionInstances

@@ -22,6 +22,7 @@ import matryoshka.exp._
 import matryoshka.exp2._
 import matryoshka.helpers._
 import matryoshka.implicits._
+import matryoshka.instances.fixedpoint.{Nat, Partial, partialMonad, PartialOps, RecursiveOptionOps}
 import matryoshka.runners._
 import matryoshka.scalacheck.arbitrary._
 import matryoshka.scalacheck.cogen._
@@ -99,10 +100,10 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
   }
 
   def addOneOrSimplifyƒ[T](implicit T: Recursive.Aux[T, Exp])
-      : Exp[T] => Exp[T] = {
-    case t @ Num(_)    => addOneƒ(t)
-    case t @ Mul(_, _) => repeatedly(simplifyƒ[T])(t)
-    case t             => t
+      : Exp[T] => Partial[Exp[T]] = {
+    case t @ Num(_)    => addOneƒ(t).point[Partial]
+    case t @ Mul(_, _) => repeatedly[Partial[Exp[T]]](simplifyƒ[T]).apply(t)
+    case t             => t.point[Partial]
   }
 
   def extractLambdaƒ[T[_[_]]: RecursiveT]: Exp[(T[Exp], T[Exp2])] => Exp2[T[Exp2]] = {
@@ -154,35 +155,35 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
 
     "children" >> {
       "be empty for simple literal" in {
-        num(1).children must be empty;
-        num(1).convertTo[Mu[Exp]].children must be empty;
-        num(1).convertTo[Nu[Exp]].children must be empty
+        num(1).children[List[Fix[Exp]]] must be empty;
+        num(1).convertTo[Mu[Exp]].children[List[Mu[Exp]]] must be empty;
+        num(1).convertTo[Nu[Exp]].children[List[Nu[Exp]]] must be empty
       }
 
       "contain sub-expressions" in {
-        mul(num(1), num(2)).children must equal(List(num(1), num(2)))
-        mul(num(1), num(2)).convertTo[Mu[Exp]].children must
+        mul(num(1), num(2)).children[List[Fix[Exp]]] must equal(List(num(1), num(2)))
+        mul(num(1), num(2)).convertTo[Mu[Exp]].children[List[Mu[Exp]]] must
           equal(List(num(1), num(2)).map(_.convertTo[Mu[Exp]]))
-        mul(num(1), num(2)).convertTo[Nu[Exp]].children must
+        mul(num(1), num(2)).convertTo[Nu[Exp]].children[List[Nu[Exp]]] must
           equal(List(num(1), num(2)).map(_.convertTo[Nu[Exp]]))
       }
     }
 
     "universe" >> {
       "be one for simple literal" in {
-        num(1).universe must equal(NonEmptyList(num(1)))
-        num(1).convertTo[Mu[Exp]].universe must
+        num(1).elgotPara(universe) must equal(NonEmptyList(num(1)))
+        num(1).convertTo[Mu[Exp]].elgotPara(universe) must
           equal(NonEmptyList(num(1)).map(_.convertTo[Mu[Exp]]))
-        num(1).convertTo[Nu[Exp]].universe must
+        num(1).convertTo[Nu[Exp]].elgotPara(universe) must
           equal(NonEmptyList(num(1)).map(_.convertTo[Nu[Exp]]))
       }
 
       "contain root and sub-expressions" in {
-        mul(num(1), num(2)).universe must
+        mul(num(1), num(2)).elgotPara(universe) must
           equal(NonEmptyList(mul(num(1), num(2)), num(1), num(2)))
-        mul(num(1), num(2)).convertTo[Mu[Exp]].universe must
+        mul(num(1), num(2)).convertTo[Mu[Exp]].elgotPara(universe) must
           equal(NonEmptyList(mul(num(1), num(2)), num(1), num(2)).map(_.convertTo[Mu[Exp]]))
-        mul(num(1), num(2)).convertTo[Nu[Exp]].universe must
+        mul(num(1), num(2)).convertTo[Nu[Exp]].elgotPara(universe) must
           equal(NonEmptyList(mul(num(1), num(2)), num(1), num(2)).map(_.convertTo[Nu[Exp]]))
       }
     }
@@ -207,8 +208,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
 
       "be bottom-up" in {
-        (mul(num(0), num(1)).transCata[Fix[Exp]](addOneOrSimplifyƒ) must equal(num(2))) and
-        (mul(num(1), num(2)).transCata[Fix[Exp]](addOneOrSimplifyƒ) must equal(mul(num(2), num(3))))
+        (mul(num(0), num(1)).transCataM[Partial, Fix[Exp], Exp](addOneOrSimplifyƒ).unsafePerformSync must equal(num(2))) and
+        (mul(num(1), num(2)).transCataM[Partial, Fix[Exp], Exp](addOneOrSimplifyƒ).unsafePerformSync must equal(mul(num(2), num(3))))
       }
     }
 
@@ -232,8 +233,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
 
       "be top-down" in {
-        mul(num(0), num(1)).transAna[Fix[Exp]](addOneOrSimplifyƒ) must equal(num(0))
-        mul(num(1), num(2)).transAna[Fix[Exp]](addOneOrSimplifyƒ) must equal(num(2))
+        mul(num(0), num(1)).transAnaM[Partial, Fix[Exp], Exp](addOneOrSimplifyƒ).unsafePerformSync must equal(num(0))
+        mul(num(1), num(2)).transAnaM[Partial, Fix[Exp], Exp](addOneOrSimplifyƒ).unsafePerformSync must equal(num(2))
       }
     }
 
@@ -447,10 +448,10 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     val generateVars: Int => Exp[Int] = n => Var(Symbol("x" + ((n * 13) % n)))
 
     val generateTerm: ElgotCoalgebra[Int \/ ?, Exp, (Int, Int)] = {
-      case (n, 0)     if n <= 0 => Num(42).right
-      case (n, bound) if n <= 0 => bound.left
-      case (n, bound) if n % 2 == 0 => Lambda(Symbol("x" + bound), (n - 1, bound + 1)).right
-      case (n, bound) if n % 2 == 1 => \/-(Mul((n / 2, bound), ((n / 2) - 1, bound)))
+      case (n, 0)     if n <= 0      => Num(42).right
+      case (n, bound) if n <= 0      => bound.left
+      case (n, bound) if (n % 2) ≟ 0 => Lambda(Symbol("x" + bound), (n - 1, bound + 1)).right
+      case (n, bound)                => \/-(Mul((n / 2, bound), ((n / 2) - 1, bound)))
     }
 
     "elgotCata" >> {
@@ -635,7 +636,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
 
       "increase toward leaves, ltr" in {
         val v = mul(num(0), mul(num(0), num(1)))
-        v.attributeTopDownM[State[Int, ?], Int](0)(sequential).eval(0) must
+        v.attributeTopDownM[State[Int, ?], Cofree[Exp, Int], Int](0)(sequential).eval(0) must
           equal(
             Cofree[Exp, Int](0, Mul(
               Cofree(1, Num(0)),
@@ -825,7 +826,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
       }
     }
 
-    sealed trait Nat[A]
+    sealed abstract class Nat[A]
     final case class Z[A]()        extends Nat[A]
     final case class S[A](prev: A) extends Nat[A]
     object Nat {
@@ -1019,8 +1020,8 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
   "Attr" >> {
     "attrSelf" >> {
       "annotate all" >> Prop.forAll(expGen) { exp =>
-        exp.cata(attrSelf[Mu[Exp], Exp]).universe must
-          equal(exp.universe.map(_.cata(attrSelf[Mu[Exp], Exp])))
+        exp.cata(attrSelf[Mu[Exp], Exp]).elgotPara(universe) must
+          equal(exp.elgotPara(universe).map(_.cata(attrSelf[Mu[Exp], Exp])))
       }
     }
 
@@ -1033,12 +1034,12 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
     "foldMap" >> {
       "zeros" >> Prop.forAll(expGen) { exp =>
         Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrK(0)))(_ :: Nil) must
-          equal(exp.universe.map(Function.const(0)).toList)
+          equal(exp.elgotPara(universe).map(Function.const(0)).toList)
       }
 
       "selves" >> Prop.forAll(expGen) { exp =>
         Foldable[Cofree[Exp, ?]].foldMap(exp.cata[Cofree[Exp, Mu[Exp]]](attrSelf))(_ :: Nil) must
-          equal(exp.universe.toList)
+          equal(exp.elgotPara(universe).toList)
       }
     }
   }
@@ -1053,7 +1054,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
   "size" should {
     "return the number of nodes in the structure" in {
       val exp = mul(mul(num(12), mul(num(12), num(8))), mul(num(12), num(8)))
-      exp.cata(matryoshka.size) must equal(9)
+      exp.cata(matryoshka.size[Nat].apply).toInt must equal(9)
     }
   }
 

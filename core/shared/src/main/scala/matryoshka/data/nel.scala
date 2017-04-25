@@ -23,14 +23,16 @@ import scalaz._
 
 trait NonEmptyListInstances {
   implicit def nelBirecursive[A]
-      : Birecursive.Aux[NonEmptyList[A], NelF[A, ?]] =
+      : Birecursive.Aux[NonEmptyList[A], AndMaybe[A, ?]] =
     Birecursive.algebraIso({
-      case InitF(a, bs) => a <:: bs
-      case LastF(a)     => NonEmptyList(a)
-    }, {
-      case NonEmptyList(a, ICons(b, cs)) => InitF(a, NonEmptyList.nel(b, cs))
-      case NonEmptyList(a,       INil()) => LastF(a)
-    })
+      case Indeed(a, bs) => a <:: bs
+      case Only(a)     => NonEmptyList(a)
+    },
+      // TODO: restore exhaustivity when scalaz/scalaz#1363 is fixed, or we're on Cats.
+      (_: NonEmptyList[A] @scala.unchecked) match {
+        case NonEmptyList(a, ICons(b, cs)) => Indeed(a, NonEmptyList.nel(b, cs))
+        case NonEmptyList(a, INil())       => Only(a)
+      })
 }
 
 object nel extends NonEmptyListInstances

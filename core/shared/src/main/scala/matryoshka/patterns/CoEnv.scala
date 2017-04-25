@@ -51,6 +51,16 @@ sealed abstract class CoEnvInstances extends CoEnvInstances0 {
       }
     }
 
+  implicit def show[E: Show, F[_]](implicit F: Delay[Show, F]): Delay[Show, CoEnv[E, F, ?]] =
+    new Delay[Show, CoEnv[E, F, ?]] {
+      def apply[A](sh: Show[A]) =
+        Show.show(
+          _.run.fold(
+            e => Cord("-\\/(") ++ e.show,
+            fa => Cord("\\/-(") ++ F(sh).show(fa)) ++
+            Cord(")"))
+    }
+
   // TODO: Need to have lower-prio instances of Bifoldable, with
   //       corresponding constraint on F.
   implicit def bitraverse[F[_]: Traverse]: Bitraverse[CoEnv[?, F, ?]] =

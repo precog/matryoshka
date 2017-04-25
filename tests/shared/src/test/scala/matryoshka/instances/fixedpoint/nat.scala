@@ -16,41 +16,30 @@
 
 package matryoshka.instances.fixedpoint
 
-import slamdata.Predef._
 import matryoshka._
-import matryoshka.data.Mu
-import matryoshka.helpers._
 import matryoshka.implicits._
 import matryoshka.scalacheck.arbitrary._
+// import matryoshka.scalacheck.cogen._
 
 // import monocle.law.discipline._
 import org.specs2.mutable._
 import org.specs2.scalaz.ScalazMatchers
 import org.typelevel.discipline.specs2.mutable._
 import scalaz._, Scalaz._
+import scalaz.scalacheck.ScalazProperties._
 
 class NatSpec extends Specification with ScalazMatchers with Discipline {
   // FIXME: Need to restrict this to smaller numbers
-  // checkAll("Nat ⇔ Int Prism", PrismTests(Nat.intPrism))
+  // checkAll("Nat ⇔ Int Prism", PrismTests(Nat.intPrism[Nat]))
+
+  "Nat" >> {
+    addFragments(properties(order.laws[Conat]))
+  }
 
   "+" should {
     "sum values" >> prop { (a: Nat, b: Nat) =>
       val (ai, bi) = (a.cata(height), b.cata(height))
-      (a + b).some must equal((ai + bi).anaM[Mu[Option]](Nat.fromInt))
-    }
-  }
-
-  "min" should {
-    "pick smaller value" >> prop { (a: Nat, b: Nat) =>
-      val (ai, bi) = (a.cata(height), b.cata(height))
-      (a min b).some must equal((ai min bi).anaM[Mu[Option]](Nat.fromInt))
-    }
-  }
-
-  "max" should {
-    "pick larger value" >> prop { (a: Nat, b: Nat) =>
-      val (ai, bi) = (a.cata(height), b.cata(height))
-      (a max b).some must equal((ai max bi).anaM[Mu[Option]](Nat.fromInt))
+      (a + b).cata(height) must equal(ai + bi)
     }
   }
 }

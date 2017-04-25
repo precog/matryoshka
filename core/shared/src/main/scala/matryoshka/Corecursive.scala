@@ -16,12 +16,12 @@
 
 package matryoshka
 
-import scala.Predef
-
 import scalaz._, Scalaz._
 
 /** Unfolds for corecursive data types. */
-trait Corecursive[T] extends Based[T] {
+trait Corecursive[T] extends Based[T] { self =>
+  implicit val corec: Corecursive.Aux[T, Base] = self
+
   def embed(t: Base[T])(implicit BF: Functor[Base]): T
 
   def ana[A](a: A)(f: Coalgebra[Base, A])(implicit BF: Functor[Base]): T =
@@ -59,18 +59,20 @@ trait Corecursive[T] extends Based[T] {
     */
   def apo[A](a: A)(f: GCoalgebra[T \/ ?, Base, A])(implicit BF: Functor[Base])
       : T =
-    // NB: This is not implemented with [[matryoshka.distApo]] because that
-    //     would add a [[matryoshka.Recursive]] constraint.
-    embed(f(a) ∘ (_.fold(Predef.identity, apo(_)(f))))
+    hylo[λ[α => Base[T \/ α]], A, T](
+      a)(
+      fa => embed(fa.map(_.merge)), f)(
+      BF.compose[T \/ ?])
 
   def elgotApo[A]
     (a: A)
     (f: ElgotCoalgebra[T \/ ?, Base, A])
     (implicit BF: Functor[Base])
       : T =
-    // NB: This is not implemented with [[matryoshka.distApo]] because that
-    //     would add a [[matryoshka.Recursive]] constraint.
-    f(a).fold(Predef.identity, fa => embed(fa ∘ (elgotApo(_)(f))))
+    hylo[λ[α => T \/ Base[α]], A, T](
+      a)(
+      _.map(embed).merge, f)(
+      \/.DisjunctionInstances1 compose BF)
 
   /** An unfold that can handle sections with a secondary unfold.
     */
@@ -79,17 +81,21 @@ trait Corecursive[T] extends Based[T] {
     (ψ0: Coalgebra[Base, B], ψ: GCoalgebra[B \/ ?, Base, A])
     (implicit BF: Functor[Base])
       : T =
-    embed(ψ(a) ∘ (_.fold(ana(_)(ψ0), gapo(_)(ψ0, ψ))))
+    hylo[λ[α => Base[B \/ α]], A, T](
+      a)(
+      fa => embed(fa.map(_.leftMap(ana(_)(ψ0)).merge)), ψ)(
+      BF.compose[B \/ ?])
 
   def apoM[M[_]: Monad, A](
     a: A)(
     f: GCoalgebraM[T \/ ?, M, Base, A])(
     implicit BT: Traverse[Base]):
       M[T] =
-    f(a).flatMap(_.traverse(_.fold(_.point[M], apoM(_)(f)))) ∘ embed
+    hyloM[M, λ[α => Base[T \/ α]], A, T](
+      a)(
+      fa => embed(fa ∘ (_.merge)).point[M], f)(
+      Monad[M], BT.compose[T \/ ?])
 
-  // Futu should probably be library-specific, so not part of the typeclass. Can
-  // just use `gana` explicitly, or maybe handle injecting them somehow else.
   def futu[A]
     (a: A)
     (f: GCoalgebra[Free[Base, ?], Base, A])
@@ -108,10 +114,50 @@ trait Corecursive[T] extends Based[T] {
     implicit BT: Traverse[Base]):
       M[T] =
     ganaM[Free[Base, ?], M, A](a)(distFutu, f)
+
+  def transAna[U, G[_]: Functor]
+    (u: U)
+    (f: G[U] => Base[U])
+    (implicit U: Recursive.Aux[U, G], BF: Functor[Base])
+      : T =
+    ana(u)(f <<< (U.project(_)))
+
+  def transGana[M[_]: Monad, U, G[_]: Functor]
+    (u: U)
+    (k: DistributiveLaw[M, Base], f: CoalgebraicGTransform[M, U, G, Base])
+    (implicit U: Recursive.Aux[U, G], BF: Functor[Base])
+      : T =
+    gana(u)(k, f <<< (U.project(_)))
+
+  def transApo[U, G[_]: Functor]
+    (u: U)
+    (f: CoalgebraicGTransform[T \/ ?, U, G, Base])
+    (implicit U: Recursive.Aux[U, G], BF: Functor[Base])
+      : T = {
+    implicit val nested: Functor[λ[α => Base[T \/ α]]] =
+      BF.compose[T \/ ?]
+
+    transHylo[U, G, λ[α => Base[T \/ α]], T, Base](u)(_ ∘ (_.merge), f)
+  }
+
+  def transFutu[U, G[_]: Functor]
+    (u: U)
+    (f: CoalgebraicGTransform[Free[Base, ?], U, G, Base])
+    (implicit U: Recursive.Aux[U, G], BF: Functor[Base])
+      : T =
+    transGana(u)(distFutu[Base], f)
+
+  def transAnaM[M[_]: Monad, U, G[_]: Functor]
+    (u: U)
+    (f: TransformM[M, U, G, Base])
+    (implicit U: Recursive.Aux[U, G], BT: Traverse[Base])
+      : M[T] =
+    anaM(u)(f <<< (U.project(_)))
 }
 
 object Corecursive {
   type Aux[T, F[_]] = Corecursive[T] { type Base[A] = F[A] }
 
-  def apply[T, F[_]](implicit instance: Aux[T, F]): Aux[T, F] = instance
+  def apply[T](implicit instance: Corecursive[T]): Aux[T, instance.Base] =
+    instance
 }

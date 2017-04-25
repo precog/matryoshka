@@ -34,20 +34,6 @@ package object helpers extends SpecificationLike with Discipline {
 
   implicit val nonEmptyListCogen: Delay[Cogen, NonEmptyList] = foldableCogen
 
-  implicit val optionEqualNT: Delay[Equal, Option] = new Delay[Equal, Option] {
-    def apply[A](eq: Equal[A]) =
-      Equal.equal {
-        case (None,    None)    => true
-        case (Some(a), Some(b)) => eq.equal(a, b)
-        case (_,       _)       => false
-      }
-  }
-
-  implicit val optionShowNT: Delay[Show, Option] = new Delay[Show, Option] {
-    def apply[A](s: Show[A]) =
-      Show.show(_.fold(Cord("None"))(Cord("Some(") ++ s.show(_) ++ Cord(")")))
-  }
-
   implicit def nonEmptyListEqual: Delay[Equal, NonEmptyList] =
     new Delay[Equal, NonEmptyList] {
       def apply[A](eq: Equal[A]) = NonEmptyList.nonEmptyListEqual(eq)
