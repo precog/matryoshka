@@ -1,5 +1,8 @@
 project/project
 project/target
+project/.boot/
+project/.ivy/
+project/.sbtboot/
 target
 core/target
 .idea
