@@ -23,6 +23,7 @@ import scalaz._
 sealed class IdOps[A](self: A) {
   def hylo[F[_]: Functor, B](f: Algebra[F, B], g: Coalgebra[F, A]): B =
     matryoshka.hylo(self)(f, g)
+
   def hyloM[M[_]: Monad, F[_]: Traverse, B](f: AlgebraM[M, F, B], g: CoalgebraM[M, F, A]):
       M[B] =
     matryoshka.hyloM(self)(f, g)
@@ -160,6 +161,18 @@ sealed class IdOps[A](self: A) {
         (implicit T: Corecursive.Aux[T, F])
           : M[T] =
         T.apoM(self)(f)
+    }
+  }
+
+  object gapo {
+    def apply[T] = new PartiallyApplied[T]
+
+    final class PartiallyApplied[T] {
+      def apply[F[_]: Functor, B]
+        (f: Coalgebra[F, B], g: GCoalgebra[B \/ ?, F, A])
+        (implicit T: Corecursive.Aux[T, F])
+          : T =
+        T.gapo(self)(f, g)
     }
   }
 
