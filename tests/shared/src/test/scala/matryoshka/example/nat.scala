@@ -59,16 +59,16 @@ class NatSpec extends Specification {
 
   val nat2 = Fix(Succ(Fix(Succ(Fix(Zero[Fix[Nat]]())))))
 
-  "create a nat from an int" >> {
+  "create a Nat from an Int" >> {
     2.ana[Fix[Nat]](toNat) should ===(nat2)
   }
-  "create an int from a nat" >> {
+  "create an Int from a Nat" >> {
     nat2.cata(toInt) should ===(2)
   }
-  "convert an int to a nat and back" >> {
+  "convert an Int to a Nat and back" >> {
     2.hylo(toInt, toNat) should ===(2)
   }
-  "calculate the factorial of a nat" >> {
+  "calculate the factorial of a Nat" >> {
     val nat4 = 4.ana[Fix[Nat]](toNat)
     nat4.zygo(toInt, factorial) should ===((24))
   }

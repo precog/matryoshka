@@ -90,23 +90,23 @@ class IntListSpec extends Specification {
   "construct an IntList" >> {
     List(1, 2).ana[Fix[IntList]](to) should ===(intList)
   }
-  "convert an intlist to a list" >> {
+  "convert an IntList to a List" >> {
     intList.cata(from) should ===(List(1, 2))
   }
 
-  "filter an intlist" >> {
+  "filter an IntList" >> {
     (0 until 10).toList.hylo(filter(_ < 5), to) should ===((0 until 5).toList)
   }
 
-  "map the head of a list" >> {
+  "map the head of an IntList" >> {
     intList.apo.apply(mapHead(_ * 3)).cata(from) should ===(List(3, 2))
   }
 
-  // "short circuit the creation of infinite intlist" >> {
+  // "short circuit the creation of infinite IntList" >> {
   //   1.postpro[Fix[IntList]](IntList.lessThan(10), infinite).cata(len) should ===(9)
   // }
 
-  "short circuit the fold of a list" >> {
+  "short circuit the fold of an IntList" >> {
     intList.prepro(IntList.lessThan(2), sum) should ===(1)
   }
 }
