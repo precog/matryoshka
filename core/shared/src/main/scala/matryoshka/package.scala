@@ -108,13 +108,13 @@ package object matryoshka {
     * in bottom-up fashion.
     * @group algebras
     */
-  type ElgotAlgebraicTransformM[W[_], M[_], T, F[_], G[_]] = W[F[T]] => M[G[T]]
+  type AlgebraicElgotTransformM[W[_], M[_], T, F[_], G[_]] = W[F[T]] => M[G[T]]
 
   /** Transform a structure `F` contained in `W`, to a structure `G`,
     * in bottom-up fashion.
     * @group algebras
     */
-  type ElgotAlgebraicTransform[W[_], T, F[_], G[_]] = W[F[T]] => G[T]
+  type AlgebraicElgotTransform[W[_], T, F[_], G[_]] = W[F[T]] => G[T]
 
   /** Transform a structure `F` to a structure `G` containing values in `N`,
     * in top-down fashion, accumulating effects in the monad `M`.
@@ -665,7 +665,7 @@ package object matryoshka {
       def apply[F[_]: Functor, A]
         (f: ElgotAlgebraM[W, M, F, A])
         (implicit W: Comonad[W], M: Functor[M], T: Recursive.Aux[T, EnvT[A, F, ?]])
-          : ElgotAlgebraicTransformM[W, M, T, F, EnvT[A, F, ?]] =
+          : AlgebraicElgotTransformM[W, M, T, F, EnvT[A, F, ?]] =
         node => f(node ∘ (_ ∘ (_.project.ask))) ∘ (a => EnvT((a, node.copoint)))
     }
   }
@@ -681,7 +681,7 @@ package object matryoshka {
       def apply[F[_]: Functor, A]
         (f: ElgotAlgebra[W, F, A])
         (implicit W: Comonad[W], T: Recursive.Aux[T, EnvT[A, F, ?]])
-          : ElgotAlgebraicTransform[W, T, F, EnvT[A, F, ?]] =
+          : AlgebraicElgotTransform[W, T, F, EnvT[A, F, ?]] =
         attributeElgotM[W, Id, T](f)
     }
   }
