@@ -561,16 +561,33 @@ package object matryoshka {
     *
     * @group algtrans
     */
-  def attributeAlgebraM[F[_]: Functor, M[_]: Functor, A](f: AlgebraM[M, F, A]):
-      AlgebraM[M, F, Cofree[F, A]] =
-    fa => f(fa ∘ (_.head)) ∘ (Cofree(_, fa))
+  object attributeAlgebraM {
+    def apply[T] = new PartiallyApplied[T]
+
+    final class PartiallyApplied[T] {
+      def apply[F[_]: Functor, M[_]: Functor, A]
+        (f: AlgebraM[M, F, A])
+        (implicit T: Birecursive.Aux[T, EnvT[A, F, ?]])
+          : AlgebraM[M, F, T] =
+        fa => f(fa ∘ (_.project.ask)) ∘ (a => EnvT((a, fa)).embed)
+    }
+  }
 
   /**
     *
     * @group algtrans
     */
-  def attributeAlgebra[F[_]: Functor, A](f: Algebra[F, A]): Algebra[F, Cofree[F, A]] =
-    attributeAlgebraM[F, Id, A](f)
+  object attributeAlgebra {
+    def apply[T] = new PartiallyApplied[T]
+
+    final class PartiallyApplied[T] {
+      def apply[F[_]: Functor, A]
+        (f: Algebra[F, A])
+        (implicit T: Birecursive.Aux[T, EnvT[A, F, ?]])
+          : Algebra[F, T] =
+        attributeAlgebraM[T][F, Id, A](f)
+    }
+  }
 
   /**
     *
@@ -598,14 +615,32 @@ package object matryoshka {
     *
     * @group algtrans
     */
-  def attrK[F[_]: Functor, A](k: A) = attributeAlgebra[F, A](Function.const(k))
+  object attrK {
+    def apply[T] = new PartiallyApplied[T]
+
+    final class PartiallyApplied[T] {
+      def apply[F[_]: Functor, A]
+        (k: A)
+        (implicit T: Birecursive.Aux[T, EnvT[A, F, ?]])
+          : Algebra[F, T] =
+        attributeAlgebra[T](Function.const[A, F[A]](k))
+    }
+  }
 
   /**
     *
     * @group algtrans
     */
-  def attrSelf[T, F[_]: Functor](implicit T: Corecursive.Aux[T, F]) =
-    attributeAlgebra[F, T](T.embed(_))
+  object attrSelf {
+    def apply[T] = new PartiallyApplied[T]
+
+    final class PartiallyApplied[T] {
+      def apply[U, F[_]: Functor]
+        (implicit T: Birecursive.Aux[T, EnvT[U, F, ?]], U: Corecursive.Aux[U, F])
+          : Algebra[F, T] =
+        attributeAlgebra[T](U.embed(_: F[U]))
+    }
+  }
 
   /** A function to be called like `attributeElgotM[M](myElgotAlgebraM)`.
     *

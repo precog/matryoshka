@@ -1018,27 +1018,29 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
   }
 
   "Attr" >> {
+    type T[A] = Cofree[Exp, A]
+
     "attrSelf" >> {
       "annotate all" >> Prop.forAll(expGen) { exp =>
-        exp.cata(attrSelf[Mu[Exp], Exp]).elgotPara(universe) must
-          equal(exp.elgotPara(universe).map(_.cata(attrSelf[Mu[Exp], Exp])))
+        exp.cata(attrSelf[T[Mu[Exp]]].apply).elgotPara(universe) must
+          equal(exp.elgotPara(universe).map(_.cata(attrSelf[T[Mu[Exp]]].apply)))
       }
     }
 
     "convert" >> {
       "forget unit" >> Prop.forAll(expGen) { exp =>
-        exp.cata(attrK(())).cata(deattribute[Exp, Unit, Mu[Exp]](_.embed)) must equal(exp)
+        exp.cata(attrK[T[Unit]](())).cata(deattribute[Exp, Unit, Mu[Exp]](_.embed)) must equal(exp)
       }
     }
 
     "foldMap" >> {
       "zeros" >> Prop.forAll(expGen) { exp =>
-        Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrK(0)))(_ :: Nil) must
+        Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrK[T[Int]](0)))(_ :: Nil) must
           equal(exp.elgotPara(universe).map(Function.const(0)).toList)
       }
 
       "selves" >> Prop.forAll(expGen) { exp =>
-        Foldable[Cofree[Exp, ?]].foldMap(exp.cata[Cofree[Exp, Mu[Exp]]](attrSelf))(_ :: Nil) must
+        Foldable[Cofree[Exp, ?]].foldMap(exp.cata[T[Mu[Exp]]](attrSelf[T[Mu[Exp]]].apply))(_ :: Nil) must
           equal(exp.elgotPara(universe).toList)
       }
     }
