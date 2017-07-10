@@ -1022,25 +1022,25 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
 
     "attrSelf" >> {
       "annotate all" >> Prop.forAll(expGen) { exp =>
-        exp.cata(attrSelf[T[Mu[Exp]]].apply).elgotPara(universe) must
-          equal(exp.elgotPara(universe).map(_.cata(attrSelf[T[Mu[Exp]]].apply)))
+        exp.transCata[T[Mu[Exp]]](attrSelf[T[Mu[Exp]]].apply).elgotPara(universe) must
+          equal(exp.elgotPara(universe).map(_.transCata[T[Mu[Exp]]](attrSelf[T[Mu[Exp]]].apply)))
       }
     }
 
     "convert" >> {
       "forget unit" >> Prop.forAll(expGen) { exp =>
-        exp.cata(attrK[T[Unit]](())).cata(deattribute[Exp, Unit, Mu[Exp]](_.embed)) must equal(exp)
+        exp.transCata[T[Unit]](attrK[T[Unit]](())).cata(deattribute[Exp, Unit, Mu[Exp]](_.embed)) must equal(exp)
       }
     }
 
     "foldMap" >> {
       "zeros" >> Prop.forAll(expGen) { exp =>
-        Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrK[T[Int]](0)))(_ :: Nil) must
+        Foldable[Cofree[Exp, ?]].foldMap(exp.transCata[T[Int]](attrK[T[Int]](0)))(_ :: Nil) must
           equal(exp.elgotPara(universe).map(Function.const(0)).toList)
       }
 
       "selves" >> Prop.forAll(expGen) { exp =>
-        Foldable[Cofree[Exp, ?]].foldMap(exp.cata[T[Mu[Exp]]](attrSelf[T[Mu[Exp]]].apply))(_ :: Nil) must
+        Foldable[Cofree[Exp, ?]].foldMap(exp.transCata[T[Mu[Exp]]](attrSelf[T[Mu[Exp]]].apply))(_ :: Nil) must
           equal(exp.elgotPara(universe).toList)
       }
     }

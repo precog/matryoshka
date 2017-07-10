@@ -556,7 +556,7 @@ package object matryoshka {
    if (index < 0) None
    else fa.toList.drop(index).headOption
 
-  /** Turns any F-algebra, into an identical one that attributes the tree with
+  /** Turns any F-algebra, into a transform that attributes the tree with
     * the results for each node.
     *
     * @group algtrans
@@ -567,9 +567,9 @@ package object matryoshka {
     final class PartiallyApplied[T] {
       def apply[F[_]: Functor, M[_]: Functor, A]
         (f: AlgebraM[M, F, A])
-        (implicit T: Birecursive.Aux[T, EnvT[A, F, ?]])
-          : AlgebraM[M, F, T] =
-        fa => f(fa ∘ (_.project.ask)) ∘ (a => EnvT((a, fa)).embed)
+        (implicit T: Recursive.Aux[T, EnvT[A, F, ?]])
+          : TransformM[M, T, F, EnvT[A, F, ?]] =
+        fa => f(fa ∘ (_.project.ask)) ∘ (a => EnvT((a, fa)))
     }
   }
 
@@ -583,8 +583,8 @@ package object matryoshka {
     final class PartiallyApplied[T] {
       def apply[F[_]: Functor, A]
         (f: Algebra[F, A])
-        (implicit T: Birecursive.Aux[T, EnvT[A, F, ?]])
-          : Algebra[F, T] =
+        (implicit T: Recursive.Aux[T, EnvT[A, F, ?]])
+          : Transform[T, F, EnvT[A, F, ?]] =
         attributeAlgebraM[T][F, Id, A](f)
     }
   }
@@ -621,8 +621,8 @@ package object matryoshka {
     final class PartiallyApplied[T] {
       def apply[F[_]: Functor, A]
         (k: A)
-        (implicit T: Birecursive.Aux[T, EnvT[A, F, ?]])
-          : Algebra[F, T] =
+        (implicit T: Recursive.Aux[T, EnvT[A, F, ?]])
+          : Transform[T, F, EnvT[A, F, ?]] =
         attributeAlgebra[T](Function.const[A, F[A]](k))
     }
   }
@@ -636,8 +636,8 @@ package object matryoshka {
 
     final class PartiallyApplied[T] {
       def apply[U, F[_]: Functor]
-        (implicit T: Birecursive.Aux[T, EnvT[U, F, ?]], U: Corecursive.Aux[U, F])
-          : Algebra[F, T] =
+        (implicit T: Recursive.Aux[T, EnvT[U, F, ?]], U: Corecursive.Aux[U, F])
+          : Transform[T, F, EnvT[U, F, ?]] =
         attributeAlgebra[T](U.embed(_: F[U]))
     }
   }
