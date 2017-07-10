@@ -104,6 +104,18 @@ package object matryoshka {
     */
   type AlgebraicGTransform[W[_], T, F[_], G[_]]        = F[W[T]] => G[T]
 
+  /** Transform a structure `F` contained in `W`, to a structure `G`,
+    * in bottom-up fashion.
+    * @group algebras
+    */
+  type AlgebraicElgotTransformM[W[_], M[_], T, F[_], G[_]] = W[F[T]] => M[G[T]]
+
+  /** Transform a structure `F` contained in `W`, to a structure `G`,
+    * in bottom-up fashion.
+    * @group algebras
+    */
+  type AlgebraicElgotTransform[W[_], T, F[_], G[_]] = W[F[T]] => G[T]
+
   /** Transform a structure `F` to a structure `G` containing values in `N`,
     * in top-down fashion, accumulating effects in the monad `M`.
     * @group algebras
@@ -556,21 +568,38 @@ package object matryoshka {
    if (index < 0) None
    else fa.toList.drop(index).headOption
 
-  /** Turns any F-algebra, into an identical one that attributes the tree with
+  /** Turns any F-algebra, into a transform that attributes the tree with
     * the results for each node.
     *
     * @group algtrans
     */
-  def attributeAlgebraM[F[_]: Functor, M[_]: Functor, A](f: AlgebraM[M, F, A]):
-      AlgebraM[M, F, Cofree[F, A]] =
-    fa => f(fa ∘ (_.head)) ∘ (Cofree(_, fa))
+  object attributeAlgebraM {
+    def apply[T] = new PartiallyApplied[T]
+
+    final class PartiallyApplied[T] {
+      def apply[F[_]: Functor, M[_]: Functor, A]
+        (f: AlgebraM[M, F, A])
+        (implicit T: Recursive.Aux[T, EnvT[A, F, ?]])
+          : TransformM[M, T, F, EnvT[A, F, ?]] =
+        fa => f(fa ∘ (_.project.ask)) ∘ (a => EnvT((a, fa)))
+    }
+  }
 
   /**
     *
     * @group algtrans
     */
-  def attributeAlgebra[F[_]: Functor, A](f: Algebra[F, A]): Algebra[F, Cofree[F, A]] =
-    attributeAlgebraM[F, Id, A](f)
+  object attributeAlgebra {
+    def apply[T] = new PartiallyApplied[T]
+
+    final class PartiallyApplied[T] {
+      def apply[F[_]: Functor, A]
+        (f: Algebra[F, A])
+        (implicit T: Recursive.Aux[T, EnvT[A, F, ?]])
+          : Transform[T, F, EnvT[A, F, ?]] =
+        attributeAlgebraM[T][F, Id, A](f)
+    }
+  }
 
   /**
     *
@@ -598,26 +627,62 @@ package object matryoshka {
     *
     * @group algtrans
     */
-  def attrK[F[_]: Functor, A](k: A) = attributeAlgebra[F, A](Function.const(k))
+  object attrK {
+    def apply[T] = new PartiallyApplied[T]
+
+    final class PartiallyApplied[T] {
+      def apply[F[_]: Functor, A]
+        (k: A)
+        (implicit T: Recursive.Aux[T, EnvT[A, F, ?]])
+          : Transform[T, F, EnvT[A, F, ?]] =
+        attributeAlgebra[T](Function.const[A, F[A]](k))
+    }
+  }
 
   /**
     *
     * @group algtrans
     */
-  def attrSelf[T, F[_]: Functor](implicit T: Corecursive.Aux[T, F]) =
-    attributeAlgebra[F, T](T.embed(_))
+  object attrSelf {
+    def apply[T] = new PartiallyApplied[T]
+
+    final class PartiallyApplied[T] {
+      def apply[U, F[_]: Functor]
+        (implicit T: Recursive.Aux[T, EnvT[U, F, ?]], U: Corecursive.Aux[U, F])
+          : Transform[T, F, EnvT[U, F, ?]] =
+        attributeAlgebra[T](U.embed(_: F[U]))
+    }
+  }
 
   /** A function to be called like `attributeElgotM[M](myElgotAlgebraM)`.
     *
     * @group algtrans
     */
   object attributeElgotM {
-    def apply[W[_], M[_]] = new PartiallyApplied[W, M]
+    def apply[W[_], M[_], T] = new PartiallyApplied[W, M, T]
 
-    final class PartiallyApplied[W[_], M[_]] {
-      def apply[F[_]: Functor, A](f: ElgotAlgebraM[W, M, F, A])(implicit W: Comonad[W], M: Functor[M]):
-          ElgotAlgebraM[W, M, F, Cofree[F, A]] =
-        node => f(node ∘ (_ ∘ (_.head))) ∘ (Cofree(_, node.copoint))
+    final class PartiallyApplied[W[_], M[_], T] {
+      def apply[F[_]: Functor, A]
+        (f: ElgotAlgebraM[W, M, F, A])
+        (implicit W: Comonad[W], M: Functor[M], T: Recursive.Aux[T, EnvT[A, F, ?]])
+          : AlgebraicElgotTransformM[W, M, T, F, EnvT[A, F, ?]] =
+        node => f(node ∘ (_ ∘ (_.project.ask))) ∘ (a => EnvT((a, node.copoint)))
+    }
+  }
+
+  /**
+    *
+    * @group algtrans
+    */
+  object attributeElgot {
+    def apply[W[_], T] = new PartiallyApplied[W, T]
+
+    final class PartiallyApplied[W[_], T] {
+      def apply[F[_]: Functor, A]
+        (f: ElgotAlgebra[W, F, A])
+        (implicit W: Comonad[W], T: Recursive.Aux[T, EnvT[A, F, ?]])
+          : AlgebraicElgotTransform[W, T, F, EnvT[A, F, ?]] =
+        attributeElgotM[W, Id, T](f)
     }
   }
 

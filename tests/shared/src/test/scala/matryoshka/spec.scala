@@ -23,6 +23,7 @@ import matryoshka.exp2._
 import matryoshka.helpers._
 import matryoshka.implicits._
 import matryoshka.instances.fixedpoint.{Nat, Partial, partialMonad, PartialOps, RecursiveOptionOps}
+import matryoshka.patterns._
 import matryoshka.runners._
 import matryoshka.scalacheck.arbitrary._
 import matryoshka.scalacheck.cogen._
@@ -566,12 +567,14 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
 
     "attributeElgotM" >> {
       "fold to Cofree" in {
+        type T = Cofree[Exp, Int]
+
         Cofree[Exp, Int](1, Mul(
           Cofree(2, Num(1)),
           Cofree(2, Mul(
             Cofree(3, Num(2)),
             Cofree(3, Num(3))))))
-          .cataM(liftTM(attributeElgotM[(Int, ?), Option](weightedEval))) must
+          .transCataM(((_: EnvT[Int, Exp, T]).run) >>> attributeElgotM[(Int, ?), Option, T](weightedEval)) must
           equal(
             Cofree[Exp, Int](216, Mul(
               Cofree(2, Num(1)),
@@ -1018,27 +1021,29 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
   }
 
   "Attr" >> {
+    type T[A] = Cofree[Exp, A]
+
     "attrSelf" >> {
       "annotate all" >> Prop.forAll(expGen) { exp =>
-        exp.cata(attrSelf[Mu[Exp], Exp]).elgotPara(universe) must
-          equal(exp.elgotPara(universe).map(_.cata(attrSelf[Mu[Exp], Exp])))
+        exp.transCata[T[Mu[Exp]]](attrSelf[T[Mu[Exp]]].apply).elgotPara(universe) must
+          equal(exp.elgotPara(universe).map(_.transCata[T[Mu[Exp]]](attrSelf[T[Mu[Exp]]].apply)))
       }
     }
 
     "convert" >> {
       "forget unit" >> Prop.forAll(expGen) { exp =>
-        exp.cata(attrK(())).cata(deattribute[Exp, Unit, Mu[Exp]](_.embed)) must equal(exp)
+        exp.transCata[T[Unit]](attrK[T[Unit]](())).cata(deattribute[Exp, Unit, Mu[Exp]](_.embed)) must equal(exp)
       }
     }
 
     "foldMap" >> {
       "zeros" >> Prop.forAll(expGen) { exp =>
-        Foldable[Cofree[Exp, ?]].foldMap(exp.cata(attrK(0)))(_ :: Nil) must
+        Foldable[Cofree[Exp, ?]].foldMap(exp.transCata[T[Int]](attrK[T[Int]](0)))(_ :: Nil) must
           equal(exp.elgotPara(universe).map(Function.const(0)).toList)
       }
 
       "selves" >> Prop.forAll(expGen) { exp =>
-        Foldable[Cofree[Exp, ?]].foldMap(exp.cata[Cofree[Exp, Mu[Exp]]](attrSelf))(_ :: Nil) must
+        Foldable[Cofree[Exp, ?]].foldMap(exp.transCata[T[Mu[Exp]]](attrSelf[T[Mu[Exp]]].apply))(_ :: Nil) must
           equal(exp.elgotPara(universe).toList)
       }
     }
@@ -1111,8 +1116,6 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
   }
 
   "recover" should {
-    import matryoshka.patterns._
-
     "handle “partially-folded” values" in {
       val exp =
         CoEnv[Int, Exp, Fix[CoEnv[Int, Exp, ?]]](\/-(Mul(
