@@ -23,6 +23,7 @@ import matryoshka.exp2._
 import matryoshka.helpers._
 import matryoshka.implicits._
 import matryoshka.instances.fixedpoint.{Nat, Partial, partialMonad, PartialOps, RecursiveOptionOps}
+import matryoshka.patterns._
 import matryoshka.runners._
 import matryoshka.scalacheck.arbitrary._
 import matryoshka.scalacheck.cogen._
@@ -566,12 +567,14 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
 
     "attributeElgotM" >> {
       "fold to Cofree" in {
+        type T = Cofree[Exp, Int]
+
         Cofree[Exp, Int](1, Mul(
           Cofree(2, Num(1)),
           Cofree(2, Mul(
             Cofree(3, Num(2)),
             Cofree(3, Num(3))))))
-          .cataM(liftTM(attributeElgotM[(Int, ?), Option](weightedEval))) must
+          .transCataM(((_: EnvT[Int, Exp, T]).run) >>> attributeElgotM[(Int, ?), Option, T](weightedEval)) must
           equal(
             Cofree[Exp, Int](216, Mul(
               Cofree(2, Num(1)),
@@ -1113,8 +1116,6 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers 
   }
 
   "recover" should {
-    import matryoshka.patterns._
-
     "handle “partially-folded” values" in {
       val exp =
         CoEnv[Int, Exp, Fix[CoEnv[Int, Exp, ?]]](\/-(Mul(
