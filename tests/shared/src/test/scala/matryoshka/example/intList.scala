@@ -65,12 +65,8 @@ object IntList {
 
   def lessThan(i: Int): IntList ~> IntList = new (IntList ~> IntList) {
     def apply[A](l: IntList[A]): IntList[A] = l match {
-      case IntNil() =>
-        println(s"intnil")
-        IntNil()
-      case l @ IntCons(h, t) =>
-        println(s"head is $h")
-        if(h < i) l else IntNil()
+      case IntNil() => IntNil()
+      case l @ IntCons(h, t) => if(h < i) l else IntNil()
     }
   }
 

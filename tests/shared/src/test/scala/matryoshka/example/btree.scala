@@ -16,7 +16,6 @@
 
 package matryoshka.example
 
-
 import org.specs2.mutable._
 
 import slamdata.Predef._
