@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,15 +22,10 @@ import scalaz._
 
 trait IdInstances {
   /** This is a single (low-priority) instance to provide folds/unfolds for all
-    * all non-recursive data types.
+    * non-recursive data types.
     */
-  // NB: This should really be available even without an additional dependency,
-  //     but [[scalaz.Const]] only exists in Scalaz (and Cats).
-  def idRecursive[A]: Recursive.Aux[A, Const[A, ?]] =
-    Recursive.fromCoalgebra(Const(_))
-
-  def idCorecursive[A]: Corecursive.Aux[A, Const[A, ?]] =
-    Corecursive.fromAlgebra(_.getConst)
+  def idBirecursive[A]: Birecursive.Aux[A, Const[A, ?]] =
+    Birecursive.algebraIso(_.getConst, Const(_))
 }
 
 object id extends IdInstances

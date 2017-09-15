@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,15 @@
 
 package matryoshka.patterns
 
+import slamdata.Predef._
 import matryoshka._
 import matryoshka.implicits._
-
-import scala.Option
 
 import scalaz._, Scalaz._
 import simulacrum._
 
 @typeclass trait Diffable[F[_]] { self =>
-  private implicit def self0 = self
+  private implicit def selfʹ: Diffable[F] = self
 
   def diffImpl[T[_[_]]: BirecursiveT](l: T[F], r: T[F]):
       Option[DiffT[T, F]]

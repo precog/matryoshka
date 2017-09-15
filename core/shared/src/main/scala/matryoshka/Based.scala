@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,8 @@ import simulacrum.typeclass
 
 /** Provides a type describing the pattern functor of some {co}recursive type
   * `T`. For standard fixed-point types like [[matryoshka.data.Fix]],
-  * `Patterned[Fix[F]]#Base` is simply `F`. However, directly recursive types
-  * generally have a less obivous pattern functor. E.g., `Patterned[Cofree[F,
+  * `Based[Fix[F]]#Base` is simply `F`. However, directly recursive types
+  * generally have a less obvious pattern functor. E.g., `Based[Cofree[F,
   * A]]#Base` is `EnvT[A, F, ?]`.
   */
 @typeclass trait Based[T] {

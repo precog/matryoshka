@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,14 @@
 
 package matryoshka.patterns
 
+import slamdata.Predef._
 import matryoshka._
-
-import scala.Unit
 
 import scalaz._, Scalaz._
 
 /** Represents diffs of recursive data structures.
   */
-sealed trait Diff[T[_[_]], F[_], A]
+sealed abstract class Diff[T[_[_]], F[_], A]
 final case class Same[T[_[_]], F[_], A](ident: T[F]) extends Diff[T, F, A]
 final case class Similar[T[_[_]], F[_], A](ident: F[A]) extends Diff[T, F, A]
 final case class Different[T[_[_]], F[_], A](left: T[F], right: T[F])
@@ -65,9 +64,7 @@ sealed abstract class DiffInstances extends DiffInstances0 {
         }
     }
 
-  implicit def equal[T[_[_]], F[_]](
-    implicit T: Equal[T[F]], F: Delay[Equal, F]):
-      Delay[Equal, Diff[T, F, ?]] =
+  implicit def equal[T[_[_]], F[_]](implicit T: Equal[T[F]], F: Delay[Equal, F]): Delay[Equal, Diff[T, F, ?]] =
     new Delay[Equal, Diff[T, F, ?]] {
       def apply[α](eq: Equal[α]) =
         Equal.equal((a, b) => (a, b) match {

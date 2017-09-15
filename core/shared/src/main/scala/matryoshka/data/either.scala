@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,15 @@
 
 package matryoshka.data
 
+import slamdata.Predef._
 import matryoshka._
-
-import scala.Either
 
 import scalaz._
 
 trait EitherInstances {
-  implicit def eitherRecursive[A, B]: Recursive.Aux[Either[A, B], Const[Either[A, B], ?]] =
-    id.idRecursive[Either[A, B]]
-
-  implicit def eitherCorecursive[A, B]: Corecursive.Aux[Either[A, B], Const[Either[A, B], ?]] =
-    id.idCorecursive[Either[A, B]]
+  implicit def eitherBirecursive[A, B]
+      : Birecursive.Aux[Either[A, B], Const[Either[A, B], ?]] =
+    id.idBirecursive[Either[A, B]]
 }
 
 object either extends EitherInstances

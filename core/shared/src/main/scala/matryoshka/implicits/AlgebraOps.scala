@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,18 @@ package matryoshka.implicits
 
 import matryoshka._
 
-import scalaz._
-import scalaz.syntax.comonad._
+import scalaz._, Scalaz._
 
 sealed class AlgebraOps[F[_], A](self: Algebra[F, A]) {
   def generalize[W[_]: Comonad](implicit F: Functor[F]): GAlgebra[W, F, A] =
     node => self(node ∘ (_.copoint))
 
+  def generalizeM[M[_]: Applicative](implicit F: Functor[F]): AlgebraM[M, F, A] =
+    node => self(node).point[M]
+
   def generalizeElgot[W[_]: Comonad]: ElgotAlgebra[W, F, A] =
     w => self(w.copoint)
+
+  def generalizeElgotM[W[_]: Comonad, M[_]: Monad]: ElgotAlgebraM[W, M, F, A] =
+    w => self(w.copoint).point[M]
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,9 @@ import matryoshka._
 import scalaz._
 
 trait DisjunctionInstances {
-  implicit def disjunctionRecursive[A, B]: Recursive.Aux[A \/ B, Const[A \/ B, ?]] =
-    id.idRecursive[A \/ B]
-
-  implicit def disjunctionCorecursive[A, B]: Corecursive.Aux[A \/ B, Const[A \/ B, ?]] =
-    id.idCorecursive[A \/ B]
+  implicit def disjunctionBirecursive[A, B]
+      : Birecursive.Aux[A \/ B, Const[A \/ B, ?]] =
+    id.idBirecursive[A \/ B]
 }
 
 object disjunction extends DisjunctionInstances

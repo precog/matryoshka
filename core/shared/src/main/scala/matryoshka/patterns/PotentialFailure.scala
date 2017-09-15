@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import scalaz._, Scalaz._
 /** Generally similar to CoEnv (Free), this has an additional `success` case
   * that indicates there’s no failure down to the leaves.
   */
-sealed trait PotentialFailure[T[_[_]], F[_], E, A]
+sealed abstract class PotentialFailure[T[_[_]], F[_], E, A]
 final case class Success[T[_[_]], F[_], E, A] private[patterns](v: T[F])
     extends PotentialFailure[T, F, E, A]
 /** Akin to Free.point */
@@ -34,9 +34,7 @@ final case class PartialFailure[T[_[_]], F[_], E, A] private[patterns](v: F[A])
     extends PotentialFailure[T, F, E, A]
 
 object PotentialFailure {
-  implicit def potentialFailureEqual[T[_[_]], F[_], E: Equal](
-    implicit T: Equal[T[F]], F: Delay[Equal, F]):
-      Delay[Equal, PotentialFailure[T, F, E, ?]] =
+  implicit def potentialFailureEqual[T[_[_]], F[_], E: Equal](implicit T: Equal[T[F]], F: Delay[Equal, F]): Delay[Equal, PotentialFailure[T, F, E, ?]] =
     new Delay[Equal, PotentialFailure[T, F, E, ?]] {
       def apply[α](eq: Equal[α]) =
         Equal.equal {

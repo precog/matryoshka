@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,9 @@ import matryoshka._
 import scalaz._
 
 trait MaybeInstances {
-  implicit def maybeRecursive[A]: Recursive.Aux[Maybe[A], Const[Maybe[A], ?]] =
-    id.idRecursive[Maybe[A]]
-
-  implicit def maybeCorecursive[A]: Corecursive.Aux[Maybe[A], Const[Maybe[A], ?]] =
-    id.idCorecursive[Maybe[A]]
+  implicit def maybeBirecursive[A]
+      : Birecursive.Aux[Maybe[A], Const[Maybe[A], ?]] =
+    id.idBirecursive[Maybe[A]]
 }
 
 object maybe extends MaybeInstances

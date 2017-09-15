@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,12 @@
 
 package matryoshka.patterns
 
+import slamdata.Predef._
 import matryoshka._, Recursive.ops._
-
-import scala.{Boolean, List, Nil, None, Option, Seq, ::}
 
 import scalaz._, Scalaz._
 
-sealed trait ListF[A, B] {
+sealed abstract class ListF[A, B] {
   def headOption: Option[A] = this match {
     case ConsF(h, _) => h.some
     case NilF()      => None
@@ -44,13 +43,6 @@ object ListF {
     case h :: t => ConsF(h, t)
     case Nil    => NilF()
   }
-
-  /** Because sometimes you have to deal with `_*`.
-    */
-  def seqIso[A] = AlgebraIso[ListF[A, ?], Seq[A]] {
-    case ConsF(h, t) => h +: t
-    case NilF()      => Seq.empty
-  } (s => s.headOption.fold[ListF[A, Seq[A]]](NilF())(ConsF(_, s.tail)))
 
   def takeUpTo[N, T, A](implicit N: Recursive.Aux[N, Option], T: Recursive.Aux[T, ListF[A, ?]]): Coalgebra[ListF[A, ?], (N, T)] =
     pair => pair._1.project.fold[ListF[A, (N, T)]](NilF())(p => pair._2.project.map((p, _)))

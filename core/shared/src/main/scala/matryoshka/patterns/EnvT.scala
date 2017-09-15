@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ sealed abstract class EnvTInstances0 extends EnvTInstances1 {
   implicit def cobind[E, W[_]](implicit W0: Cobind[W]):
       Cobind[EnvT[E, W, ?]] =
     new EnvTCobind[E, W] {
-      implicit def W = W0
+      implicit def W: Cobind[W] = W0
     }
 }
 

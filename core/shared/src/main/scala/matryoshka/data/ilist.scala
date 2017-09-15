@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,17 +22,14 @@ import matryoshka.patterns._
 import scalaz._
 
 trait IListInstances {
-  implicit def ilistRecursive[A]: Recursive.Aux[IList[A], ListF[A, ?]] =
-    Recursive.fromCoalgebra {
-      case ICons(h, t) => ConsF(h, t)
-      case INil()      => NilF[A, IList[A]]()
-    }
-
-  implicit def ilistCorecursive[A]: Corecursive.Aux[IList[A], ListF[A, ?]] =
-    Corecursive.fromAlgebra {
+  implicit def ilistBirecursive[A]: Birecursive.Aux[IList[A], ListF[A, ?]] =
+    Birecursive.algebraIso({
       case ConsF(h, t) => ICons(h, t)
       case NilF()      => INil[A]
-    }
+    }, {
+      case ICons(h, t) => ConsF(h, t)
+      case INil()      => NilF[A, IList[A]]()
+    })
 }
 
 object ilist extends IListInstances

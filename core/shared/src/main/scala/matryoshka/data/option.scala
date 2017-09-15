@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,39 @@
 
 package matryoshka.data
 
+import slamdata.Predef._
 import matryoshka._
-
-import scala.Option
 
 import scalaz._
 
 trait OptionInstances {
-  implicit def optionRecursive[A]: Recursive.Aux[Option[A], Const[Option[A], ?]] =
-    id.idRecursive[Option[A]]
+  implicit def optionBirecursive[A]
+      : Birecursive.Aux[Option[A], Const[Option[A], ?]] =
+    id.idBirecursive[Option[A]]
 
-  implicit def optionCorecursive[A]: Corecursive.Aux[Option[A], Const[Option[A], ?]] =
-    id.idCorecursive[Option[A]]
+  implicit val optionDelayEqual: Delay[Equal, Option] =
+    new Delay[Equal, Option] {
+      def apply[A](a: Equal[A]) = {
+        implicit val aʹ: Equal[A] = a
+        Equal[Option[A]]
+      }
+    }
+
+  implicit val optionDelayOrder: Delay[Order, Option] =
+    new Delay[Order, Option] {
+      def apply[A](a: Order[A]) = {
+        implicit val aʹ: Order[A] = a
+        Order[Option[A]]
+      }
+    }
+
+  implicit val optionDelayShow: Delay[Show, Option] =
+    new Delay[Show, Option] {
+      def apply[A](a: Show[A]) = {
+        implicit val aʹ: Show[A] = a
+        Show[Option[A]]
+      }
+    }
 }
 
 object option extends OptionInstances

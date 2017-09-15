@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@
 package matryoshka.data
 
 import matryoshka._
+
+import scala.Unit
 
 import scalaz._, Scalaz._
 
@@ -39,6 +41,10 @@ object Mu {
   }
 
   implicit val equalT: EqualT[Mu] = EqualT.recursiveT
+
+  // TODO: Use OrderT
+  implicit def order[F[_]: Traverse](implicit F: Order[F[Unit]]): Order[Mu[F]] =
+    Birecursive.order[Mu[F], F]
 
   implicit val showT: ShowT[Mu] = ShowT.recursiveT
 }

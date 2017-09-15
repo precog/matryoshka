@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,6 +49,16 @@ sealed abstract class CoEnvInstances extends CoEnvInstances0 {
           case (_,       _)       => false
         })
       }
+    }
+
+  implicit def show[E: Show, F[_]](implicit F: Delay[Show, F]): Delay[Show, CoEnv[E, F, ?]] =
+    new Delay[Show, CoEnv[E, F, ?]] {
+      def apply[A](sh: Show[A]) =
+        Show.show(
+          _.run.fold(
+            e => Cord("-\\/(") ++ e.show,
+            fa => Cord("\\/-(") ++ F(sh).show(fa)) ++
+            Cord(")"))
     }
 
   // TODO: Need to have lower-prio instances of Bifoldable, with

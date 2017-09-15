@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,11 +29,15 @@ import scalaz._, Scalaz._
   */
 package object data
     extends CofreeInstances
+    with DisjunctionInstances
     with EitherInstances
     with FreeInstances
     with IdInstances
     with IListInstances
-    with MaybeInstances {
+    with ListInstances
+    with MaybeInstances
+    with NonEmptyListInstances
+    with OptionInstances {
 
   /** NB: Since Cofree carries the functor, the resulting algebra is a cata, not
     *     a para.

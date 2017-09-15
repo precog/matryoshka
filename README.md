@@ -8,7 +8,7 @@ Generalized folds, unfolds, and traversals for fixed point data structures in Sc
 [![Build Status](https://travis-ci.org/slamdata/matryoshka.svg?branch=master)](https://travis-ci.org/slamdata/matryoshka)
 [![codecov.io](https://codecov.io/github/slamdata/matryoshka/coverage.svg?branch=master)](https://codecov.io/github/slamdata/matryoshka?branch=master)
 [![Join the chat at https://gitter.im/slamdata/matryoshka](https://badges.gitter.im/slamdata/matryoshka.svg)](https://gitter.im/slamdata/matryoshka?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-
+[![Latest version](https://index.scala-lang.org/slamdata/matryoshka/matryoshka-core/latest.svg?color=orange)](https://index.scala-lang.org/slamdata/matryoshka)
 ## External Resources
 
 - [Functional Programming with Bananas, Lenses, Envelopes and Barbed Wire](http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.41.125) – the iconic paper that collected a lot of this info for the first time
@@ -17,28 +17,34 @@ Generalized folds, unfolds, and traversals for fixed point data structures in Sc
 - [Efficient Nanopass Compilers using Cats and Matryoshka](https://github.com/sellout/recursion-scheme-talk/blob/master/nanopass-compiler-talk.org) – Greg Pfeil’s talk on this library (and some other things)
 - [Fix Haskell (by eliminating recursion)](https://github.com/sellout/recursion-scheme-talk/blob/master/recursion-scheme-talk.org) – Greg Pfeil’s talk on recursion schemes in Haskell
 - Recursion schemes by example - Tim Williams [slides](https://github.com/willtim/recursion-schemes/raw/master/slides-final.pdf) [talk](https://www.youtube.com/watch?v=Zw9KeP3OzpU)
-- [Practical Recursion Schmes](https://jtobin.io/practical-recursion-schemes) - Jared Tobin
+- [Practical Recursion Schemes](https://jtobin.io/practical-recursion-schemes) - Jared Tobin
 - [Promorphisms, Pre and Post](https://jtobin.io/promorphisms-pre-post) - Jared Tobin
 - [Time Traveling Recursion Schemes](https://jtobin.io/time-traveling-recursion) - Jared Tobin
 - [Automatic Differentiation via recursion schemes](https://jtobin.io/ad-via-recursion-schemes) - Jared Tobin
 
 ## Usage
 
-To use Matryoshka, the following import should bring in pretty much everything:
+1. Add a dependency
+ ```scala
+libraryDependencies += "com.slamdata" %% "matryoshka-core" % "0.18.3"
+```
+Optionally, you can also depend on `matryoshka-scalacheck` to get `Arbitrary`/`Cogen`/`Shrink` instances for a bunch of pattern functors and fixed points.
 
+2. Apply some fix for SI-2712. Prior to 2.12, use @milessabin’s [compiler plugin](https://github.com/milessabin/si2712fix-plugin). As of 2.12, you can simply add `scalacOptions += "-Ypartial-unification"` to your build.sbt.
+
+3. Add imports as needed. Usually the following should suffice
 ```scala
 import matryoshka._
 import matryoshka.implicits._
 ```
-
-Also, there are a number of implicits that scalac has trouble finding. Adding @milessabin’s [SI-2712 fix compiler plugin](https://github.com/milessabin/si2712fix-plugin) will simplify a ton of Matryoshka-related code.
+but if you need some of our pattern functors, then `matryoshka.patterns._` should be added. Also, there will be cases where you need to specify explicit types (although we generally recommend abstracting over `{Bir|Cor|R}ecursive` type classes), so you may need `matryoshka.data._` (for `Fix`, `Mu`, and `Nu`) and/or `matryoshka.instances.fixedpoint._` for things like `Nat`, `List`, `Cofree`, etc. defined in terms of `Mu`/`Nu`.
 
 ## Introduction
 
 This library is predicated on the idea of rewriting your recursive data structures, replacing the recursive type reference with a fresh type parameter.
 
 ```scala
-sealed trait Expr
+sealed abstract class Expr
 final case class Num(value: Long)      extends Expr
 final case class Mul(l: Expr, r: Expr) extends Expr
 ```
@@ -46,12 +52,14 @@ final case class Mul(l: Expr, r: Expr) extends Expr
 could be rewritten as
 
 ```scala
-sealed trait Expr[A]
+sealed abstract class Expr[A]
 final case class Num[A](value: Long) extends Expr[A]
 final case class Mul[A](l: A, r: A)  extends Expr[A]
 ```
 
-This trait generally allows a `Traverse` instance (or at least a `Functor` instance). Then you use one of the fixed point type constructors below to regain your recursive type.
+This abstract class generally allows a `Traverse` instance (or at least a `Functor` instance). Then you use one of the fixed point type constructors below to regain your recursive type.
+
+You may also want instances for `Delay[Equal, ?]`, `Delay[Order, ?]`, and `Delay[Show, ?]` (which are very similar to their non-`Delay` equivalents) to get instances for fixed points of your functor.
 
 ### Fixpoint Types
 

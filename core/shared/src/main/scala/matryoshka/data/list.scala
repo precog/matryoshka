@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2016 SlamData Inc.
+ * Copyright 2014–2017 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,23 +16,19 @@
 
 package matryoshka.data
 
+import slamdata.Predef._
 import matryoshka._
 import matryoshka.patterns._
 
-import scala.collection.immutable.{::, List, Nil}
-
 trait ListInstances {
-  implicit def listRecursive[A]: Recursive.Aux[List[A], ListF[A, ?]] =
-    Recursive.fromCoalgebra {
-      case h :: t => ConsF(h, t)
-      case Nil    => NilF[A, List[A]]()
-    }
-
-  implicit def listCorecursive[A]: Corecursive.Aux[List[A], ListF[A, ?]] =
-    Corecursive.fromAlgebra {
+  implicit def listBirecursive[A]: Birecursive.Aux[List[A], ListF[A, ?]] =
+    Birecursive.algebraIso[List[A], ListF[A, ?]]({
       case ConsF(h, t) => h :: t
       case NilF()      => Nil
-    }
+    }, {
+      case h :: t => ConsF(h, t)
+      case Nil    => NilF[A, List[A]]()
+    })
 }
 
 object list extends ListInstances
