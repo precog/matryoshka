@@ -59,28 +59,27 @@ import matryoshka.implicits._
 Since you already have your recursive AST, you also have code that uses it, and the last thing you want to do when trying a new tool is have to rewrite the code you already have. So, we’ll keep your AST and your code – all you have to do is define the relationship between the original AST and the new one, which we’ll do like this:
 
 ```tut:book
-implicit val arithmeticRecursive: Recursive.Aux[Arithmetic, ArithmeticF] =
-  Recursive.fromCoalgebra {
-    case Number(v)      => NumberF(v)
-    case Add(a, b)      => AddF(a, b)
-    case Subtract(a, b) => SubtractF(a, b)
-    case Multiply(a, b) => MultiplyF(a, b)
-    case Divide(a, b)   => DivideF(a, b)
-  }
+val arithmeticCoalgebra: Coalgebra[ArithmeticF, Arithmetic] = {
+  case Number(v)      => NumberF(v)
+  case Add(a, b)      => AddF(a, b)
+  case Subtract(a, b) => SubtractF(a, b)
+  case Multiply(a, b) => MultiplyF(a, b)
+  case Divide(a, b)   => DivideF(a, b)
+}
 
-implicit val arithmeticCorecursive: Corecursive.Aux[Arithmetic, ArithmeticF] =
-  Corecursive.fromAlgebra {
-    case NumberF(v)      => Number(v)
-    case AddF(a, b)      => Add(a, b)
-    case SubtractF(a, b) => Subtract(a, b)
-    case MultiplyF(a, b) => Multiply(a, b)
-    case DivideF(a, b)   => Divide(a, b)
-  }
+val arithmeticAlgebra: Algebra[ArithmeticF, Arithmetic] = {
+  case NumberF(v)      => Number(v)
+  case AddF(a, b)      => Add(a, b)
+  case SubtractF(a, b) => Subtract(a, b)
+  case MultiplyF(a, b) => Multiply(a, b)
+  case DivideF(a, b)   => Divide(a, b)
+}
+
+implicit val arithmeticBirecursive: Birecursive.Aux[Arithmetic, ArithmeticF] =
+  Birecursive.fromAlgebraIso(arithmeticAlgebra, arithmeticCoalgebra)
 ```
 
 All that this does is define the mapping between the directly-recursive structure and the functor, so it’s just a matter of seeing where the `F` suffix is.
-
-**NB**: We _should_ be able to define this with a single `Birecursive.fromIsomorphism`, but `Birecursive` doesn’t currently work correctly (see #44).
 
 With this relationship established, we now have access to all the power of recursion schemes.
 

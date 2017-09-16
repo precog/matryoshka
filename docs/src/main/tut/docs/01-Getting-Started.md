@@ -6,7 +6,7 @@ title: Getting Started
 ## {{ page.title }}
 
 ```scala
-libraryDependencies += "com.slamdata" %% "matryoshka-core" % "0.16.1"
+libraryDependencies += "com.slamdata" %% "matryoshka-core" % "0.22.0"
 ```
 
 ```tut:silent
