@@ -87,17 +87,17 @@ With this relationship established, we now have access to all the power of recur
 ```tut:book
 val pprint: Algebra[ArithmeticF, String] = {
   case NumberF(v)      => v.toString
-  case AddF(a, b)      => "($a) + ($b)"
-  case SubtractF(a, b) => "($a) - ($b)"
-  case MultiplyF(a, b) => "($a) * ($b)"
-  case DivideF(a, b)   => "($a) / ($b)"
+  case AddF(a, b)      => s"($a) + ($b)"
+  case SubtractF(a, b) => s"($a) - ($b)"
+  case MultiplyF(a, b) => s"($a) * ($b)"
+  case DivideF(a, b)   => s"($a) / ($b)"
 }
 ```
 
 ```tut
 val expr: Arithmetic =
   Add(Multiply(Number(3), Divide(Number(4), Number(5))), Number(6))
-Recursive[Arithmetic, ArithmeticF].cata(expr)(pprint)
+Recursive[Arithmetic].cata(expr)(pprint)
 ```
 
 **NB**: This is just a simple example. There are much better ways to print ASTs (which also take advantage of Matryoshka), but they are too complicated for this example.
@@ -113,13 +113,13 @@ val eval: Algebra[ArithmeticF, Double] = {
 ```
 
 ```tut
-Recursive[Arithmetic, ArithmeticF].cata(expr)(eval)
+Recursive[Arithmetic].cata(expr)(eval)
 ```
 
 So, that’s two simple examples where we don’t have to think about recursion at all – only one level of the operation at a time. But, we can now use this to gain some efficiency:
 
 ```tut
-Recursive[Arithmetic, ArithmeticF].cata(
+Recursive[Arithmetic].cata(
   expr)(
   Zip[Algebra[ArithmeticF, ?]].zip(eval, pprint))
 ```
@@ -140,10 +140,10 @@ val precedence: ArithmeticF[_] => Int = {
 def buildOp
   (currentPrecedence: Int, a: (Int, String), op: String, b: (Int, String))
     : String = {
-  val newA = if (a._1 <= currentPrecedence) a._2 else "(${a._2})"
-  val newB = if (b._1 < currentPrecedence) b._2 else "(${b._2})"
+  val newA = if (a._1 <= currentPrecedence) a._2 else s"(${a._2})"
+  val newB = if (b._1 < currentPrecedence) b._2 else s"(${b._2})"
 
-  "$newA $op $newB"
+  s"$newA $op $newB"
 }
 
 val pprintʹ: GAlgebra[(Int, ?), ArithmeticF, String] = {
@@ -154,7 +154,7 @@ val pprintʹ: GAlgebra[(Int, ?), ArithmeticF, String] = {
   case DivideF(a, b)   => buildOp(2, a, "/", b)
 }
 
-Recursive[Arithmetic, ArithmeticF].zygo(expr)(precedence, pprintʹ)
+Recursive[Arithmetic].zygo(expr)(precedence, pprintʹ)
 ```
 
 And now our pretty-printer only inserts necessary parens.

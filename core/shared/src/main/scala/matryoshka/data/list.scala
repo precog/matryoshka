@@ -22,7 +22,7 @@ import matryoshka.patterns._
 
 trait ListInstances {
   implicit def listBirecursive[A]: Birecursive.Aux[List[A], ListF[A, ?]] =
-    Birecursive.algebraIso[List[A], ListF[A, ?]]({
+    Birecursive.fromAlgebraIso[List[A], ListF[A, ?]]({
       case ConsF(h, t) => h :: t
       case NilF()      => Nil
     }, {

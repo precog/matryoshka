@@ -25,7 +25,7 @@ trait IdInstances {
     * non-recursive data types.
     */
   def idBirecursive[A]: Birecursive.Aux[A, Const[A, ?]] =
-    Birecursive.algebraIso(_.getConst, Const(_))
+    Birecursive.fromAlgebraIso(_.getConst, Const(_))
 }
 
 object id extends IdInstances

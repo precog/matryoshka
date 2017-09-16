@@ -335,11 +335,6 @@ object Recursive {
     def project(t: T)(implicit BF: Functor[Base]) = ψ(t)
   }
 
-  def equal[T, F[_]: Functor]
-    (implicit T: Recursive.Aux[T, F], F: Delay[Equal, F])
-      : Equal[T] =
-    Equal.equal((a, b) => F(equal[T, F]).equal(T.project(a), T.project(b)))
-
   def show[T, F[_]: Functor](implicit T: Recursive.Aux[T, F], F: Delay[Show, F])
       : Show[T] =
     Show.show(T.cata(_)(F(Cord.CordShow).show))

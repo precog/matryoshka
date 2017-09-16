@@ -24,7 +24,7 @@ import scalaz._, Scalaz._
 trait FreeInstances {
   implicit def freeBirecursive[F[_]: Functor, A]
       : Birecursive.Aux[Free[F, A], CoEnv[A, F, ?]] =
-    Birecursive.algebraIso(
+    Birecursive.fromAlgebraIso(
       _.run.fold(_.point[Free[F, ?]], Free.liftF(_).join),
       t => CoEnv(t.resume.swap))
 
