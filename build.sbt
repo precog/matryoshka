@@ -78,7 +78,7 @@ lazy val docs = project
   .enablePlugins(MicrositesPlugin)
   .settings(
     micrositeName             := "Matryoshka",
-    micrositeDescription      := "A library for doing bad-ass computer shit.",
+    micrositeDescription      := "Generalized folds, unfolds, and traversals for fixed point data structures in Scala.",
     micrositeAuthor           := "SlamData",
     micrositeGithubOwner      := "slamdata",
     micrositeGithubRepo       := "matryoshka",

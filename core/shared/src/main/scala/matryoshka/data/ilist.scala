@@ -23,7 +23,7 @@ import scalaz._
 
 trait IListInstances {
   implicit def ilistBirecursive[A]: Birecursive.Aux[IList[A], ListF[A, ?]] =
-    Birecursive.algebraIso({
+    Birecursive.fromAlgebraIso({
       case ConsF(h, t) => ICons(h, t)
       case NilF()      => INil[A]
     }, {

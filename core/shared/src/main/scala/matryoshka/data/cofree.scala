@@ -24,7 +24,7 @@ import scalaz._, Scalaz._
 trait CofreeInstances {
   implicit def cofreeBirecursive[F[_], A]
       : Birecursive.Aux[Cofree[F, A], EnvT[A, F, ?]] =
-    Birecursive.algebraIso(
+    Birecursive.fromAlgebraIso(
       t => Cofree(t.ask, t.lower),
       t => EnvT((t.head, t.tail)))
 
