@@ -88,30 +88,18 @@ object MathExprF {
     case ExpF(x) => s"e($x)"
   }
 
-  def diffGAlgebra: GAlgebra[(Expr, ?), MathExprF, Fix[MathExprF]] = {
-    case VarF() => one
-    case ZeroF() => zero
-    case OneF() => zero
-    case NegateF((_, a)) => neg(a)
-    case SumF((_, l), (_, r)) => add(l, r)
-    case ProductF((l, ll), (r, rr)) => add(prod(l, rr),  prod(r, ll))
-    case ExpF((x, xx)) => prod(e(x), xx)
+  def diffGAlgebra: GAlgebra[(Double, ?), MathExprF, Double] = {
+    case VarF() => 1
+    case ZeroF() => 0
+    case OneF() => 0
+    case NegateF((_, a)) => -a
+    case SumF((_, l), (_, r)) => l + r
+    case ProductF((l, ll), (r, rr)) => (l * rr) + (r * ll)
+    case ExpF((x, xx)) => exp(x) * xx
   }
 
-  def diff(expr: Expr): Expr = expr.para(diffGAlgebra)
-
-  def adAlgebra(x: Double): Algebra[MathExprF, (Double, Double)] = {
-      case VarF() => (x, 1)
-      case ZeroF() => (0, 0)
-      case OneF() => (1, 0)
-      case NegateF((x, dx)) => (-x, -dx)
-      case SumF((l, dl), (r, dr)) => (l + r, dl + dr)
-      case ProductF((l, dl), (r, dr)) => (l * r, l * dr + r * dl)
-      case ExpF((x, dx)) => (exp(x), exp(x) * dx)
-  }
-
-  def automaticDifferentiation(x: Double, expr: Expr): (Double, Double) =
-    expr.cata(adAlgebra(x))
+  def automaticDifferentiation(x: Double, expr: Expr): Double =
+    expr.zygo(evalAlgebra(x), diffGAlgebra)
 }
 
 class MathExprSpec extends Specification {
@@ -121,6 +109,6 @@ class MathExprSpec extends Specification {
   val expr: Expr = e(add(prod(varExpr, varExpr), neg(one)))
 
   "should differentiate a value automatically" >> {
-    automaticDifferentiation(1.0, expr) must beEqualTo((1.0, 2.0))
+    automaticDifferentiation(1.0, expr) must beEqualTo(2.0)
   }
 }
