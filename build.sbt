@@ -83,7 +83,7 @@ lazy val docs = project
     micrositeGithubOwner      := "slamdata",
     micrositeGithubRepo       := "matryoshka",
     micrositeBaseUrl          := "/matryoshka",
-    micrositeDocumentationUrl := "/matryoshka/docs/01-Index.html",
+    micrositeDocumentationUrl := "/matryoshka/docs/01-Getting-Started.html",
     micrositeHighlightTheme   := "color-brewer")
 
 /** A project just for the console.
