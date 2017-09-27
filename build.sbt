@@ -1,11 +1,11 @@
-import de.heikoseeberger.sbtheader.HeaderPlugin
-import de.heikoseeberger.sbtheader.license.Apache2_0
 import org.scalajs.sbtplugin.ScalaJSCrossVersion
 import scoverage._
 import sbt._
 import Keys._
-import slamdata.CommonDependencies
 import slamdata.SbtSlamData.transferPublishAndTagResources
+
+lazy val monocleVersion = "1.4.0"
+lazy val scalazVersion  = "7.2.15"
 
 lazy val standardSettings = commonBuildSettings ++ Seq(
   logBuffered in Compile := false,
@@ -20,10 +20,10 @@ lazy val standardSettings = commonBuildSettings ++ Seq(
     Wart.ImplicitParameter), // see wartremover/wartremover#350 & #351
 
   libraryDependencies ++= Seq(
-    CommonDependencies.slamdata.predef,
-    CommonDependencies.monocle.core.cross(CrossVersion.binary)          % "compile, test",
-    CommonDependencies.scalaz.core.cross(CrossVersion.binary)           % "compile, test",
-    CommonDependencies.simulacrum.simulacrum.cross(CrossVersion.binary) % "compile, test"))
+    "com.slamdata"               %%  "slamdata-predef" % "0.0.6",
+    "com.github.julien-truffaut" %%% "monocle-core"    % monocleVersion % "compile, test",
+    "org.scalaz"                 %%% "scalaz-core"     % scalazVersion  % "compile, test",
+    "com.github.mpilquist"       %%% "simulacrum"      % "0.11.0"       % "compile, test"))
 
 lazy val publishSettings = commonPublishSettings ++ Seq(
   organizationName := "SlamData Inc.",
@@ -57,7 +57,7 @@ lazy val scalacheck = crossProject
   .settings(libraryDependencies ++= Seq(
     // NB: Needs a version of Scalacheck with rickynils/scalacheck#301.
     "org.scalacheck" %% "scalacheck"                % "1.14.0-861f58e-SNAPSHOT",
-    "org.scalaz"     %% "scalaz-scalacheck-binding" % (CommonDependencies.scalazVersion + "-scalacheck-1.13")))
+    "org.scalaz"     %% "scalaz-scalacheck-binding" % (scalazVersion + "-scalacheck-1.13")))
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val tests = crossProject
@@ -65,9 +65,9 @@ lazy val tests = crossProject
   .dependsOn(core, scalacheck)
   .settings(standardSettings ++ noPublishSettings: _*)
   .settings(libraryDependencies ++= Seq(
-    CommonDependencies.monocle.law            % Test,
-    CommonDependencies.typelevel.scalazSpecs2 % Test,
-    CommonDependencies.specs2.core            % Test))
+    "com.github.julien-truffaut" %% "monocle-law"   % monocleVersion % Test,
+    "org.typelevel"              %% "scalaz-specs2" % "0.5.0"        % Test,
+    "org.specs2"                 %% "specs2-core"   % "3.8.7"        % Test))
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val docs = project
