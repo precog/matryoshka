@@ -4,12 +4,9 @@ scala:
   - 2.12.1
 jdk:
   - oraclejdk8
-  - oraclejdk7
   - openjdk7
 matrix:
   exclude: # NB: Scala 2.12 requires JDK 8
-  - scala: 2.12.1
-    jdk: oraclejdk7
   - scala: 2.12.1
     jdk: openjdk7
 
