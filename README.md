@@ -109,6 +109,8 @@ someExpr[Mu[Expr]].cata(eval) // ⇒ 24
 ```
 
 The `.embed` calls in `someExpr` wrap the nodes in the fixed point type. `embed` is generic, and we abstract `someExpr` over the fixed point type (only requiring that it has an instance of `Corecursive`), so we can postpone the choice of the fixed point as long as possible.
+
+The [example directory](tests/shared/src/test/scala/matryoshka/example) will show you how to use other algebras and recursion schemes.
  
 ### Recursion Schemes
 
