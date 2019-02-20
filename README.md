@@ -26,7 +26,7 @@ Generalized folds, unfolds, and traversals for fixed point data structures in Sc
 
 1. Add a dependency
  ```scala
-libraryDependencies += "com.slamdata" %% "matryoshka-core" % "0.18.3"
+libraryDependencies += "com.slamdata" %% "matryoshka-core" % "0.21.5"
 ```
 Optionally, you can also depend on `matryoshka-scalacheck` to get `Arbitrary`/`Cogen`/`Shrink` instances for a bunch of pattern functors and fixed points.
 
