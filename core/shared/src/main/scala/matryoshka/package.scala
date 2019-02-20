@@ -773,9 +773,7 @@ package object matryoshka {
     * @group algebras
     */
   def count[T: Equal, F[_]: Functor: Foldable]
-    (form: T)
-    (implicit T: Recursive.Aux[T, F])
-      : ElgotAlgebra[(T, ?), F, Int] =
+    (form: T): ElgotAlgebra[(T, ?), F, Int] =
     e => (e._1 ≟ form).fold(1, 0) + e._2.foldRight(0)(_ + _)
 
   /** The number of nodes in this structure.
