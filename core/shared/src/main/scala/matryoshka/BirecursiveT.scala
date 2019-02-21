@@ -25,5 +25,5 @@ package matryoshka
 trait BirecursiveT[T[_[_]]] extends RecursiveT[T] with CorecursiveT[T]
 
 object BirecursiveT {
-  def apply[T[_[_]]](implicit instance: BirecursiveT[T]) = instance
+  def apply[T[_[_]]](implicit instance: BirecursiveT[T]): BirecursiveT[T] = instance
 }

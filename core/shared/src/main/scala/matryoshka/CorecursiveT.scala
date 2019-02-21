@@ -31,5 +31,5 @@ trait CorecursiveT[T[_[_]]] {
 }
 
 object CorecursiveT {
-  def apply[T[_[_]]](implicit instance: CorecursiveT[T]) = instance
+  def apply[T[_[_]]](implicit instance: CorecursiveT[T]): CorecursiveT[T] = instance
 }

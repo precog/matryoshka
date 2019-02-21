@@ -29,7 +29,7 @@ sealed class IdOps[A](self: A) {
     matryoshka.hyloM(self)(f, g)
 
   object ghylo {
-    def apply[W[_], N[_]] = new PartiallyApplied[W, N]
+    def apply[W[_], N[_]]: PartiallyApplied[W, N] = new PartiallyApplied[W, N]
 
     final class PartiallyApplied[W[_], N[_]] {
       def apply[F[_]: Functor, B]
@@ -37,7 +37,7 @@ sealed class IdOps[A](self: A) {
           n: DistributiveLaw[N, F],
           f: GAlgebra[W, F, B],
           g: GCoalgebra[N, F, A])
-        (implicit W: Comonad[W], N: Monad[N]) =
+        (implicit W: Comonad[W], N: Monad[N]): B =
         matryoshka.ghylo(self)(w, n, f, g)
     }
   }
@@ -71,7 +71,7 @@ sealed class IdOps[A](self: A) {
     matryoshka.coelgot(self)(φ, ψ)
 
   object coelgotM {
-    def apply[M[_]] = new PartiallyApplied[M]
+    def apply[M[_]]: PartiallyApplied[M] = new PartiallyApplied[M]
 
     final class PartiallyApplied[M[_]] {
       def apply[F[_]: Traverse, B](φ: ElgotAlgebraM[(A, ?), M, F, B], ψ: CoalgebraM[M, F, A])(implicit M: Monad[M]):
@@ -81,7 +81,7 @@ sealed class IdOps[A](self: A) {
   }
 
   object ana {
-    def apply[T] = new PartiallyApplied[T]
+    def apply[T]: PartiallyApplied[T] = new PartiallyApplied[T]
 
     final class PartiallyApplied[T] {
       def apply[F[_]: Functor]
@@ -93,7 +93,7 @@ sealed class IdOps[A](self: A) {
   }
 
   object anaM {
-    def apply[T] = new PartiallyApplied[T]
+    def apply[T]: PartiallyApplied[T] = new PartiallyApplied[T]
 
     final class PartiallyApplied[T] {
       def apply[M[_]: Monad, F[_]: Traverse]
@@ -105,7 +105,7 @@ sealed class IdOps[A](self: A) {
   }
 
   object gana {
-    def apply[T] = new PartiallyApplied[T]
+    def apply[T]: PartiallyApplied[T] = new PartiallyApplied[T]
 
     final class PartiallyApplied[T] {
       def apply[N[_]: Monad, F[_]: Functor]
@@ -117,7 +117,7 @@ sealed class IdOps[A](self: A) {
   }
 
   object ganaM {
-    def apply[T] = new PartiallyApplied[T]
+    def apply[T]: PartiallyApplied[T] = new PartiallyApplied[T]
 
     final class PartiallyApplied[T] {
       def apply[N[_]: Monad: Traverse, M[_]: Monad, F[_]: Traverse]
@@ -129,7 +129,7 @@ sealed class IdOps[A](self: A) {
   }
 
   object elgotAna {
-    def apply[T] = new PartiallyApplied[T]
+    def apply[T]: PartiallyApplied[T] = new PartiallyApplied[T]
 
     final class PartiallyApplied[T] {
       def apply[N[_]: Monad, F[_]: Functor]
@@ -141,7 +141,7 @@ sealed class IdOps[A](self: A) {
   }
 
   object apo {
-    def apply[T] = new PartiallyApplied[T]
+    def apply[T]: PartiallyApplied[T] = new PartiallyApplied[T]
 
     final class PartiallyApplied[T] {
       def apply[F[_]: Functor]
@@ -153,7 +153,7 @@ sealed class IdOps[A](self: A) {
   }
 
   object apoM {
-    def apply[T] = new PartiallyApplied[T]
+    def apply[T]: PartiallyApplied[T] = new PartiallyApplied[T]
 
     final class PartiallyApplied[T] {
       def apply[M[_]: Monad, F[_]: Traverse]
@@ -165,7 +165,7 @@ sealed class IdOps[A](self: A) {
   }
 
   object gapo {
-    def apply[T] = new PartiallyApplied[T]
+    def apply[T]: PartiallyApplied[T] = new PartiallyApplied[T]
 
     final class PartiallyApplied[T] {
       def apply[F[_]: Functor, B]
@@ -177,7 +177,7 @@ sealed class IdOps[A](self: A) {
   }
 
   object elgotApo {
-    def apply[T] = new PartiallyApplied[T]
+    def apply[T]: PartiallyApplied[T] = new PartiallyApplied[T]
 
     final class PartiallyApplied[T] {
       def apply[F[_]: Functor]
@@ -189,7 +189,7 @@ sealed class IdOps[A](self: A) {
   }
 
   object postpro {
-    def apply[T] = new PartiallyApplied[T]
+    def apply[T]: PartiallyApplied[T] = new PartiallyApplied[T]
 
     final class PartiallyApplied[T] {
       def apply[F[_]: Functor]
@@ -201,7 +201,7 @@ sealed class IdOps[A](self: A) {
   }
 
   object gpostpro {
-    def apply[T] = new PartiallyApplied[T]
+    def apply[T]: PartiallyApplied[T] = new PartiallyApplied[T]
 
     final class PartiallyApplied[T] {
       def apply[N[_]: Monad, F[_]: Functor]
@@ -213,7 +213,7 @@ sealed class IdOps[A](self: A) {
   }
 
   object futu {
-    def apply[T] = new PartiallyApplied[T]
+    def apply[T]: PartiallyApplied[T] = new PartiallyApplied[T]
 
     final class PartiallyApplied[T] {
       def apply[F[_]: Functor]

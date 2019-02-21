@@ -37,10 +37,11 @@ final case class Indeed[A, B](h: A, t: B) extends AndMaybe[A, B]
 final case class Only[A, B](a: A)         extends AndMaybe[A, B]
 
 object AndMaybe extends AndMaybeInstances {
-  def envTIso[A, B] = Iso[AndMaybe[A, B], EnvT[A, Option, B]] {
-    case Indeed(h, t) => EnvT((h, t.some))
-    case Only(h)      => EnvT((h, none))
-  } (envt => envt.lower.fold[AndMaybe[A, B]](Only(envt.ask))(Indeed(envt.ask, _)))
+  def envTIso[A, B]: Iso[AndMaybe[A, B], EnvT[A, Option, B]] =
+    Iso[AndMaybe[A, B], EnvT[A, Option, B]] {
+      case Indeed(h, t) => EnvT((h, t.some))
+      case Only(h)      => EnvT((h, none))
+    } (envt => envt.lower.fold[AndMaybe[A, B]](Only(envt.ask))(Indeed(envt.ask, _)))
 
   def find[A](p: A => Boolean): Algebra[AndMaybe[A, ?], Option[A]] =
     l => if (p(l.head)) some(l.head) else l.tailOption.join

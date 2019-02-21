@@ -36,38 +36,38 @@ package object fixedpoint {
   type Nat = Mu[Option]
 
   object Nat {
-    def zero[N](implicit N: Corecursive.Aux[N, Option]) = none[N].embed
+    def zero[N](implicit N: Corecursive.Aux[N, Option]): N = none[N].embed
 
-    def succ[N](prev: N)(implicit N: Corecursive.Aux[N, Option]) =
+    def succ[N](prev: N)(implicit N: Corecursive.Aux[N, Option]): N =
       some(prev).embed
 
-    def one[N](implicit N: Corecursive.Aux[N, Option]) = succ(zero)
+    def one[N](implicit N: Corecursive.Aux[N, Option]): N = succ(zero)
 
     val fromInt: CoalgebraM[Option, Option, Int] =
       x => if (x < 0) None else Some(if (x > 0) (x - 1).some else None)
 
     // NB: This isn’t defined via `AlgebraPrism` because it only holds across a
     //     recursive structure.
-    def intPrism[T](implicit T: Birecursive.Aux[T, Option]) =
+    def intPrism[T](implicit T: Birecursive.Aux[T, Option]): Prism[Int, T] =
       Prism[Int, T](_.anaM[T](fromInt))(_.cata(height))
   }
 
   implicit class RecursiveOptionOps[T]
     (self: T)
     (implicit T: Recursive.Aux[T, Option]) {
-    def toInt = self.cata(height)
+    def toInt: Int = self.cata(height)
   }
 
   implicit class CorecursiveOptionOps[T]
     (self: T)
     (implicit T: Corecursive.Aux[T, Option]) {
-    def succ = Nat.succ(self)
+    def succ: T = Nat.succ(self)
   }
 
   implicit class BirecursiveOptionOps[T]
     (self: T)
     (implicit T: Birecursive.Aux[T, Option]) {
-    def +(other: T) = other.cata[T] {
+    def +(other: T): T = other.cata[T] {
       case None => self
       case o    => o.embed
     }
@@ -84,21 +84,24 @@ package object fixedpoint {
   type Cofree[F[_], A] = Mu[EnvT[A, F, ?]]
   type List[A]         = Mu[ListF[A, ?]]
   object List {
-    def apply[A](elems: A*) =
+    def apply[A](elems: A*): List[A] =
       elems.toList.ana[Mu[ListF[A, ?]]](ListF.listIso[A].reverseGet)
 
-    def tuple[A](elem: => A) = λ[Option ~> ListF[A, ?]] {
-      case None    => NilF()
-      case Some(b) => ConsF(elem, b)
-    }
+    def tuple[A](elem: => A): Option ~> ListF[A, ?] =
+      λ[Option ~> ListF[A, ?]] {
+        case None    => NilF()
+        case Some(b) => ConsF(elem, b)
+      }
 
-    def forget[A] = λ[ListF[A, ?] ~> Option] {
-      case NilF()      => None
-      case ConsF(_, t) => t.some
-    }
+    def forget[A]: ListF[A, ?] ~> Option =
+      λ[ListF[A, ?] ~> Option] {
+        case NilF()      => None
+        case ConsF(_, t) => t.some
+      }
 
     object fill {
-      def apply[L] = new PartiallyApplied[L]
+      def apply[L]: PartiallyApplied[L] = new PartiallyApplied[L]
+
       class PartiallyApplied[L] {
         def apply[N, A]
           (n: N)
@@ -171,7 +174,7 @@ package object fixedpoint {
   implicit class RecursiveAndMaybeOps[T, A]
     (self: T)
     (implicit T: Recursive.Aux[T, AndMaybe[A, ?]]) {
-    def toPossiblyEmpty[L](implicit L: Corecursive.Aux[L, ListF[A, ?]]) =
+    def toPossiblyEmpty[L](implicit L: Corecursive.Aux[L, ListF[A, ?]]): L =
       self.transApo[L, ListF[A, ?]] {
         case Indeed(a, b) => ConsF(a, b.right)
         case Only(a)      => ConsF(a, NilF[A, L]().embed.left)
@@ -183,7 +186,7 @@ package object fixedpoint {
   type Stream[A] = Nu[(A, ?)]
 
   object Stream {
-    def matchesFirst[A, B](cond: A => Boolean) =
+    def matchesFirst[A, B](cond: A => Boolean): (A, ?) ~> (A \/ ?) =
       λ[(A, ?) ~> (A \/ ?)] {
         case (h, t) => if (cond(h)) h.left else t.right
       }
@@ -201,9 +204,9 @@ package object fixedpoint {
     /** Colists are simply streams that may terminate, so a stream is easily
       * converted to a Colist that doesn’t terminate.
       */
-    def toConsF[A] = λ[(A, ?) ~> ListF[A, ?]](p => ConsF(p._1, p._2))
+    def toConsF[A]: (A, ?) ~> ListF[A, ?] = λ[(A, ?) ~> ListF[A, ?]](p => ConsF(p._1, p._2))
 
-    def toIndeed[A] = λ[(A, ?) ~> AndMaybe[A, ?]](p => Indeed(p._1, p._2))
+    def toIndeed[A]: (A, ?) ~> AndMaybe[A, ?] = λ[(A, ?) ~> AndMaybe[A, ?]](p => Indeed(p._1, p._2))
   }
 
   implicit class RecursiveTuple2Ops[T, A](self: T)(implicit T: Recursive.Aux[T, (A, ?)]) {
@@ -239,7 +242,8 @@ package object fixedpoint {
       }.merge
 
     object take {
-      def apply[L] = new PartiallyApplied[L]
+      def apply[L]: PartiallyApplied[L] = new PartiallyApplied[L]
+
       class PartiallyApplied[L] {
         def apply[N](n: N)(implicit N: Recursive.Aux[N, Option], L: Corecursive.Aux[L, ListF[A, ?]])
             : L =
