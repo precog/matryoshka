@@ -14,18 +14,17 @@ lazy val supportedScalaVersions = List(scala2_12, scala2_11)
 
 ThisBuild / scalaVersion := scala2_12
 
+ThisBuild / crossScalaVersions := supportedScalaVersions
+
 lazy val standardSettings = commonBuildSettings ++ Seq(
-  logBuffered in Compile := false,
-  logBuffered in Test := false,
+  Compile / logBuffered := false,
+  Test / logBuffered := false,
   updateOptions := updateOptions.value.withCachedResolution(true),
   exportJars := true,
   organization := "com.slamdata",
   ScoverageKeys.coverageHighlighting := true,
-  scalacOptions in (Compile, doc) ++= Seq("-groups", "-implicits"),
-  wartremoverWarnings in (Compile, compile) --= Seq(
-    Wart.PublicInference,    // TODO: enable incrementally — currently results in many errors
-    Wart.ImplicitParameter), // see wartremover/wartremover#350 & #351
-
+  Compile / doc / scalacOptions ++= Seq("-groups", "-implicits"),
+  Compile / compile / wartremoverWarnings -= Wart.ImplicitParameter, // see wartremover/wartremover#350 & #351
   libraryDependencies ++= Seq(
     "com.slamdata"               %%  "slamdata-predef" % "0.0.7",
     "com.github.julien-truffaut" %%% "monocle-core"    % monocleVersion % "compile, test",
@@ -58,14 +57,12 @@ lazy val root = project.in(file("."))
 lazy val core = crossProject(JVMPlatform, JSPlatform).in(file("core"))
   .settings(name := "matryoshka-core")
   .settings(standardSettings ++ publishSettings: _*)
-  .settings(crossScalaVersions := supportedScalaVersions)
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val scalacheck = crossProject(JVMPlatform, JSPlatform)
   .dependsOn(core)
   .settings(name := "matryoshka-scalacheck")
   .settings(standardSettings ++ publishSettings: _*)
-  .settings(crossScalaVersions := supportedScalaVersions)
   .settings(libraryDependencies ++= Seq(
     // NB: Needs a version of Scalacheck with rickynils/scalacheck#301.
     "org.scalacheck" %% "scalacheck"                % "1.14.0-861f58e-SNAPSHOT",
@@ -76,7 +73,6 @@ lazy val tests = crossProject(JVMPlatform, JSPlatform)
   .settings(name := "matryoshka-tests")
   .dependsOn(core, scalacheck)
   .settings(standardSettings ++ noPublishSettings: _*)
-  .settings(crossScalaVersions := supportedScalaVersions)
   .settings(libraryDependencies ++= Seq(
     "com.github.julien-truffaut" %% "monocle-law"   % monocleVersion % Test,
     "org.typelevel"              %% "scalaz-specs2" % "0.5.2"        % Test,
@@ -87,12 +83,11 @@ lazy val docs = project
   .settings(name := "matryoshka-docs")
   .settings(standardSettings ++ noPublishSettings: _*)
   .dependsOn(coreJVM)
-  .settings(crossScalaVersions := Seq(scala2_12))
   .enablePlugins(MdocPlugin, MicrositesPlugin)
   .settings(
     //scalacOptions in Compile --= Seq("-Yno-imports", "-Ywarn-unused-import"),
-    scalacOptions in Compile -= "-Yno-imports",
-    scalacOptions in Compile -= "-Ywarn-unused-import",
+    Compile / scalacOptions -= "-Yno-imports",
+    Compile / scalacOptions -= "-Ywarn-unused-import",
     mdocIn := file("docs/src/main/mdoc/"),
     mdocVariables := Map(
       "VERSION" -> version.value
@@ -112,7 +107,6 @@ lazy val docs = project
   * Applies only the settings necessary for that purpose.
   */
 lazy val repl = crossProject(JVMPlatform, JSPlatform) dependsOn (tests % "compile->test") settings standardSettings settings (
-  crossScalaVersions := supportedScalaVersions,
   console := (console in Test).value,
   scalacOptions --= Seq("-Yno-imports", "-Ywarn-unused-import"),
   initialCommands in console += """
