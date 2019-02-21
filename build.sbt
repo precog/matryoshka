@@ -1,8 +1,6 @@
 import scoverage._
-import sbt._
-import Keys._
-import slamdata.SbtSlamData
-import sbtcrossproject.CrossPlugin.autoImport.{crossProject, CrossType}
+import sbt._, Keys._
+import sbtcrossproject.CrossPlugin.autoImport.crossProject
 
 lazy val scala2_12 = "2.12.8"
 lazy val scala2_11 = "2.11.12"
@@ -85,7 +83,7 @@ lazy val docs = project
   .dependsOn(coreJVM)
   .enablePlugins(MdocPlugin, MicrositesPlugin)
   .settings(
-    //scalacOptions in Compile --= Seq("-Yno-imports", "-Ywarn-unused-import"),
+    //Compile / scalacOptions --= List("-Yno-imports", "-Ywarn-unused-import"),
     Compile / scalacOptions -= "-Yno-imports",
     Compile / scalacOptions -= "-Ywarn-unused-import",
     mdocIn := file("docs/src/main/mdoc/"),

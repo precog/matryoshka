@@ -9,14 +9,14 @@ title: Getting Started
 libraryDependencies += "com.slamdata" %% "matryoshka-core" % "@VERSION@"
 ```
 
-```scala mdoc:silent
+```scala
 import matryoshka._
 import matryoshka.implicits._
 ```
 
 To use a specific fixed-point type (like `Mu`, `Nu`, or `Fix`), you will also need
 
-```scala mdoc:silent
+```scala
 import matryoshka.data._
 ```
 

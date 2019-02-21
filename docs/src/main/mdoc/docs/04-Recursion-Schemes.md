@@ -3,9 +3,9 @@ layout: docs
 title: Recursion Schemes
 ---
 
-```scala mdoc
+```scala mdoc:silent
 import matryoshka._, implicits._, data._
-import scalaz._, Scalaz._
+import scalaz._
 ```
     
 # {{ page.title }}
