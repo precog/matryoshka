@@ -27,3 +27,6 @@ import simulacrum.typeclass
 @typeclass trait Based[T] {
   type Base[A]
 }
+
+@java.lang.SuppressWarnings(scala.Array("org.wartremover.warts.PublicInference"))
+object Based

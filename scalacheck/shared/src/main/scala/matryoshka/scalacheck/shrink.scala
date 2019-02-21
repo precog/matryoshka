@@ -53,13 +53,13 @@ trait ShrinkInstances extends ShrinkInstancesʹ {
       : Shrink[T] =
     Shrink(t => shrinkCorecursiveShrink[T, F].shrink(t) ++ recursiveShrink[T, F].shrink(t))
 
-  implicit def fixShrink[F[_]: Functor: Foldable](implicit F: Shrink[F[Nu[F]]]): Shrink[Fix[F]] =
+  implicit def fixShrink[F[_]: Functor: Foldable]/*(implicit F: Shrink[F[Nu[F]]])*/: Shrink[Fix[F]] =
     corecursiveShrink[Fix[F], F]
 
-  implicit def muShrink[F[_]: Functor: Foldable](implicit F: Shrink[F[Nu[F]]]): Shrink[Mu[F]] =
+  implicit def muShrink[F[_]: Functor: Foldable]/*(implicit F: Shrink[F[Nu[F]]])*/: Shrink[Mu[F]] =
     corecursiveShrink[Mu[F], F]
 
-  implicit def nuShrink[F[_]: Functor: Foldable](implicit F: Shrink[F[Nu[F]]]): Shrink[Nu[F]] =
+  implicit def nuShrink[F[_]: Functor: Foldable]/*(implicit F: Shrink[F[Nu[F]]])*/: Shrink[Nu[F]] =
     corecursiveShrink[Nu[F], F]
 }
 

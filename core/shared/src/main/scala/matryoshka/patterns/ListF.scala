@@ -36,13 +36,14 @@ final case class ConsF[A, B](car: A, cdr: B) extends ListF[A, B]
 final case class NilF[A, B]() extends ListF[A, B]
 
 object ListF {
-  def listIso[A] = AlgebraIso[ListF[A, ?], List[A]] {
-    case ConsF(h, t) => h :: t
-    case NilF()      => Nil
-  } {
-    case h :: t => ConsF(h, t)
-    case Nil    => NilF()
-  }
+  def listIso[A]: AlgebraIso[ListF[A, ?], List[A]] =
+    AlgebraIso[ListF[A, ?], List[A]] {
+      case ConsF(h, t) => h :: t
+      case NilF()      => Nil
+    } {
+      case h :: t => ConsF(h, t)
+      case Nil    => NilF()
+    }
 
   def takeUpTo[N, T, A](implicit N: Recursive.Aux[N, Option], T: Recursive.Aux[T, ListF[A, ?]]): Coalgebra[ListF[A, ?], (N, T)] =
     pair => pair._1.project.fold[ListF[A, (N, T)]](NilF())(p => pair._2.project.map((p, _)))

@@ -171,7 +171,7 @@ trait Recursive[T] extends Based[T] { self =>
   def gcataZygo[W[_]: Comonad, A, B]
     (t: T)
     (k: DistributiveLaw[Base, W], f: GAlgebra[W, Base, B], g: GAlgebra[(B, ?), Base, A])
-    (implicit BF: Functor[Base], BU: Unzip[Base]) =
+    (implicit BF: Functor[Base], BU: Unzip[Base]): A =
     gcata[(W[B], ?), A](
       t)(
       distZygo(fwa => k(fwa.map(_.cojoin)).map(f)),
@@ -506,7 +506,8 @@ object Recursive {
       typeClassInstance.convertTo[R](self)
 
     object transCata {
-      def apply[U] = new PartiallyApplied[U]
+      def apply[U]: PartiallyApplied[U] = new PartiallyApplied[U]
+
       final class PartiallyApplied[U] {
         def apply[G[_]: Functor]
           (f: F[U] => G[U])
@@ -517,7 +518,8 @@ object Recursive {
     }
 
     object transPostpro {
-      def apply[U] = new PartiallyApplied[U]
+      def apply[U]: PartiallyApplied[U] = new PartiallyApplied[U]
+
       final class PartiallyApplied[U] {
         def apply[G[_]: Functor]
           (e: G ~> G, f: Transform[T, F, G])
@@ -528,7 +530,8 @@ object Recursive {
     }
 
     object transPara {
-      def apply[U] = new PartiallyApplied[U]
+      def apply[U]: PartiallyApplied[U] = new PartiallyApplied[U]
+
       final class PartiallyApplied[U] {
         def apply[G[_]: Functor]
           (f: AlgebraicGTransform[(T, ?), U, F, G])

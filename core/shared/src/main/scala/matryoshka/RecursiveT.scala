@@ -35,5 +35,5 @@ trait RecursiveT[T[_[_]]] extends Serializable {
 }
 
 object RecursiveT {
-  def apply[T[_[_]]](implicit instance: RecursiveT[T]) = instance
+  def apply[T[_[_]]](implicit instance: RecursiveT[T]): RecursiveT[T] = instance
 }

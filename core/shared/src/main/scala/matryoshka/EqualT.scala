@@ -30,6 +30,7 @@ import simulacrum._
     Equal.equal[T[F]](equal[F](_, _)(Functor[F], delay))
 }
 
+@java.lang.SuppressWarnings(scala.Array("org.wartremover.warts.PublicInference"))
 object EqualT {
   def recursiveT[T[_[_]]: RecursiveT]: EqualT[T] = new EqualT[T] {
     def equal[F[_]: Functor]

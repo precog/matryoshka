@@ -48,7 +48,8 @@ package object implicits
       matryoshka.transHylo(self)(φ, ψ)
 
     object transAna {
-      def apply[U] = new PartiallyApplied[U]
+      def apply[U]: PartiallyApplied[U] = new PartiallyApplied[U]
+
       final class PartiallyApplied[U] {
         def apply[G[_]: Functor]
           (f: F[T] => G[T])

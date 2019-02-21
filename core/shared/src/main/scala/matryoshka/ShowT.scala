@@ -34,6 +34,7 @@ import simulacrum._
     Show.show[T[F]](show[F](_)(Functor[F], delay))
 }
 
+@java.lang.SuppressWarnings(scala.Array("org.wartremover.warts.PublicInference"))
 object ShowT {
   def recursiveT[T[_[_]]: RecursiveT]: ShowT[T] = new ShowT[T] {
     override def show[F[_]: Functor](tf: T[F])(implicit del: Delay[Show, F]) =

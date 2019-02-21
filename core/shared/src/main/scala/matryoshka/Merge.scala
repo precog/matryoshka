@@ -35,6 +35,7 @@ import scalaz._, Scalaz._
     merge(fa, fb).map(_ ∘ g.tupled)
 }
 
+@java.lang.SuppressWarnings(scala.Array("org.wartremover.warts.PublicInference"))
 object Merge {
   implicit def fromTraverse[F[_]: Traverse](implicit E: Equal[F[Unit]]):
       Merge[F] =
