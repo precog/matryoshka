@@ -6,17 +6,17 @@ title: Getting Started
 ## {{ page.title }}
 
 ```scala
-libraryDependencies += "com.slamdata" %% "matryoshka-core" % "0.22.0"
+libraryDependencies += "com.slamdata" %% "matryoshka-core" % "@VERSION@"
 ```
 
-```tut:silent
+```scala
 import matryoshka._
 import matryoshka.implicits._
 ```
 
 To use a specific fixed-point type (like `Mu`, `Nu`, or `Fix`), you will also need
 
-```tut:silent
+```scala
 import matryoshka.data._
 ```
 

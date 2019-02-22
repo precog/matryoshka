@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ import org.typelevel.discipline.specs2.mutable._
 import scalaz.{Apply => _, _}, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
-class ExpSpec extends Specification {
+class ExpSpec extends Specification with Discipline {
   // NB: These are just a sanity check that the data structure created for the
   //     tests is lawful.
   "Exp" >> {

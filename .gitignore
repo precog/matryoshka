@@ -1,4 +1,5 @@
-project/project
+!.gitignore
+project/project/target
 project/target
 target
 core/target
