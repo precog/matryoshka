@@ -171,7 +171,7 @@ trait Recursive[T] extends Based[T] { self =>
   def gcataZygo[W[_]: Comonad, A, B]
     (t: T)
     (k: DistributiveLaw[Base, W], f: GAlgebra[W, Base, B], g: GAlgebra[(B, ?), Base, A])
-    (implicit BF: Functor[Base]/*, BU: Unzip[Base]*/): A =
+    (implicit BF: Functor[Base]): A =
     gcata[(W[B], ?), A](
       t)(
       distZygo(fwa => k(fwa.map(_.cojoin)).map(f)),
@@ -445,7 +445,7 @@ object Recursive {
       typeClassInstance.ghisto(self)(g, f)
     def gcataZygo[W[_]: Comonad, A, B]
       (w: DistributiveLaw[F, W], f: GAlgebra[W, F, B], g: GAlgebra[(B, ?), F, A])
-      (implicit BF: Functor[F]/*, BU: Unzip[F]*/)
+      (implicit BF: Functor[F])
         : A =
       typeClassInstance.gcataZygo[W, A, B](self)(w, f, g)
     def paraZygo[A, B]

@@ -24,7 +24,7 @@ sealed class AlgebraOps[F[_], A](self: Algebra[F, A]) {
   def generalize[W[_]: Comonad](implicit F: Functor[F]): GAlgebra[W, F, A] =
     node => self(node ∘ (_.copoint))
 
-  def generalizeM[M[_]: Applicative]/*(implicit F: Functor[F])*/: AlgebraM[M, F, A] =
+  def generalizeM[M[_]: Applicative]: AlgebraM[M, F, A] =
     node => self(node).point[M]
 
   def generalizeElgot[W[_]: Comonad]: ElgotAlgebra[W, F, A] =
