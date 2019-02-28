@@ -40,7 +40,7 @@ implicit val traverse: Traverse[ArithmeticF] = new Traverse[ArithmeticF] {
     (f: A => G [B])
     (implicit G: Applicative[G]) =
     fa match {
-      case NumberF(v)        => G.point(NumberF(v))
+      case NumberF(v)      => G.point(NumberF(v))
       case AddF(a, b)      => (f(a) ⊛ f(b))(AddF(_, _))
       case SubtractF(a, b) => (f(a) ⊛ f(b))(SubtractF(_, _))
       case MultiplyF(a, b) => (f(a) ⊛ f(b))(MultiplyF(_, _))
