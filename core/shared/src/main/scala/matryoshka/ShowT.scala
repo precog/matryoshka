@@ -16,9 +16,8 @@
 
 package matryoshka
 
+import slamdata.Predef._
 import matryoshka.implicits._
-
-import java.lang.String
 
 import scalaz._
 import simulacrum._
@@ -34,7 +33,7 @@ import simulacrum._
     Show.show[T[F]](show[F](_)(Functor[F], delay))
 }
 
-@java.lang.SuppressWarnings(scala.Array("org.wartremover.warts.PublicInference"))
+@SuppressWarnings(Array("org.wartremover.warts.PublicInference"))
 object ShowT {
   def recursiveT[T[_[_]]: RecursiveT]: ShowT[T] = new ShowT[T] {
     override def show[F[_]: Functor](tf: T[F])(implicit del: Delay[Show, F]) =

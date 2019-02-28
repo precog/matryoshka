@@ -16,11 +16,11 @@
 
 package matryoshka.helpers
 
+import slamdata.Predef._
+
 import matryoshka._
 import matryoshka.scalacheck.arbitrary._
 import matryoshka.scalacheck.cogen._
-
-import java.lang.String
 
 import monocle.law.discipline._
 import org.scalacheck._

@@ -16,6 +16,8 @@
 
 package matryoshka
 
+import slamdata.Predef._
+
 import simulacrum.typeclass
 
 /** Provides a type describing the pattern functor of some {co}recursive type
@@ -28,5 +30,5 @@ import simulacrum.typeclass
   type Base[A]
 }
 
-@java.lang.SuppressWarnings(scala.Array("org.wartremover.warts.PublicInference"))
+@SuppressWarnings(Array("org.wartremover.warts.PublicInference"))
 object Based

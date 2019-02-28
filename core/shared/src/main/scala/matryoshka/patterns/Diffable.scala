@@ -64,5 +64,5 @@ import simulacrum._
     LocallyDifferent[T, F, T[Diff[T, F, ?]]](diffTraverse[T, F](left, right), right.void).embed
 }
 
-@java.lang.SuppressWarnings(scala.Array("org.wartremover.warts.PublicInference"))
+@SuppressWarnings(Array("org.wartremover.warts.PublicInference"))
 object Diffable
