@@ -1,20 +1,26 @@
+sudo: false
 language: scala
+
 scala:
   - 2.11.12
   - 2.12.8
-jdk:
-  - oraclejdk8
-  - openjdk8
 
-sudo: false
+jdk: openjdk8
+
+env:
+  global:
+    - SBT=sbt
+
 script:
-  - sbt checkHeaders
-  - sbt coverage doc test mdoc
-  - sbt coverageReport
-  - sbt clean transferPublishAndTagResources
+  - set -e
+  - $SBT checkHeaders
+  - $SBT coverage doc test mdoc
+  - $SBT coverageReport
+  - $SBT clean transferPublishAndTagResources
   - scripts/publishAndTag 'slamdata/matryoshka'
+
 branches:
   except:
-  - "/^v\\d+\\.\\d+\\.\\d+$/"
-after_success:
-  - bash <(curl -s https://codecov.io/bash)
+    - "/^v\\d+\\.\\d+\\.\\d+$/"
+
+after_success: bash <(curl -s https://codecov.io/bash)
