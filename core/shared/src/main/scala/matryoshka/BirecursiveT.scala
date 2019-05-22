@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,5 +25,5 @@ package matryoshka
 trait BirecursiveT[T[_[_]]] extends RecursiveT[T] with CorecursiveT[T]
 
 object BirecursiveT {
-  def apply[T[_[_]]](implicit instance: BirecursiveT[T]) = instance
+  def apply[T[_[_]]](implicit instance: BirecursiveT[T]): BirecursiveT[T] = instance
 }

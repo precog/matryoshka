@@ -3,7 +3,7 @@ layout: docs
 title: Algebras
 ---
 
-```tut:book
+```scala mdoc
 import matryoshka._
 import matryoshka.data._
 import matryoshka.implicits._
@@ -16,7 +16,7 @@ or, “I know what algebra is, and these ain’t it.”
 
 The algebras (and coalgebras, etc.) are more properly known as “F-algebras”. To connect these back to the algebra we’re all generally familiar with from school, let’s look at a simple ADT –
 
-```tut:silent
+```scala mdoc:silent
 sealed trait Expr[A]
 final case class Mul[A](a: A, b: A)  extends Expr[A]
 final case class Add[A](a: A, b: A)  extends Expr[A]
@@ -37,7 +37,7 @@ implicit val exprTraverse: Traverse[Expr] = new Traverse[Expr] {
 
 We can write out a simple expression
 
-```tut:book
+```scala mdoc:silent
 val expr = Add(Mul(Add(Num[Mu[Expr]](2).embed, Num[Mu[Expr]](3).embed).embed, Num[Mu[Expr]](4).embed).embed,
                Add(Mul(Num[Mu[Expr]](5).embed, Num[Mu[Expr]](6).embed).embed, Num[Mu[Expr]](7).embed).embed).embed
 ```
@@ -52,7 +52,7 @@ Now, how do we solve / evaluate this? If you’re anything like me, you take a f
 
 So, there are two aspects to this. First, there are some simple rules:
 
-```tut:book
+```scala mdoc:silent
 val eval: Algebra[Expr, Int] = {
   // 1. + means to add two numbers together
   case Add(x, y) => x + y
@@ -66,7 +66,7 @@ Hey, look at that – this evaluation rule is an “algebra”. And it’s just 
 
 The second aspect involves applying these rules from most deeply nested expressions out.
 
-```tut:book
+```scala mdoc
 expr.cata(eval)
 ```
 There it is. You’ve got an algebra and applied it.

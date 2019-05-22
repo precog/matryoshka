@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,13 +53,13 @@ trait ShrinkInstances extends ShrinkInstancesʹ {
       : Shrink[T] =
     Shrink(t => shrinkCorecursiveShrink[T, F].shrink(t) ++ recursiveShrink[T, F].shrink(t))
 
-  implicit def fixShrink[F[_]: Functor: Foldable](implicit F: Shrink[F[Nu[F]]]): Shrink[Fix[F]] =
+  implicit def fixShrink[F[_]: Functor: Foldable]: Shrink[Fix[F]] =
     corecursiveShrink[Fix[F], F]
 
-  implicit def muShrink[F[_]: Functor: Foldable](implicit F: Shrink[F[Nu[F]]]): Shrink[Mu[F]] =
+  implicit def muShrink[F[_]: Functor: Foldable]: Shrink[Mu[F]] =
     corecursiveShrink[Mu[F], F]
 
-  implicit def nuShrink[F[_]: Functor: Foldable](implicit F: Shrink[F[Nu[F]]]): Shrink[Nu[F]] =
+  implicit def nuShrink[F[_]: Functor: Foldable]: Shrink[Nu[F]] =
     corecursiveShrink[Nu[F], F]
 }
 

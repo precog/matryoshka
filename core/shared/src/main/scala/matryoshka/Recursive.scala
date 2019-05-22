@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -171,7 +171,7 @@ trait Recursive[T] extends Based[T] { self =>
   def gcataZygo[W[_]: Comonad, A, B]
     (t: T)
     (k: DistributiveLaw[Base, W], f: GAlgebra[W, Base, B], g: GAlgebra[(B, ?), Base, A])
-    (implicit BF: Functor[Base], BU: Unzip[Base]) =
+    (implicit BF: Functor[Base]): A =
     gcata[(W[B], ?), A](
       t)(
       distZygo(fwa => k(fwa.map(_.cojoin)).map(f)),
@@ -445,7 +445,7 @@ object Recursive {
       typeClassInstance.ghisto(self)(g, f)
     def gcataZygo[W[_]: Comonad, A, B]
       (w: DistributiveLaw[F, W], f: GAlgebra[W, F, B], g: GAlgebra[(B, ?), F, A])
-      (implicit BF: Functor[F], BU: Unzip[F])
+      (implicit BF: Functor[F])
         : A =
       typeClassInstance.gcataZygo[W, A, B](self)(w, f, g)
     def paraZygo[A, B]
@@ -506,7 +506,8 @@ object Recursive {
       typeClassInstance.convertTo[R](self)
 
     object transCata {
-      def apply[U] = new PartiallyApplied[U]
+      def apply[U]: PartiallyApplied[U] = new PartiallyApplied[U]
+
       final class PartiallyApplied[U] {
         def apply[G[_]: Functor]
           (f: F[U] => G[U])
@@ -517,7 +518,8 @@ object Recursive {
     }
 
     object transPostpro {
-      def apply[U] = new PartiallyApplied[U]
+      def apply[U]: PartiallyApplied[U] = new PartiallyApplied[U]
+
       final class PartiallyApplied[U] {
         def apply[G[_]: Functor]
           (e: G ~> G, f: Transform[T, F, G])
@@ -528,7 +530,8 @@ object Recursive {
     }
 
     object transPara {
-      def apply[U] = new PartiallyApplied[U]
+      def apply[U]: PartiallyApplied[U] = new PartiallyApplied[U]
+
       final class PartiallyApplied[U] {
         def apply[G[_]: Functor]
           (f: AlgebraicGTransform[(T, ?), U, F, G])

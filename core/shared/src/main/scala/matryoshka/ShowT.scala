@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,8 @@
 
 package matryoshka
 
+import slamdata.Predef._
 import matryoshka.implicits._
-
-import java.lang.String
 
 import scalaz._
 import simulacrum._
@@ -34,6 +33,7 @@ import simulacrum._
     Show.show[T[F]](show[F](_)(Functor[F], delay))
 }
 
+@SuppressWarnings(Array("org.wartremover.warts.PublicInference"))
 object ShowT {
   def recursiveT[T[_[_]]: RecursiveT]: ShowT[T] = new ShowT[T] {
     override def show[F[_]: Functor](tf: T[F])(implicit del: Delay[Show, F]) =

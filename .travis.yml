@@ -1,19 +1,15 @@
 language: scala
 scala:
-  - 2.11.8
-  - 2.12.1
+  - 2.11.12
+  - 2.12.8
 jdk:
   - oraclejdk8
-  - openjdk7
-matrix:
-  exclude: # NB: Scala 2.12 requires JDK 8
-  - scala: 2.12.1
-    jdk: openjdk7
+  - openjdk8
 
 sudo: false
 script:
   - sbt checkHeaders
-  - sbt coverage doc test tut
+  - sbt coverage doc test mdoc
   - sbt coverageReport
   - sbt clean transferPublishAndTagResources
   - scripts/publishAndTag 'slamdata/matryoshka'

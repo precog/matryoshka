@@ -9,7 +9,7 @@ So, if you’re reading this, you _probably_ already have an AST or other recurs
 
 So, let’s start with a simple version of what you may already have. Here’s an AST representing a few arithmethic operations. Like most ASTs, it’s recursive – the case classes refer directly to the abstract class they’re extending.
 
-```tut:book
+```scala mdoc
 sealed abstract class Arithmetic
 final case class Number(v: Double) extends Arithmetic
 final case class Add(a: Arithmetic, b: Arithmetic) extends Arithmetic
@@ -20,7 +20,7 @@ final case class Divide(a: Arithmetic, b: Arithmetic) extends Arithmetic
 
 We gain a lot of flexibility by _separating_ that recursion from the AST. We do this with the Stephen Compall mantra of “add a type parameter!”
 
-```tut:book
+```scala mdoc
 sealed abstract class ArithmeticF[A]
 final case class NumberF[A](v: Double) extends ArithmeticF[A]
 final case class AddF[A](a: A, b: A) extends ArithmeticF[A]
@@ -31,8 +31,8 @@ final case class DivideF[A](a: A, b: A) extends ArithmeticF[A]
 
 So, everywhere that referred to `Arithmetic` before now just refers to `A`, and we can fill that with whatever type we want. And, with a type parameter, come the type class instances (this should be derivable, but doesn’t yet exist in shapeless-contrib)
 
-```tut:book
-import scalaz.{Divide => _, _}, Scalaz._
+```scala mdoc:silent
+import scalaz._, Scalaz._
 
 implicit val traverse: Traverse[ArithmeticF] = new Traverse[ArithmeticF] {
   def traverseImpl[G[_], A, B]
@@ -51,14 +51,14 @@ implicit val traverse: Traverse[ArithmeticF] = new Traverse[ArithmeticF] {
 
 Now is when we start wanting to take advantage of Matryoshka, so let’s bring it into scope.
 
-```tut:book
+```scala mdoc:silent
 import matryoshka._
 import matryoshka.implicits._
 ```
 
 Since you already have your recursive AST, you also have code that uses it, and the last thing you want to do when trying a new tool is have to rewrite the code you already have. So, we’ll keep your AST and your code – all you have to do is define the relationship between the original AST and the new one, which we’ll do like this:
 
-```tut:book
+```scala mdoc:silent
 val arithmeticCoalgebra: Coalgebra[ArithmeticF, Arithmetic] = {
   case Number(v)      => NumberF(v)
   case Add(a, b)      => AddF(a, b)
@@ -83,8 +83,8 @@ All that this does is define the mapping between the directly-recursive structur
 
 With this relationship established, we now have access to all the power of recursion schemes.
 
-```tut:book
-val pprint: Algebra[ArithmeticF, String] = {
+```scala mdoc:silent
+val prettyPrint: Algebra[ArithmeticF, String] = {
   case NumberF(v)      => v.toString
   case AddF(a, b)      => s"($a) + ($b)"
   case SubtractF(a, b) => s"($a) - ($b)"
@@ -93,15 +93,16 @@ val pprint: Algebra[ArithmeticF, String] = {
 }
 ```
 
-```tut
+```scala mdoc
 val expr: Arithmetic =
   Add(Multiply(Number(3), Divide(Number(4), Number(5))), Number(6))
-Recursive[Arithmetic].cata(expr)(pprint)
+  
+Recursive[Arithmetic].cata(expr)(prettyPrint)
 ```
 
 **NB**: This is just a simple example. There are much better ways to print ASTs (which also take advantage of Matryoshka), but they are too complicated for this example.
 
-```tut:book
+```scala mdoc:silent
 val eval: Algebra[ArithmeticF, Double] = {
   case NumberF(v)      => v
   case AddF(a, b)      => a + b
@@ -111,23 +112,23 @@ val eval: Algebra[ArithmeticF, Double] = {
 }
 ```
 
-```tut
+```scala mdoc
 Recursive[Arithmetic].cata(expr)(eval)
 ```
 
 So, that’s two simple examples where we don’t have to think about recursion at all – only one level of the operation at a time. But, we can now use this to gain some efficiency:
 
-```tut
+```scala mdoc
 Recursive[Arithmetic].cata(
   expr)(
-  Zip[Algebra[ArithmeticF, ?]].zip(eval, pprint))
+  Zip[Algebra[ArithmeticF, ?]].zip(eval, prettyPrint))
 ```
 
 Now we’ve generated _both_ values, but we only traversed the tree once. This is a pattern we see a lot in recursion schemes – ways to compose operations at the algebra level, such that we can do multiple operations in a single pass. And there are a bunch of “algebra transformations”, which massage these algebras into the shapes needed for different kinds of composition, so you don’t need to think about that at the point at which the algebra is defined.
 
-A better pprint:
+A better `prettyPrint`:
 
-```tut:book
+```scala mdoc:silent
 val precedence: ArithmeticF[_] => Int = {
   case NumberF(_)      => 0
   case AddF(_, _)      => 3
@@ -145,15 +146,17 @@ def buildOp
   s"$newA $op $newB"
 }
 
-val pprintʹ: GAlgebra[(Int, ?), ArithmeticF, String] = {
+val prettyPrintʹ: GAlgebra[(Int, ?), ArithmeticF, String] = {
   case NumberF(v)      => v.toString
   case AddF(a, b)      => buildOp(3, a, "+", b)
   case SubtractF(a, b) => buildOp(4, a, "-", b)
   case MultiplyF(a, b) => buildOp(1, a, "*", b)
   case DivideF(a, b)   => buildOp(2, a, "/", b)
 }
+```
 
-Recursive[Arithmetic].zygo(expr)(precedence, pprintʹ)
+```scala mdoc
+Recursive[Arithmetic].zygo(expr)(precedence, prettyPrintʹ)
 ```
 
 And now our pretty-printer only inserts necessary parens.

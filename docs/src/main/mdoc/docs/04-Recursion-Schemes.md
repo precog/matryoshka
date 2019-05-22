@@ -3,11 +3,10 @@ layout: docs
 title: Recursion Schemes
 ---
 
-```tut:book
+```scala mdoc:silent
 import matryoshka._, implicits._, data._
-import scalaz._, Scalaz._
+import scalaz._
 ```
-
     
 # {{ page.title }}
 
@@ -25,7 +24,7 @@ Lets build an intuition of how each kind of scheme walks through a given recursi
 
 We'll use a very simple binary tree with `Int` labelling each node and leaf.
 
-```tut:silent
+```scala mdoc:silent
 sealed trait Tree[A]
 final case class Node[A](label: Int, left: A, right: A) extends Tree[A]
 final case class Leaf[A](label: Int)                    extends Tree[A]
@@ -35,7 +34,7 @@ final case class EmptyTree[A]()                         extends Tree[A]
 
 To use that as our recursive structure, we'll need to provide at least a `Functor` instance for it (we'll see why this is important soon). Some schemes have greater needs and require a more powerful `Traverse` instance.
 
-```tut:silent
+```scala mdoc:silent
 implicit val treeFunctor: Functor[Tree] = new Functor[Tree] {
   def map[A, B](fa: Tree[A])(f: A => B): Tree[B] = fa match {
     case Node(label, l, r) => Node(label, f(l), f(r))
@@ -47,7 +46,7 @@ implicit val treeFunctor: Functor[Tree] = new Functor[Tree] {
 
 Now we can (almost) easily create a simple binary search tree:
 
-```tut:silent
+```scala mdoc:silent
 //     42
 //    /  \
 //   28  83
@@ -77,7 +76,7 @@ The simplest possible fold is `cata`. It applies an `Algebra[F, A]` "bottom-up" 
 
 Let's use a (very) dirty trick to show in which order `cata` traverses the nodes of our above `tree`.
 
-```tut:book
+```scala mdoc
 // This is very bad!
 // Kids, don't use side-effects like this at home
 val printLabels: Algebra[Tree, Unit] = {
@@ -99,7 +98,7 @@ Using a classic recursive approach, starting from a `Node`, we would recursively
 
 But recursion schemes are all about abstracting recursive traversals, right? So using `cata`, we only need to define **what** we want to do with each node of our tree, we don't need to specify **how** we traverse the whole tree.
 
-```tut:silent
+```scala mdoc:silent
 val merge: Algebra[Tree, List[Int]] = {
   case Node(i, l, r) => l ++ List(i) ++ r 
   case Leaf(i)       => List(i)
@@ -107,7 +106,7 @@ val merge: Algebra[Tree, List[Int]] = {
 }
 ```
 Using this algebra with a `cata` on our `tree` should yield the ordered list of the labels of each node/leaf. 
-```tut:book
+```scala mdoc
 tree.cata(merge)
 ```
 Tadaaaa! 
@@ -122,7 +121,7 @@ By duality, it's easy to see that unfolds work "top-down". In other words, an un
 
 For example, let's use an unfold to produce a binary search tree from a list of integers. Given a list, we partition its tail depending on whereas its elements are smaller or greater than the head of the original list. Using that we can build a `Node(head, smaller, greater)` and let `ana` recursively build trees for the `smaller` and `greater` list.
 
-```tut:silent
+```scala mdoc:silent
 val split: Coalgebra[Tree, List[Int]] = { 
   case Nil          => EmptyTree()
   case head :: Nil  => Leaf(head)
@@ -133,7 +132,7 @@ val split: Coalgebra[Tree, List[Int]] = {
   
 ```
 If you squint hard enough, you might convince yourself that this indeed produces a binary search tree for our input list.
-```tut:book
+```scala mdoc
 List(42, 45, 28, 32, 12, 48).ana[Fix[Tree]](split)
 ```
 
@@ -147,7 +146,7 @@ In other words, in our tree example, `hylo` would only build a branch of the tre
 
 We can use the coalgebra and algebra we defined above to transform a `List[Int]` into a `List[Int]`, this would (partially) build a binary search tree from the input list and traverse the elements of that tree in ascending order, effecively sorting the whole list.
 
-```tut:book
+```scala mdoc
 List(42, 45, 28, 32, 42, 12, 48, 1, 64, 8, 0).hylo(merge, split)
 ```
 

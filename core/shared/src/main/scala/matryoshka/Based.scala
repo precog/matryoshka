@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package matryoshka
 
+import slamdata.Predef._
+
 import simulacrum.typeclass
 
 /** Provides a type describing the pattern functor of some {co}recursive type
@@ -27,3 +29,6 @@ import simulacrum.typeclass
 @typeclass trait Based[T] {
   type Base[A]
 }
+
+@SuppressWarnings(Array("org.wartremover.warts.PublicInference"))
+object Based

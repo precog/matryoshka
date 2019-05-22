@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -191,10 +191,10 @@ object Birecursive {
       def embed(ft: F[T])(implicit F: Functor[F]) = φ(ft)
     }
 
-  def iso[T, F[_]: Functor](implicit T: Birecursive.Aux[T, F]) =
+  def iso[T, F[_]: Functor](implicit T: Birecursive.Aux[T, F]): AlgebraIso[F, T] =
     AlgebraIso[F, T](T.embed(_))(T.project(_))
 
-  def lambekIso[T, F[_]: Functor](implicit T: Birecursive.Aux[T, F]) =
+  def lambekIso[T, F[_]: Functor](implicit T: Birecursive.Aux[T, F]): AlgebraIso[F, T] =
     AlgebraIso[F, T](T.colambek(_))(T.lambek(_))
 
   def equal[T, F[_]: Traverse]
@@ -257,7 +257,8 @@ object Birecursive {
         : M[T] =
       typeClassInstance.topDownCataM[M, A](self, a)(f)
     object transPrepro {
-      def apply[U] = new PartiallyApplied[U]
+      def apply[U]: PartiallyApplied[U] = new PartiallyApplied[U]
+
       final class PartiallyApplied[U] {
         def apply[G[_]: Functor]
           (e: F ~> F, f: Transform[U, F, G])

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,10 +21,11 @@ import matryoshka.implicits._
 
 import org.specs2.execute._
 import org.specs2.matcher._
-import org.specs2.mutable.SpecificationLike
 import scalaz._
 
-package object runners extends SpecificationLike {
+package object runners {
+  import MatchResultCombinators._
+
   def testRec[F[_], A](t: Fix[F], r: RecRunner[F, A])(implicit F: Functor[F])
       : MatchResult[A] = {
     r.run[Fix[F]].apply(t) and

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,13 +36,13 @@ final case class EnvT[E, W[_], A](run: (E, W[A])) { self =>
 }
 
 object EnvT extends EnvTInstances with EnvTFunctions {
-  def hmap[F[_], G[_], E, A](f: F ~> G) =
+  def hmap[F[_], G[_], E, A](f: F ~> G): EnvT[E, F, ?] ~> EnvT[E, G, ?] =
     λ[EnvT[E, F, ?] ~> EnvT[E, G, ?]](env => EnvT((env.ask, f(env.lower))))
 
-  def htraverse[G[_]: Applicative, F[_], H[_], A](f: F ~> (G ∘ H)#λ) =
+  def htraverse[G[_]: Applicative, F[_], H[_], A](f: F ~> (G ∘ H)#λ): EnvT[A, F, ?] ~> (G ∘ EnvT[A, H, ?])#λ =
     λ[EnvT[A, F, ?] ~> (G ∘ EnvT[A, H, ?])#λ](_.run.traverse(f(_)).map(EnvT(_)))
 
-  def lower[F[_], E] = λ[EnvT[E, F, ?] ~> F](_.lower)
+  def lower[F[_], E]: EnvT[E, F, ?] ~> F = λ[EnvT[E, F, ?] ~> F](_.lower)
 }
 
 sealed abstract class EnvTInstances1 {
@@ -88,9 +88,10 @@ sealed abstract class EnvTInstances extends EnvTInstances0 {
 trait EnvTFunctions {
   def envT[E, W[_], A](v: (E, W[A])): EnvT[E, W, A] = EnvT(v)
 
-  def cofreeIso[E, W[_]] = AlgebraIso[EnvT[E, W, ?], Cofree[W, E]](
-    et => Cofree(et.ask, et.lower))(
-    cof => EnvT((cof.head, cof.tail)))
+  def cofreeIso[E, W[_]]: AlgebraIso[EnvT[E, W, ?], Cofree[W, E]] =
+    AlgebraIso[EnvT[E, W, ?], Cofree[W, E]](
+      et => Cofree(et.ask, et.lower))(
+      cof => EnvT((cof.head, cof.tail)))
 }
 
 //

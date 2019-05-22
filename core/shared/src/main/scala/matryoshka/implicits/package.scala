@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,8 @@ package object implicits
       matryoshka.transHylo(self)(φ, ψ)
 
     object transAna {
-      def apply[U] = new PartiallyApplied[U]
+      def apply[U]: PartiallyApplied[U] = new PartiallyApplied[U]
+
       final class PartiallyApplied[U] {
         def apply[G[_]: Functor]
           (f: F[T] => G[T])
