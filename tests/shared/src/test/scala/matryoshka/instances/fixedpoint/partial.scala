@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2019 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,11 +26,10 @@ import scala.Predef.implicitly
 import org.scalacheck._
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
-import org.specs2.scalaz.{ScalazMatchers}
 import scalaz._, Scalaz._
 import scalaz.scalacheck.{ScalazProperties => Props}
 
-class PartialSpec extends Specification with ScalazMatchers with ScalaCheck {
+class PartialSpec extends Specification with ScalazEqualityMatchers with ScalaCheck {
   /** For testing cases that should work with truly diverging functions. */
   def sometimesNeverGen[A: Arbitrary]: Gen[Partial[A]] =
     Gen.oneOf(Arbitrary.arbitrary[Partial[A]], Gen.const(Partial.never[A]))

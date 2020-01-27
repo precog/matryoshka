@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2019 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,11 +30,10 @@ import scala.Predef.implicitly
 import org.scalacheck._
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
-import org.specs2.scalaz.{ScalazMatchers}
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
-trait DiffArb {
+trait DiffArb extends ScalazSpecs2Instances {
   implicit def diffArbitrary[T[_[_]], F[_]](
     implicit T: Arbitrary[T[F]], F: Delay[Arbitrary, F]):
       Delay[Arbitrary, Diff[T, F, ?]] =
@@ -63,7 +62,7 @@ class DiffLaws extends Specification with DiffArb with ScalaCheck {
   }
 }
 
-class DiffSpec extends Specification with DiffArb with ScalazMatchers {
+class DiffSpec extends Specification with DiffArb with ScalazEqualityMatchers {
   "diff" should {
     "find non-recursive differences" in {
       NonRec[Mu[Example]]("a", 1).embed.paraMerga(NonRec[Mu[Example]]("b", 1).embed)(diff) must

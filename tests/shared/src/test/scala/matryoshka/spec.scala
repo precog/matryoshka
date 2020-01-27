@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2019 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,12 +29,13 @@ import matryoshka.scalacheck.cogen._
 import org.scalacheck._
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
-import org.specs2.scalaz.{ScalazMatchers}
 import org.typelevel.discipline.specs2.mutable._
 import scalaz.{Apply => _, _}, Scalaz._
-import scalaz.scalacheck.ScalazProperties._
+import scalaz.scalacheck.ScalazProperties.{equal => _, _}
 
-class ExpSpec extends Specification {
+class ExpSpec extends Specification with Discipline {
+  import scalaz.scalacheck.ScalazProperties.equal
+
   // NB: These are just a sanity check that the data structure created for the
   //     tests is lawful.
   "Exp" >> {
@@ -44,6 +45,8 @@ class ExpSpec extends Specification {
 }
 
 class Exp2Spec extends Specification with ScalaCheck {
+  import scalaz.scalacheck.ScalazProperties.equal
+
   // NB: These are just a sanity check that the data structure created for the
   //     tests is lawful.
   "Exp2" >> {
@@ -52,7 +55,7 @@ class Exp2Spec extends Specification with ScalaCheck {
   }
 }
 
-class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazMatchers with Discipline with AlgebraChecks {
+class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazEqualityMatchers with Discipline with AlgebraChecks {
   val example1ƒ: Exp[Option[Int]] => Option[Int] = {
     case Num(v)           => v.some
     case Mul(left, right) => (left ⊛ right)(_ * _)
