@@ -10,11 +10,13 @@ sudo: false
 
 script:
   - set -e
-  - sbt checkHeaders
-  - sbt coverage doc test tut
-  - sbt coverageReport
-  - sbt clean transferPublishAndTagResources
-  - scripts/publishAndTag 'slamdata/matryoshka'
+  - sbt checkHeaders test transferPublishAndTagResources
+  - |-
+    if [[ "$TRAVIS_SCALA_VERSION" =~ 2.12 ]]; then
+      if [[ "$TRAVIS_PULL_REQUEST" == "false" ]] && [[ "$TRAVIS_BRANCH" =~ backport/v.*|master ]]; then
+        TRAVIS_JOB_NUMBER=1 scripts/publishAndTag 'slamdata/matryoshka'
+      fi
+    fi
 
 branches:
   except:
