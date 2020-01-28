@@ -112,7 +112,7 @@ private trait EnvTBitraverse[F[_]]
 
   override final def bitraverseImpl[G[_]: Applicative, A, B, C, D]
     (fab: EnvT[A, F, B])
-    (f: A ⇒ G[C], g: B ⇒ G[D]) =
+    (f: A => G[C], g: B => G[D]) =
     fab.run.bitraverse(f, _.traverse(g)) ∘ (EnvT(_))
 }
 

@@ -18,7 +18,7 @@ package matryoshka
 
 import matryoshka.implicits._
 
-import scalaz._, Scalaz._
+import scalaz.{Cofree, Functor, Scalaz}, Scalaz._
 
 /** This packages contains fixed-point operators as well as instances of
   * recursion schemes for various extant data types.

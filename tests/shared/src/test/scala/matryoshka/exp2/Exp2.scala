@@ -41,7 +41,7 @@ object Exp2 {
   val traverse: Traverse[Exp2] = new Traverse[Exp2] {
     def traverseImpl[G[_], A, B](
       fa: Exp2[A])(
-      f: (A) ⇒ G[B])(
+      f: (A) => G[B])(
       implicit G: Applicative[G]) =
       fa match {
         case Const()   => G.point(Const[B]())

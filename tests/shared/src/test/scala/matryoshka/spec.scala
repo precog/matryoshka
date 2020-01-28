@@ -255,17 +255,17 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazEqualityM
 
     "gprepro" >> {
       "multiply original with identity ~>" in {
-        lam('meh, mul(vari('meh), mul(num(10), num(8))))
+        lam(Symbol("meh"), mul(vari(Symbol("meh")), mul(num(10), num(8))))
           .gprepro[Cofree[Exp, ?], Fix[Exp]](
             distHisto, NaturalTransformation.refl[Exp], partialEval[Fix[Exp]]) must
-          equal(lam('meh, mul(vari('meh), num(80))))
+          equal(lam(Symbol("meh"), mul(vari(Symbol("meh")), num(80))))
       }
 
       "apply ~> repeatedly" in {
-        lam('meh, mul(vari('meh), mul(num(13), num(8))))
+        lam(Symbol("meh"), mul(vari(Symbol("meh")), mul(num(13), num(8))))
           .gprepro[Cofree[Exp, ?], Fix[Exp]](
             distHisto, MinusThree, partialEval[Fix[Exp]]) must
-          equal(lam('meh, mul(vari('meh), num(-4))))
+          equal(lam(Symbol("meh"), mul(vari(Symbol("meh")), num(-4))))
       }
     }
 
@@ -334,11 +334,11 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazEqualityM
 
     "transPara" >> {
       "project basic exp" in {
-        lam('sym, num(3)).transPara[Fix[Exp2]](extractLambdaƒ[Fix]) must equal(num2(3))
+        lam(Symbol("sym"), num(3)).transPara[Fix[Exp2]](extractLambdaƒ[Fix]) must equal(num2(3))
       }
 
       "project basic exp recursively" in {
-        lam('sym, mul(num(5), num(7))).transPara[Fix[Exp2]](extractLambdaƒ[Fix]) must
+        lam(Symbol("sym"), mul(num(5), num(7))).transPara[Fix[Exp2]](extractLambdaƒ[Fix]) must
           equal(single(const))
       }
     }
@@ -459,13 +459,13 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazEqualityM
     "elgotCata" >> {
 
       "find no free vars in closed term" in {
-        val t = lam('sym, mul(num(5), vari('sym)))
+        val t = lam(Symbol("sym"), mul(num(5), vari(Symbol("sym"))))
         t.elgotCata(distZygo(freeVars), freeVarsNumber) must equal(0)
       }
 
       "find some free vars in open term" in {
-        val t1 = lam('bound, mul(vari('open), vari('bound)))
-        val t2 = lam('x, mul(vari('y), lam('y, mul(vari('open), mul(vari('y), vari('x))))))
+        val t1 = lam(Symbol("bound"), mul(vari(Symbol("open")), vari(Symbol("bound"))))
+        val t2 = lam(Symbol("x"), mul(vari(Symbol("y")), lam(Symbol("y"), mul(vari(Symbol("open")), mul(vari(Symbol("y")), vari(Symbol("x")))))))
         t1.elgotCata(distZygo(freeVars), freeVarsNumber) must equal(1)
         t2.elgotCata(distZygo(freeVars), freeVarsNumber) must equal(2)
       }
@@ -478,16 +478,16 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazEqualityM
         )
 
         (4, 0).elgotAna[Fix[Exp]].apply(distGApo(generateVars), generateTerm) must equal (
-          lam('x0, mul(mul(vari('x0), vari('x0)), vari('x0)))
+          lam(Symbol("x0"), mul(mul(vari(Symbol("x0")), vari(Symbol("x0"))), vari(Symbol("x0"))))
         )
 
         (5, 0).elgotAna[Fix[Exp]].apply(distGApo(generateVars), generateTerm) must equal (
-          mul(lam('x0, mul(vari('x0), vari('x0))), mul(num(42), num(42)))
+          mul(lam(Symbol("x0"), mul(vari(Symbol("x0")), vari(Symbol("x0")))), mul(num(42), num(42)))
         )
       }
       "generate open terms" in {
         (3, 1).elgotAna[Fix[Exp]].apply(distGApo(generateVars), generateTerm) must equal (
-          mul(mul(vari('x0), vari('x0)), vari('x0))
+          mul(mul(vari(Symbol("x0")), vari(Symbol("x0"))), vari(Symbol("x0")))
         )
       }
     }
@@ -528,7 +528,7 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazEqualityM
       }
 
       "bind vars" in {
-        val v = let('x, num(1), mul(num(0), vari('x)))
+        val v = let(Symbol("x"), num(1), mul(num(0), vari(Symbol("x"))))
         v.topDownCata(Map.empty[Symbol, Fix[Exp]])(subst) must
           equal(mul(num(0), num(1)))
         v.convertTo[Mu[Exp]].topDownCata(Map.empty[Symbol, Mu[Exp]])(subst) must
@@ -881,12 +881,12 @@ class MatryoshkaSpecs extends Specification with ScalaCheck with ScalazEqualityM
       }
 
       "partially evaluate mul in lambda" in {
-        lam('foo, mul(mul(num(4), num(7)), vari('foo))).histo(partialEval[Fix[Exp]]) must
-          equal(lam('foo, mul(num(28), vari('foo))))
-        lam('foo, mul(mul(num(4), num(7)), vari('foo))).histo(partialEval[Mu[Exp]]) must
-          equal(lam('foo, mul(num(28), vari('foo))).convertTo[Mu[Exp]])
-        lam('foo, mul(mul(num(4), num(7)), vari('foo))).histo(partialEval[Nu[Exp]]) must
-          equal(lam('foo, mul(num(28), vari('foo))).convertTo[Nu[Exp]])
+        lam(Symbol("foo"), mul(mul(num(4), num(7)), vari(Symbol("foo")))).histo(partialEval[Fix[Exp]]) must
+          equal(lam(Symbol("foo"), mul(num(28), vari(Symbol("foo")))))
+        lam(Symbol("foo"), mul(mul(num(4), num(7)), vari(Symbol("foo")))).histo(partialEval[Mu[Exp]]) must
+          equal(lam(Symbol("foo"), mul(num(28), vari(Symbol("foo")))).convertTo[Mu[Exp]])
+        lam(Symbol("foo"), mul(mul(num(4), num(7)), vari(Symbol("foo")))).histo(partialEval[Nu[Exp]]) must
+          equal(lam(Symbol("foo"), mul(num(28), vari(Symbol("foo")))).convertTo[Nu[Exp]])
       }
     }
 

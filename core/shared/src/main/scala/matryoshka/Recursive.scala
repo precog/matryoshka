@@ -17,7 +17,6 @@
 package matryoshka
 
 import slamdata.Predef._
-import matryoshka.implicits._
 import matryoshka.patterns.EnvT
 
 import scala.Predef.identity
@@ -189,7 +188,7 @@ trait Recursive[T] extends Based[T] {
     (f: (T, T, Option[Base[A]]) => A)
     (implicit BF: Functor[Base], BM: Merge[Base])
       : A =
-    f(t, that, project(t).mergeWith(project(that))(paraMerga(_, _)(f)))
+    f(t, that, BM.mergeWith(project(t), project(that))(paraMerga(_, _)(f)))
 
   def isLeaf(t: T)(implicit BF: Functor[Base], B: Foldable[Base]): Boolean =
     project(t).foldRight(true)((e, a) => false)
@@ -224,10 +223,10 @@ trait Recursive[T] extends Based[T] {
   }
 
   // Foldable
-  def all(t: T)(p: T ⇒ Boolean)(implicit BF: Functor[Base], B: Foldable[Base]): Boolean =
+  def all(t: T)(p: T => Boolean)(implicit BF: Functor[Base], B: Foldable[Base]): Boolean =
     Tag.unwrap(foldMap(t)(p(_).conjunction))
 
-  def any(t: T)(p: T ⇒ Boolean)(implicit BF: Functor[Base], B: Foldable[Base]): Boolean =
+  def any(t: T)(p: T => Boolean)(implicit BF: Functor[Base], B: Foldable[Base]): Boolean =
     Tag.unwrap(foldMap(t)(p(_).disjunction))
 
   def collect[B]
@@ -276,14 +275,14 @@ trait Recursive[T] extends Based[T] {
     (f: Base[T] => G[U])
     (implicit U: Corecursive.Aux[U, G], BF: Functor[Base])
       : U =
-    f(project(t)).embed
+    U.embed(f(project(t)))
 
   def traverseR[M[_]: Functor, U, G[_]: Functor]
     (t: T)
     (f: Base[T] => M[G[U]])
     (implicit U: Corecursive.Aux[U, G], BF: Functor[Base])
       : M[U] =
-    f(project(t)) ∘ (_.embed)
+    f(project(t)) ∘ (U.embed(_))
 
   def transCata[U, G[_]: Functor]
     (t: T)
@@ -348,7 +347,7 @@ trait Recursive[T] extends Based[T] {
     */
   def lambek(tf: T)(implicit T: Corecursive.Aux[T, Base], BF: Functor[Base])
       : Base[T] =
-    cata[Base[T]](tf)(_ ∘ (_.embed))
+    cata[Base[T]](tf)(_ ∘ (T.embed(_)))
 
   def gpara[W[_]: Comonad, A](
     t: T)(
@@ -622,10 +621,10 @@ object Recursive {
       (implicit BT: Traverse[F])
         : M[Cofree[F, A]] =
       typeClassInstance.attributeTopDownM[M, A](self, z)(f)
-    def all(p: T ⇒ Boolean)(implicit BF: Functor[F], B: Foldable[F])
+    def all(p: T => Boolean)(implicit BF: Functor[F], B: Foldable[F])
         : Boolean =
       typeClassInstance.all(self)(p)
-    def any(p: T ⇒ Boolean)(implicit BF: Functor[F], B: Foldable[F])
+    def any(p: T => Boolean)(implicit BF: Functor[F], B: Foldable[F])
         : Boolean =
       typeClassInstance.any(self)(p)
     def collect[B]

@@ -16,7 +16,7 @@
 
 package matryoshka.instances.fixedpoint
 
-import slamdata.Predef._
+import slamdata.Predef.{List => _, _}
 import matryoshka._
 import matryoshka.implicits._
 

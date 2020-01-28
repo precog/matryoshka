@@ -21,7 +21,6 @@ import matryoshka._
 import matryoshka.data.Mu
 import matryoshka.example._
 import matryoshka.exp._
-import matryoshka.helpers._
 import matryoshka.implicits._
 import matryoshka.scalacheck.arbitrary._
 

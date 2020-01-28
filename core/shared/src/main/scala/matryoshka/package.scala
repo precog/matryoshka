@@ -15,7 +15,6 @@
  */
 
 import slamdata.Predef._
-import matryoshka.implicits._
 import matryoshka.patterns.{CoEnv, EnvT}
 
 import monocle._
@@ -32,7 +31,34 @@ import scalaz._, Liskov._, Scalaz._
   * @groupname dist Distributive Laws
   * @groupdesc dist Natural transformations required for generalized folds and unfolds.
   */
-package object matryoshka {
+
+package matryoshka {
+
+  private[matryoshka] trait MatryoshkaLowPriorityImplicits {
+
+    implicit def recursiveTRecursive[T[_[_]]: RecursiveT, F[_]]: Recursive.Aux[T[F], F] =
+      new Recursive[T[F]] {
+        type Base[A] = F[A]
+
+        def project(t: T[F])(implicit F: Functor[F]) =
+          RecursiveT[T].projectT[F](t)
+        override def cata[A](t: T[F])(f: Algebra[F, A])(implicit F: Functor[F]) =
+          RecursiveT[T].cataT[F, A](t)(f)
+      }
+
+    implicit def corecursiveTCorecursive[T[_[_]]: CorecursiveT, F[_]]: Corecursive.Aux[T[F], F] =
+      new Corecursive[T[F]] {
+        type Base[A] = F[A]
+
+        def embed(t: F[T[F]])(implicit F: Functor[F]) =
+          CorecursiveT[T].embedT[F](t)
+        override def ana[A](a: A)(f: Coalgebra[F, A])(implicit F: Functor[F]) =
+          CorecursiveT[T].anaT[F, A](a)(f)
+      }
+  }
+}
+
+package object matryoshka extends MatryoshkaLowPriorityImplicits {
 
   /** Fold a structure `F` containing values in `W`, to a value `A`,
     * accumulating effects in the monad `M`.
@@ -179,33 +205,33 @@ package object matryoshka {
   // TODO: Move this to `Birecursive` once that works.
   def birecursiveIso[T, F[_]: Functor]
     (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
-    AlgebraIso[F, T](_.embed)(_.project)
+    AlgebraIso[F, T](TC.embed(_))(TR.project(_))
 
   // TODO: Move this to `Birecursive` once that works.
   def bilambekIso[T, F[_]: Functor]
     (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
-    AlgebraIso[F, T](_.colambek)(_.lambek)
+    AlgebraIso[F, T](TC.colambek(_))(TR.lambek(_))
 
   /** There is a fold/unfold isomorphism for any AlgebraIso.
     */
   def foldIso[T, F[_]: Functor, A]
     (alg: AlgebraIso[F, A])
     (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
-    Iso[T, A](_.cata(alg.get))(_.ana[T](alg.reverseGet))
+    Iso[T, A](t => TR.cata(t)(alg.get))(t => TC.ana(t)(alg.reverseGet))
 
   /** There is a fold prism for any AlgebraPrism.
     */
   def foldPrism[T, F[_]: Traverse, A]
     (alg: AlgebraPrism[F, A])
     (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
-    Prism[T, A](TR.cataM(_)(alg.getOption))(_.ana[T](alg.reverseGet))
+    Prism[T, A](TR.cataM(_)(alg.getOption))(a => TC.ana(a)(alg.reverseGet))
 
   /** There is an unfold prism for any CoalgebraPrism.
     */
   def unfoldPrism[T, F[_]: Traverse, A]
     (coalg: CoalgebraPrism[F, A])
     (implicit TR: Recursive.Aux[T, F], TC: Corecursive.Aux[T, F]) =
-    Prism[A, T](_.anaM[T](coalg.getOption))(_.cata(coalg.reverseGet))
+    Prism[A, T](t => TC.anaM(t)(coalg.getOption))(t => TR.cata(t)(coalg.reverseGet))
 
   /** A NaturalTransformation that sequences two types
     *
@@ -389,7 +415,7 @@ package object matryoshka {
     (t: DistributiveLaw[F, W])
     (implicit T: Corecursive.Aux[T, F])
       : DistributiveLaw[F, EnvT[T, W, ?]] =
-    distZygoT[F, W, T](_.embed, t)
+    distZygoT[F, W, T](T.embed(_), t)
 
   /**
     *
@@ -593,7 +619,7 @@ package object matryoshka {
     (t: T)
     (implicit T: Recursive.Aux[T, EnvT[A, F, ?]], R: Corecursive.Aux[R, F])
       : R =
-    t.cata(deattribute[F, A, R](_.embed))
+    T.cata(t)(deattribute[F, A, R](R.embed(_)))
 
   // def ignoreAttribute[T[_[_]], F[_], G[_], A](φ: F[T[G]] => G[T[G]]):
   //     EnvT[A, F, T[EnvT[A, G, ?]]] => EnvT[A, G, T[EnvT[A, G, ?]]] =
@@ -649,7 +675,7 @@ package object matryoshka {
   implicit def GAlgebraZip[W[_]: Functor, F[_]: Functor]:
       Zip[GAlgebra[W, F, ?]] =
     new Zip[GAlgebra[W, F, ?]] {
-      def zip[A, B](a: ⇒ GAlgebra[W, F, A], b: ⇒ GAlgebra[W, F, B]) =
+      def zip[A, B](a: => GAlgebra[W, F, A], b: => GAlgebra[W, F, B]) =
         node => (a(node ∘ (_ ∘ (_._1))), b(node ∘ (_ ∘ (_._2))))
     }
   /**
@@ -665,7 +691,7 @@ package object matryoshka {
   implicit def ElgotAlgebraMZip[W[_]: Functor, M[_]: Applicative, F[_]: Functor]:
       Zip[ElgotAlgebraM[W, M, F, ?]] =
     new Zip[ElgotAlgebraM[W, M, F, ?]] {
-      def zip[A, B](a: ⇒ ElgotAlgebraM[W, M, F, A], b: ⇒ ElgotAlgebraM[W, M, F, B]) =
+      def zip[A, B](a: => ElgotAlgebraM[W, M, F, A], b: => ElgotAlgebraM[W, M, F, B]) =
         w => Bitraverse[(?, ?)].bisequence((a(w ∘ (_ ∘ (_._1))), b(w ∘ (_ ∘ (_._2)))))
     }
   /**
@@ -707,10 +733,7 @@ package object matryoshka {
     *
     * @group algebras
     */
-  def count[T: Equal, F[_]: Functor: Foldable]
-    (form: T)
-    (implicit T: Recursive.Aux[T, F])
-      : ElgotAlgebra[(T, ?), F, Int] =
+  def count[T: Equal, F[_]: Functor: Foldable](form: T): ElgotAlgebra[(T, ?), F, Int] =
     e => (e._1 ≟ form).fold(1, 0) + e._2.foldRight(0)(_ + _)
 
   /** The number of nodes in this structure.
@@ -731,7 +754,7 @@ package object matryoshka {
     */
   def zipTuple[T, F[_]: Functor: Zip](implicit T: Recursive.Aux[T, F])
       : Coalgebra[F, (T, T)] =
-    p => Zip[F].zip[T, T](p._1.project, p._2.project)
+    p => Zip[F].zip[T, T](T.project(p._1), T.project(p._2))
 
   /** Aligns “These” into a single structure, short-circuting when we hit a
     * “This” or “That”.
@@ -740,7 +763,7 @@ package object matryoshka {
     */
   def alignThese[T, F[_]: Align](implicit T: Recursive.Aux[T, F])
       : ElgotCoalgebra[T \/ ?, F, T \&/ T] =
-    _.fold(_.left, _.left, (a, b) => a.project.align(b.project).right)
+    _.fold(_.left, _.left, (a, b) => T.project(a).align(T.project(b)).right)
 
   /** Merges a tuple of functors, if possible.
     *
@@ -748,7 +771,7 @@ package object matryoshka {
     */
   def mergeTuple[T, F[_]: Functor: Merge](implicit T: Recursive.Aux[T, F])
       : CoalgebraM[Option, F, (T, T)] =
-    p => Merge[F].merge[T, T](p._1.project, p._2.project)
+    p => Merge[F].merge[T, T](T.project(p._1), T.project(p._2))
 
   /** Generates an infinite sequence from two seed values.
     *
@@ -775,7 +798,7 @@ package object matryoshka {
         def map[B, C] (fa: Option[(A, (B, B))])(f: B => C) =
           fa.map(_.map(_.bimap(f, f)))
       }
-    as.hylo[λ[α => Option[(A, (α, α))]], List[A]](join, partition)
+    hylo[λ[α => Option[(A, (α, α))]], List[A], List[A]](as)(join, partition)
   }
 
   /** Converts a fixed-point structure into a generic Tree.
@@ -812,26 +835,6 @@ package object matryoshka {
       Show[F[A]] =
     F(A)
 
-  implicit def recursiveTRecursive[T[_[_]]: RecursiveT, F[_]]: Recursive.Aux[T[F], F] =
-    new Recursive[T[F]] {
-      type Base[A] = F[A]
-
-      def project(t: T[F])(implicit F: Functor[F]) =
-        RecursiveT[T].projectT[F](t)
-      override def cata[A](t: T[F])(f: Algebra[F, A])(implicit F: Functor[F]) =
-        RecursiveT[T].cataT[F, A](t)(f)
-    }
-
-  implicit def corecursiveTCorecursive[T[_[_]]: CorecursiveT, F[_]]: Corecursive.Aux[T[F], F] =
-    new Corecursive[T[F]] {
-      type Base[A] = F[A]
-
-      def embed(t: F[T[F]])(implicit F: Functor[F]) =
-        CorecursiveT[T].embedT[F](t)
-      override def ana[A](a: A)(f: Coalgebra[F, A])(implicit F: Functor[F]) =
-        CorecursiveT[T].anaT[F, A](a)(f)
-    }
-
   implicit def birecursiveTBirecursive[T[_[_]]: BirecursiveT, F[_]]: Birecursive.Aux[T[F], F] =
     new Birecursive[T[F]] {
       type Base[A] = F[A]
@@ -857,16 +860,16 @@ package object matryoshka {
     new Functor[λ[α => T[F[α, ?]]]] {
       implicit def RF[A]: Functor[F[A, ?]] = F.rightFunctor
 
-      def map[A, B](fa: T[F[A, ?]])(f: A => B) =
-        fa.transCata[T[F[B, ?]]](_.leftMap[B](f))
+      def map[A, B](fa: T[F[A, ?]])(f: A => B): T[F[B, ?]] =
+        birecursiveTBirecursive[T, F[A, ?]].transCata[T[F[B, ?]], F[B, ?]](fa)(_.leftMap[B](f))
     }
 
   implicit def recursiveTFoldable[T[_[_]]: RecursiveT, F[_, _]](implicit FB: Bifoldable[F], FF: Bifunctor[F]): Foldable[λ[α => T[F[α, ?]]]] =
     new Foldable[λ[α => T[F[α, ?]]]] {
-      def foldMap[A, B: Monoid](fa: T[F[A, ?]])(f: A ⇒ B) =
-        fa.cata[B](FB.leftFoldable.foldMap(_)(f))(FF.rightFunctor)
+      def foldMap[A, B: Monoid](fa: T[F[A, ?]])(f: A => B) =
+        recursiveTRecursive[T, F[A, ?]].cata[B](fa)(FB.leftFoldable.foldMap(_)(f))(FF.rightFunctor)
 
-      def foldRight[A, B](fa: T[F[A, ?]], z: ⇒ B)(f: (A, ⇒ B) ⇒ B) =
-        fa.cata[B](FB.leftFoldable.foldRight(_, z)(f))(FF.rightFunctor)
+      def foldRight[A, B](fa: T[F[A, ?]], z: => B)(f: (A, => B) => B) =
+        recursiveTRecursive[T, F[A, ?]].cata[B](fa)(FB.leftFoldable.foldRight(_, z)(f))(FF.rightFunctor)
     }
 }

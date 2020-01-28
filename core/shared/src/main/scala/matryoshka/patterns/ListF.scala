@@ -72,7 +72,7 @@ object ListF {
   implicit def bitraverse: Bitraverse[ListF] = new Bitraverse[ListF] {
       def bitraverseImpl[G[_], A, B, C, D](
         fab: ListF[A, B])(
-        f: A ⇒ G[C], g: B ⇒ G[D])(
+        f: A => G[C], g: B => G[D])(
         implicit G: Applicative[G]) =
         fab match {
           case NilF()        => G.point(NilF())

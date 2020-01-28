@@ -57,7 +57,7 @@ sealed abstract class CoEnvInstances extends CoEnvInstances0 {
     new Bitraverse[CoEnv[?, F, ?]] {
       def bitraverseImpl[G[_]: Applicative, A, B, C, D](
         fab: CoEnv[A, F, B])(
-        f: A ⇒ G[C], g: B ⇒ G[D]) =
+        f: A => G[C], g: B => G[D]) =
         fab.run.bitraverse(f, _.traverse(g)).map(CoEnv(_))
     }
 
@@ -67,7 +67,7 @@ sealed abstract class CoEnvInstances extends CoEnvInstances0 {
   // TODO: write a test to ensure the two monad instances are identical
   // implicit def monadCo[F[_]: Applicative: Comonad, A]: Monad[CoEnv[A, F, ?]] =
   //   new Monad[CoEnv[A, F, ?]] {
-  //     def bind[B, C](fa: CoEnv[A, F, B])(f: (B) ⇒ CoEnv[A, F, C]) =
+  //     def bind[B, C](fa: CoEnv[A, F, B])(f: (B) => CoEnv[A, F, C]) =
   //       CoEnv(fa.run >>= (fb => f(fb.copoint).run))
   //     def point[B](x: => B) = CoEnv(x.point[F].right)
   //   }
@@ -76,7 +76,7 @@ sealed abstract class CoEnvInstances extends CoEnvInstances0 {
 sealed abstract class CoEnvInstances0 {
   implicit def bifunctor[F[_]: Functor]: Bifunctor[CoEnv[?, F, ?]] =
     new Bifunctor[CoEnv[?, F, ?]] {
-      def bimap[A, B, C, D](fab: CoEnv[A, F, B])(f: A ⇒ C, g: B ⇒ D) =
+      def bimap[A, B, C, D](fab: CoEnv[A, F, B])(f: A => C, g: B => D) =
         CoEnv(fab.run.bimap(f, _.map(g)))
     }
 
@@ -85,13 +85,13 @@ sealed abstract class CoEnvInstances0 {
 
   implicit def bifoldable[F[_]: Foldable]: Bifoldable[CoEnv[?, F, ?]] =
     new Bifoldable[CoEnv[?, F, ?]] {
-      def bifoldMap[A, B, M: Monoid](fa: CoEnv[A, F, B])(f: (A) ⇒ M)(g: (B) ⇒ M) =
+      def bifoldMap[A, B, M: Monoid](fa: CoEnv[A, F, B])(f: (A) => M)(g: (B) => M) =
         fa.run.fold(f, _.foldMap(g))
 
       def bifoldRight[A, B, C](
-        fa: CoEnv[A, F, B], z: ⇒ C)(
-        f: (A, ⇒ C) ⇒ C)(
-        g: (B, ⇒ C) ⇒ C) =
+        fa: CoEnv[A, F, B], z: => C)(
+        f: (A, => C) => C)(
+        g: (B, => C) => C) =
         fa.run.fold(f(_, z), _.foldRight(z)(g))
     }
 
@@ -100,7 +100,7 @@ sealed abstract class CoEnvInstances0 {
 
   // implicit def monad[F[_]: Monad: Traverse, A]: Monad[CoEnv[A, F, ?]] =
   //   new Monad[CoEnv[A, F, ?]] {
-  //     def bind[B, C](fa: CoEnv[A, F, B])(f: (B) ⇒ CoEnv[A, F, C]) =
+  //     def bind[B, C](fa: CoEnv[A, F, B])(f: (B) => CoEnv[A, F, C]) =
   //       CoEnv(fa.run >>= (_.traverse[CoEnv[A, F, ?], C](f).run.map(_.join)))
   //     def point[B](x: => B) = CoEnv(x.point[F].right)
   //   }

@@ -18,7 +18,7 @@ package matryoshka.patterns
 
 import matryoshka.Delay
 
-import scalaz._, Scalaz._
+import scalaz.{Success => _, Failure => _, _}, Scalaz._
 
 /** Generally similar to CoEnv (Free), this has an additional `success` case
   * that indicates there’s no failure down to the leaves.
@@ -52,7 +52,7 @@ object PotentialFailure {
     new Bitraverse[PotentialFailure[T, F, ?, ?]] {
       def bitraverseImpl[G[_], A, B, C, D](
         fab: PotentialFailure[T, F, A, B])(
-        f: A ⇒ G[C], g: B ⇒ G[D])(
+        f: A => G[C], g: B => G[D])(
         implicit G: Applicative[G]) =
         fab match {
           case Success(v)        => G.point(Success(v))

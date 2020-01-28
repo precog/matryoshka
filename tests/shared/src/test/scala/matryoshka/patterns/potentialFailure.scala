@@ -25,7 +25,7 @@ import matryoshka.scalacheck.arbitrary._
 import org.scalacheck._
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
-import scalaz._, Scalaz._
+import scalaz.{Success => _, Failure => _, _}, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
 
 class PotentialFailureSpec extends Specification with ScalaCheck {
