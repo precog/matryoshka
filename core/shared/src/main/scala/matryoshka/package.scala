@@ -861,7 +861,10 @@ package object matryoshka extends MatryoshkaLowPriorityImplicits {
       implicit def RF[A]: Functor[F[A, ?]] = F.rightFunctor
 
       def map[A, B](fa: T[F[A, ?]])(f: A => B): T[F[B, ?]] =
-        birecursiveTBirecursive[T, F[A, ?]].transCata[T[F[B, ?]], F[B, ?]](fa)(_.leftMap[B](f))
+        birecursiveTBirecursive[T, F[A, ?]].transCata[T[F[B, ?]], F[B, ?]](
+          fa)(
+          _.leftMap[B](f))(
+          RF[B], corecursiveTCorecursive[T, F[B, ?]], RF[A])
     }
 
   implicit def recursiveTFoldable[T[_[_]]: RecursiveT, F[_, _]](implicit FB: Bifoldable[F], FF: Bifunctor[F]): Foldable[λ[α => T[F[α, ?]]]] =
