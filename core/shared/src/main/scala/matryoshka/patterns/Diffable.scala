@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2019 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package matryoshka.patterns
 
 import slamdata.Predef._
 import matryoshka._
-import matryoshka.implicits._
 
 import scalaz._, Scalaz._
 import simulacrum._
@@ -39,17 +38,20 @@ import simulacrum._
   def diffTraverse[T[_[_]]: BirecursiveT, G[_]: Traverse](
     left: G[T[F]], right: G[T[F]])(
     implicit FF: Functor[F], FoldF: Foldable[F], FM: Merge[F]):
-      G[DiffT[T, F]] =
+      G[DiffT[T, F]] = {
+    val B = Birecursive[T[Diff[T, F, ?]], Diff[T, F, ?]]
+    val B2 = Birecursive[T[F], F]
     if (left.toList.length < right.toList.length)
       left.zipWithR(right)((l, r) =>
         l.fold(
-          Added[T, F, T[Diff[T, F, ?]]](r).embed)(
-          _.paraMerga(r)(diff[T, F])))
+          B.embed(Added[T, F, T[Diff[T, F, ?]]](r)))(
+          x => B2.paraMerga(x, r)(diff[T, F])))
     else
       left.zipWithL(right)((l, r) =>
         r.fold(
-          Removed[T, F, T[Diff[T, F, ?]]](l).embed)(
-          l.paraMerga(_)(diff[T, F])))
+          B.embed(Removed[T, F, T[Diff[T, F, ?]]](l)))(
+          x => B2.paraMerga(l, x)(diff[T, F])))
+  }
 
   // TODO: create something like Equals, but that overrides G[F[_]] (where G
   //       implements Traverse) to always be equal. This should allow us to
@@ -61,5 +63,5 @@ import simulacrum._
     left: F[T[F]], right: F[T[F]])(
     implicit FT: Traverse[F], FM: Merge[F]):
       DiffT[T, F] =
-    LocallyDifferent[T, F, T[Diff[T, F, ?]]](diffTraverse[T, F](left, right), right.void).embed
+    Corecursive[T[Diff[T, F, ?]], Diff[T, F, ?]].embed(LocallyDifferent[T, F, T[Diff[T, F, ?]]](diffTraverse[T, F](left, right), right.void))
 }

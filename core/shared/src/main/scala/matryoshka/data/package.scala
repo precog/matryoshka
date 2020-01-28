@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2019 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package matryoshka
 
 import matryoshka.implicits._
 
-import scalaz._, Scalaz._
+import scalaz.{Cofree, Functor, Scalaz}, Scalaz._
 
 /** This packages contains fixed-point operators as well as instances of
   * recursion schemes for various extant data types.

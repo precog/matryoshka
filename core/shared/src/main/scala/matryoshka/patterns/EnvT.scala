@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2019 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -112,7 +112,7 @@ private trait EnvTBitraverse[F[_]]
 
   override final def bitraverseImpl[G[_]: Applicative, A, B, C, D]
     (fab: EnvT[A, F, B])
-    (f: A ⇒ G[C], g: B ⇒ G[D]) =
+    (f: A => G[C], g: B => G[D]) =
     fab.run.bitraverse(f, _.traverse(g)) ∘ (EnvT(_))
 }
 

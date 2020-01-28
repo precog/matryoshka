@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2019 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,15 @@
 
 package matryoshka.instances.fixedpoint
 
-import slamdata.Predef._
+import slamdata.Predef.{List => _, _}
 import matryoshka._
 import matryoshka.implicits._
 
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
-import org.specs2.scalaz.{ScalazMatchers}
 import scalaz._, Scalaz._
 
-class StreamSpec extends Specification with ScalaCheck with ScalazMatchers {
+class StreamSpec extends Specification with ScalaCheck with ScalazEqualityMatchers {
   /** Infinite sequence of Fibonacci numbers (at least until they overflow
     * int32)
     */

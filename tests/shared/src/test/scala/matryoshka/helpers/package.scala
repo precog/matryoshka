@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2019 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,9 @@ import slamdata.Predef._
 import matryoshka.exp._
 
 import org.scalacheck._
-import org.specs2.mutable._
-import org.typelevel.discipline.specs2.mutable._
 import scalaz._, Scalaz._
 
-package object helpers extends SpecificationLike with Discipline {
+package object helpers {
   def foldableCogen[F[_]: Foldable]: Delay[Cogen, F] =
     new Delay[Cogen, F] {
       def apply[A](cog: Cogen[A]): Cogen[F[A]] =

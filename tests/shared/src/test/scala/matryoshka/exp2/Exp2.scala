@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2019 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,7 +41,7 @@ object Exp2 {
   val traverse: Traverse[Exp2] = new Traverse[Exp2] {
     def traverseImpl[G[_], A, B](
       fa: Exp2[A])(
-      f: (A) ⇒ G[B])(
+      f: (A) => G[B])(
       implicit G: Applicative[G]) =
       fa match {
         case Const()   => G.point(Const[B]())

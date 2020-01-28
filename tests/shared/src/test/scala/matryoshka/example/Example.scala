@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2019 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package matryoshka.example
 
 import slamdata.Predef._
 import matryoshka._
-import matryoshka.helpers._
 import matryoshka.implicits._
 import matryoshka.patterns._
 import matryoshka.scalacheck.arbitrary._
@@ -37,7 +36,7 @@ final case class MultiRec[A](a: A, b: A)                      extends Example[A]
 final case class OneList[A](l: List[A])                       extends Example[A]
 final case class TwoLists[A](first: List[A], second: List[A]) extends Example[A]
 
-object Example {
+object Example extends ScalazSpecs2Instances {
   implicit val traverse: Traverse[Example] = new Traverse[Example] {
     def traverseImpl[G[_], A, B](fa: Example[A])(f: A => G[B])(
       implicit G: Applicative[G]):

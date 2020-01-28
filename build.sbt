@@ -1,11 +1,11 @@
-import de.heikoseeberger.sbtheader.HeaderPlugin
-import de.heikoseeberger.sbtheader.license.Apache2_0
-import org.scalajs.sbtplugin.ScalaJSCrossVersion
+import sbtcrossproject.CrossPlugin.autoImport.{crossProject, CrossType}
 import scoverage._
 import sbt._
 import Keys._
-import slamdata.CommonDependencies
-import slamdata.SbtSlamData.transferPublishAndTagResources
+
+val MonocleVersion = "1.6.0"
+val ScalazVersion = "7.2.30"
+val Specs2Version = "4.8.2"
 
 lazy val standardSettings = commonBuildSettings ++ Seq(
   logBuffered in Compile := false,
@@ -15,17 +15,26 @@ lazy val standardSettings = commonBuildSettings ++ Seq(
   organization := "com.slamdata",
   ScoverageKeys.coverageHighlighting := true,
   scalacOptions in (Compile, doc) ++= Seq("-groups", "-implicits"),
-  wartremoverWarnings in (Compile, compile) --= Seq(
-    Wart.PublicInference,  // TODO: enable incrementally — currently results in many errors
-    Wart.ImplicitParameter // TODO: enable incrementally — currently results in many errors
-  ),
 
   libraryDependencies ++= Seq(
-    CommonDependencies.slamdata.predef,
-    CommonDependencies.monocle.core.cross(CrossVersion.binary)          % "compile, test",
-    CommonDependencies.scalaz.core.cross(CrossVersion.binary)           % "compile, test",
-    CommonDependencies.simulacrum.simulacrum.cross(CrossVersion.binary) % "compile, test")
-)
+    "com.slamdata"               %% "slamdata-predef" % "0.1.0",
+    "com.github.julien-truffaut" %% "monocle-core"    % MonocleVersion,
+    "org.scalaz"                 %% "scalaz-core"     % ScalazVersion,
+    "org.typelevel"              %% "simulacrum"      % "1.0.0"),
+
+  scalacOptions ++= {
+    if (scalaVersion.value.startsWith("2.13"))
+      Seq("-Ymacro-annotations")
+    else
+      Seq.empty
+  },
+
+  libraryDependencies ++= {
+    if (!scalaVersion.value.startsWith("2.13"))
+      Seq(compilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full))
+    else
+      Seq.empty
+  })
 
 lazy val publishSettings = commonPublishSettings ++ Seq(
   organizationName := "SlamData Inc.",
@@ -39,7 +48,6 @@ lazy val publishSettings = commonPublishSettings ++ Seq(
 lazy val root = Project("root", file("."))
   .settings(name := "matryoshka")
   .settings(standardSettings ++ noPublishSettings: _*)
-  .settings(transferPublishAndTagResources)
   .settings(console := (console in replJVM).value)
   .aggregate(
     coreJS,  scalacheckJS,  testsJS,
@@ -47,36 +55,35 @@ lazy val root = Project("root", file("."))
     docs)
   .enablePlugins(AutomateHeaderPlugin)
 
-lazy val core = crossProject.in(file("core"))
+lazy val core = crossProject(JSPlatform, JVMPlatform).in(file("core"))
   .settings(name := "matryoshka-core")
   .settings(standardSettings ++ publishSettings: _*)
   .enablePlugins(AutomateHeaderPlugin)
 
-lazy val scalacheck = crossProject
+lazy val scalacheck = crossProject(JSPlatform, JVMPlatform)
   .dependsOn(core)
   .settings(name := "matryoshka-scalacheck")
   .settings(standardSettings ++ publishSettings: _*)
   .settings(libraryDependencies ++= Seq(
-    // NB: Needs a version of Scalacheck with rickynils/scalacheck#301.
-    "org.scalacheck" %% "scalacheck"                % "1.14.0-861f58e-SNAPSHOT",
-    "org.scalaz"     %% "scalaz-scalacheck-binding" % (CommonDependencies.scalazVersion + "-scalacheck-1.13")))
+    "org.scalacheck" %% "scalacheck"                % "1.14.3",
+    "org.scalaz"     %% "scalaz-scalacheck-binding" % (ScalazVersion + "-scalacheck-1.14")))
   .enablePlugins(AutomateHeaderPlugin)
 
-lazy val tests = crossProject
+lazy val tests = crossProject(JSPlatform, JVMPlatform)
   .settings(name := "matryoshka-tests")
   .dependsOn(core, scalacheck)
   .settings(standardSettings ++ noPublishSettings: _*)
   .settings(libraryDependencies ++= Seq(
-    CommonDependencies.monocle.law            % Test,
-    CommonDependencies.typelevel.scalazSpecs2 % Test,
-    CommonDependencies.specs2.core            % Test))
+    "com.github.julien-truffaut" %% "monocle-law"       % MonocleVersion % Test,
+    "org.specs2"                 %% "specs2-core"       % Specs2Version  % Test,
+    "org.specs2"                 %% "specs2-scalaz"     % Specs2Version  % Test,
+    "org.typelevel"              %% "discipline-specs2" % "1.0.0"        % Test))
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val docs = project
   .settings(name := "matryoshka-docs")
   .dependsOn(coreJVM)
   .settings(standardSettings ++ noPublishSettings: _*)
-  .settings(tutScalacOptions --= Seq("-Yno-imports", "-Ywarn-unused-import"))
   .enablePlugins(MicrositesPlugin)
   .settings(
     micrositeName             := "Matryoshka",
@@ -91,7 +98,7 @@ lazy val docs = project
 /** A project just for the console.
   * Applies only the settings necessary for that purpose.
   */
-lazy val repl = crossProject dependsOn (tests % "compile->test") settings standardSettings settings (
+lazy val repl = crossProject(JSPlatform, JVMPlatform) dependsOn (tests % "compile->test") settings standardSettings settings (
   console := (console in Test).value,
   scalacOptions --= Seq("-Yno-imports", "-Ywarn-unused-import"),
   initialCommands in console += """

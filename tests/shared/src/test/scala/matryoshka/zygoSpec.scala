@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2019 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,10 +26,9 @@ import matryoshka.runners._
 import org.scalacheck._, Prop._
 import org.specs2.ScalaCheck
 import org.specs2.mutable._
-import org.specs2.scalaz.ScalazMatchers
 import scalaz._, Scalaz._
 
-class ZygoSpecs extends Specification with ScalaCheck with ScalazMatchers {
+class ZygoSpecs extends Specification with ScalaCheck with ScalazEqualityMatchers {
 
   def extractFactors2: Coalgebra[Exp, Int] = { x =>
     def sqrt(x: Int): Int = scala.math.sqrt(x.toDouble).toInt
