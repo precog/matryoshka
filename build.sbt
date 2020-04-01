@@ -56,7 +56,7 @@ lazy val root = Project("root", file("."))
   .aggregate(
     coreJS,  scalacheckJS,  testsJS,
     coreJVM, scalacheckJVM, testsJVM,
-    replJVM,
+    replJVM, replJS,
     docs)
   .enablePlugins(AutomateHeaderPlugin)
 
@@ -116,6 +116,7 @@ lazy val repl = crossProject(JSPlatform, JVMPlatform) dependsOn (tests % "compil
 )
 
 lazy val replJVM = repl.jvm
+lazy val replJS = repl.js
 lazy val coreJS  = core.js
 lazy val coreJVM = core.jvm
 lazy val scalacheckJS  = scalacheck.js
