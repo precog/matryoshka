@@ -1,10 +1,7 @@
-resolvers += Resolver.sonatypeRepo("releases")
-resolvers += Resolver.bintrayRepo("slamdata-inc", "maven-public")
-
 addSbtPlugin("com.47deg"             % "sbt-microsites"           % "1.1.0")
 addSbtPlugin("org.portable-scala"    % "sbt-scalajs-crossproject" % "0.6.1")
 addSbtPlugin("org.scala-js"          % "sbt-scalajs"              % "0.6.32")
 addSbtPlugin("org.scoverage"         % "sbt-scoverage"            % "1.6.0")
 addSbtPlugin("com.typesafe.sbt"      % "sbt-site"                 % "1.4.0")
-addSbtPlugin("com.slamdata"          % "sbt-slamdata"             % "5.3.0")
+addSbtPlugin("com.precog"            % "sbt-precog"               % "1.3.0")
 addSbtPlugin("com.eed3si9n"          % "sbt-unidoc"               % "0.4.2")
