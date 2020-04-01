@@ -30,7 +30,7 @@ lazy val standardSettings = commonBuildSettings ++ Seq(
   scalacOptions in (Compile, doc) ++= Seq("-groups", "-implicits"),
 
   libraryDependencies ++= Seq(
-    "com.slamdata"               %% "slamdata-predef" % "0.1.1",
+    "com.slamdata"               %% "slamdata-predef" % "0.1.2",
     "com.github.julien-truffaut" %% "monocle-core"    % MonocleVersion,
     "org.scalaz"                 %% "scalaz-core"     % ScalazVersion,
     "org.typelevel"              %% "simulacrum"      % "1.0.0"),
