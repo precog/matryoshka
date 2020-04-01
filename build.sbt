@@ -56,6 +56,7 @@ lazy val root = Project("root", file("."))
   .aggregate(
     coreJS,  scalacheckJS,  testsJS,
     coreJVM, scalacheckJVM, testsJVM,
+    replJVM,
     docs)
   .enablePlugins(AutomateHeaderPlugin)
 
