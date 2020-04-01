@@ -7,17 +7,30 @@ val MonocleVersion = "1.6.0"
 val ScalazVersion = "7.2.30"
 val Specs2Version = "4.8.2"
 
+ThisBuild / organization := "com.slamdata"
+ThisBuild / githubRepository := "matryoshka"
+
+ThisBuild / homepage := Some(url("https://github.com/precog/matryoshka"))
+ThisBuild / scmInfo := Some(
+  ScmInfo(
+    url("https://github.com/precog/matryoshka"),
+    "scm:git@github.com:precog/matryoshka.git"))
+
+ThisBuild / publishAsOSSProject := true
+
+ThisBuild / crossScalaVersions := Seq("2.13.1", "2.12.10")
+ThisBuild / scalaVersion := (ThisBuild / crossScalaVersions).value.head
+
 lazy val standardSettings = commonBuildSettings ++ Seq(
   logBuffered in Compile := false,
   logBuffered in Test := false,
   updateOptions := updateOptions.value.withCachedResolution(true),
   exportJars := true,
-  organization := "com.slamdata",
   ScoverageKeys.coverageHighlighting := true,
   scalacOptions in (Compile, doc) ++= Seq("-groups", "-implicits"),
 
   libraryDependencies ++= Seq(
-    "com.slamdata"               %% "slamdata-predef" % "0.1.1",
+    "com.slamdata"               %% "slamdata-predef" % "0.1.2",
     "com.github.julien-truffaut" %% "monocle-core"    % MonocleVersion,
     "org.scalaz"                 %% "scalaz-core"     % ScalazVersion,
     "org.typelevel"              %% "simulacrum"      % "1.0.0"),
@@ -36,34 +49,26 @@ lazy val standardSettings = commonBuildSettings ++ Seq(
       Seq.empty
   })
 
-lazy val publishSettings = commonPublishSettings ++ Seq(
-  organizationName := "SlamData Inc.",
-  organizationHomepage := Some(url("http://slamdata.com")),
-  homepage := Some(url("https://github.com/slamdata/matryoshka")),
-  scmInfo := Some(
-    ScmInfo(
-      url("https://github.com/slamdata/matryoshka"),
-      "scm:git@github.com:slamdata/matryoshka.git")))
-
 lazy val root = Project("root", file("."))
   .settings(name := "matryoshka")
-  .settings(standardSettings ++ noPublishSettings: _*)
+  .settings(standardSettings ++ noPublishSettings)
   .settings(console := (console in replJVM).value)
   .aggregate(
     coreJS,  scalacheckJS,  testsJS,
     coreJVM, scalacheckJVM, testsJVM,
+    replJVM, replJS,
     docs)
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val core = crossProject(JSPlatform, JVMPlatform).in(file("core"))
   .settings(name := "matryoshka-core")
-  .settings(standardSettings ++ publishSettings: _*)
+  .settings(standardSettings)
   .enablePlugins(AutomateHeaderPlugin)
 
 lazy val scalacheck = crossProject(JSPlatform, JVMPlatform)
   .dependsOn(core)
   .settings(name := "matryoshka-scalacheck")
-  .settings(standardSettings ++ publishSettings: _*)
+  .settings(standardSettings)
   .settings(libraryDependencies ++= Seq(
     "org.scalacheck" %% "scalacheck"                % "1.14.3",
     "org.scalaz"     %% "scalaz-scalacheck-binding" % (ScalazVersion + "-scalacheck-1.14")))
@@ -72,7 +77,7 @@ lazy val scalacheck = crossProject(JSPlatform, JVMPlatform)
 lazy val tests = crossProject(JSPlatform, JVMPlatform)
   .settings(name := "matryoshka-tests")
   .dependsOn(core, scalacheck)
-  .settings(standardSettings ++ noPublishSettings: _*)
+  .settings(standardSettings ++ noPublishSettings)
   .settings(libraryDependencies ++= Seq(
     "com.github.julien-truffaut" %% "monocle-law"       % MonocleVersion % Test,
     "org.specs2"                 %% "specs2-core"       % Specs2Version  % Test,
@@ -83,7 +88,7 @@ lazy val tests = crossProject(JSPlatform, JVMPlatform)
 lazy val docs = project
   .settings(name := "matryoshka-docs")
   .dependsOn(coreJVM)
-  .settings(standardSettings ++ noPublishSettings: _*)
+  .settings(standardSettings ++ noPublishSettings)
   .enablePlugins(MicrositesPlugin)
   .settings(
     micrositeName             := "Matryoshka",
@@ -111,6 +116,7 @@ lazy val repl = crossProject(JSPlatform, JVMPlatform) dependsOn (tests % "compil
 )
 
 lazy val replJVM = repl.jvm
+lazy val replJS = repl.js
 lazy val coreJS  = core.js
 lazy val coreJVM = core.jvm
 lazy val scalacheckJS  = scalacheck.js
